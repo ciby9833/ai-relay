@@ -189,3 +189,12 @@ async def test_incomplete_approval_pages_fail_closed():
             return {"tasks": [], "has_more": True, "page_token": "same"}
     with pytest.raises(FeishuError, match="分页响应不完整"):
         await approval.query_tasks(Broken(), USER, "pending")
+
+
+def test_personal_hr_approvals_stay_out_of_briefs():
+    assert approval.is_personal({"definition_name": "Formulir Pengunduran Diri"})
+    assert approval.is_personal({"definition_name": "Leave Approval (Izin, Cuti, Sakit)"})
+    assert approval.is_personal({"definition_name": "Alur kerja pembayaran tunjangan kepada karyawan Tiongkok"})
+    assert approval.is_personal({"definition_name": "Clock-in/out Correction——补卡"})
+    assert not approval.is_personal({"definition_name": "【ID】Request Pembuatan Fitur Baru Pada Sistem"})
+    assert not approval.is_personal({"definition_name": "Payment Application HQ - Testing"})

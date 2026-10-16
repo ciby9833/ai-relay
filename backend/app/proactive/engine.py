@@ -18,6 +18,7 @@ from app.proactive.llm import complete_structured, complete_text
 from app.proactive.push import push
 from app.proactive.prompts import BRIEF_SYSTEM, TEAM_DIGEST_SYSTEM, TRIAGE_SYSTEM
 from app import i18n
+from app.sources import approval as approval_source
 from app.i18n import user_language
 from app.proactive.settings import language_of, in_quiet_hours, get_settings_row, is_workday, merged
 from app.sources import SYNCERS, calendar, docs
@@ -316,6 +317,8 @@ async def _team_digest(session: AsyncSession, user: User) -> str | None:
                              Signal.occurred_at > datetime.now(UTC) - timedelta(days=1))
         .order_by(Signal.occurred_at.desc()).limit(40)
     )).scalars().all()
+    # 人事类审批（请假、离职、补卡、薪酬补贴……）不进简报
+    notices = [n for n in notices if not (n.kind == "approval_update" and approval_source.is_personal(n.payload or {}))]
     if not notices:
         return None
     material = "\n".join(

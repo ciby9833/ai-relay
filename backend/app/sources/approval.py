@@ -195,11 +195,25 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
     return created
 
 
+# 涉及个人的人事类审批：就算抄送给了他，也不进简报（简报会推到飞书，可能被旁人看到或转发）
+PERSONAL = (
+    "leave", "cuti", "izin", "sakit", "请假", "休假", "resign", "pengunduran", "离职", "辞职",
+    "clock-in", "补卡", "考勤", "absen", "salary", "gaji", "payroll", "薪", "工资", "tunjangan", "补贴", "allowance",
+    "bonus", "奖金", "medical", "体检", "医疗", "kesehatan", "lembur", "加班", "overtime", "mutasi", "调岗", "promosi", "晋升",
+)
+
+
+def is_personal(payload: dict) -> bool:
+    name = f"{payload.get('definition_name') or ''} {payload.get('title') or ''}".lower()
+    return any(word in name for word in PERSONAL)
+
+
 def _update_status(category: str, process_status: str, initialized: bool) -> str:
     """抄送只是知会：不建事项、不推送，只留作简报素材和查询。
     我发起的：审批中静默放进“等别人”；有结果（通过/驳回/撤回）时告诉他；首次同步的历史结果只建档。"""
     if category == "cc":
-        return "ignored"
+        # 首次同步拿到的是历史抄送（可能是几年前的），只建档；之后新来的才进简报素材
+        return "ignored" if initialized else "done"
     if process_status in RUNNING:
         return "digest"
     return "notify" if initialized else "done"

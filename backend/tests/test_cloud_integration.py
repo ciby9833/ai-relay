@@ -19,6 +19,7 @@ async def test_approval_results_and_cc_are_tracked_once():
     class Feishu:
         status = 1
         read = False
+        new_cc = False
         async def tenant_api(self, method, path, **kwargs):
             topic = kwargs["params"]["topic"]
             rows = []
@@ -27,6 +28,8 @@ async def test_approval_results_and_cc_are_tracked_once():
                         {"process_code": "history", "process_status": 2, "title": "旧申请"}]
             if topic == ("18" if self.read else "17"):
                 rows = [{"process_code": "cc1", "task_id": "cc-task", "process_status": 2, "title": "抄送"}]
+                if self.new_cc:
+                    rows.append({"process_code": "cc2", "task_id": "cc-task2", "process_status": 2, "title": "新抄送"})
             return {"tasks": rows}
 
     f = Feishu()
@@ -48,8 +51,12 @@ async def test_approval_results_and_cc_are_tracked_once():
             initiated = found["approval-update:initiated:initiated1"]
             assert (initiated.kind, initiated.owner) == ("waiting", "others") and initiated.announced_at and initiated.remind_at
             cc_signal = (await s.execute(select(Signal).where(Signal.user_id == uid, Signal.external_id == "cc:cc1"))).scalar_one()
-            assert cc_signal.status == "ignored"
+            assert cc_signal.status == "done"  # 首次同步的历史抄送只建档，不进简报
             assert await approval.sync(s, f, user, state) == 0
+            f.new_cc = True
+            assert await approval.sync(s, f, user, state) == 1
+            new_cc = (await s.execute(select(Signal).where(Signal.user_id == uid, Signal.external_id == "cc:cc2"))).scalar_one()
+            assert new_cc.status == "ignored"  # 初始化之后新来的抄送：不建事项，只作简报素材
             f.read = True
             assert await approval.sync(s, f, user, state) == 0  # 抄送变已读不会新增
 
