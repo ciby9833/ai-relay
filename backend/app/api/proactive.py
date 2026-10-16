@@ -148,17 +148,23 @@ async def board(session: SessionDep, user: UserDep):
             continue
         prep_at = meeting.occurred_at - timedelta(minutes=settings["meeting_brief_minutes"])
         relay.append({"kind": "meeting_prep", "title": f"准备《{meeting.title}》的会前资料",
-                      "detail": f"{prep_at.astimezone(ZoneInfo(user.timezone)):%H:%M} 发给你", "at": prep_at.isoformat()})
+                      "detail": f"{prep_at.astimezone(ZoneInfo(user.timezone)):%H:%M} 发给你", "at": prep_at.isoformat(),
+                      "title_ui": {"key": "board.prepare", "values": {"title": meeting.title}},
+                      "detail_ui": {"key": "board.preparedAt", "values": {"time": f"{prep_at.astimezone(ZoneInfo(user.timezone)):%H:%M}"}}})
     watching = (await session.execute(
         select(Signal).where(Signal.user_id == user.id, Signal.kind == "mention", Signal.status == "watching")
     )).scalars().all()
     for signal in watching:
         relay.append({"kind": "watch", "title": f"盯着{signal.payload.get('chat_name') or '群聊'}里@你的消息",
-                      "detail": "两小时内没回会提醒你", "at": signal.occurred_at.isoformat() if signal.occurred_at else None})
+                      "detail": "两小时内没回会提醒你", "at": signal.occurred_at.isoformat() if signal.occurred_at else None,
+                      "title_ui": {"key": "board.mentions", "values": {"name": signal.payload['chat_name']}} if signal.payload.get('chat_name') else {"key": "board.groupMentions"},
+                      "detail_ui": {"key": "board.twoHours"}})
     for item in open_items:
         if item["owner"] == "others" and item["remind_at"]:
             relay.append({"kind": "watch", "title": f"盯着 {item['waiting_on'] or '对方'} 的回复",
-                          "detail": "没回的话会提醒你并起草跟进", "at": item["remind_at"]})
+                          "detail": "没回的话会提醒你并起草跟进", "at": item["remind_at"],
+                          "title_ui": {"key": "board.reply", "values": {"name": item['waiting_on']}} if item['waiting_on'] else {"key": "board.replyUnknown"},
+                          "detail_ui": {"key": "board.followup"}})
     return {
         "me": [i for i in open_items if i["owner"] == "me"],
         "others": [i for i in open_items if i["owner"] == "others"],

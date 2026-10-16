@@ -1,3 +1,4 @@
+import { t, type LocalizedText } from "./i18n";
 export interface User {
   is_admin: boolean;
   id: string;
@@ -126,6 +127,7 @@ export interface FollowUp {
   count: number;
   action: Action | null;
   ask: string;
+  ask_ui?: LocalizedText | null;
   source: Card | null;
   detail: { name: string; value: string }[];
   quick_approve: boolean;
@@ -136,6 +138,8 @@ export interface RelayTask {
   title: string;
   detail: string;
   at: string | null;
+  title_ui?: LocalizedText;
+  detail_ui?: LocalizedText;
 }
 
 export interface Integration {
@@ -237,7 +241,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, { credentials: "same-origin", ...init });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new ApiError(response.status, body?.detail ?? `请求失败 (${response.status})`);
+    throw new ApiError(response.status, body?.detail ?? t("请求失败 ({p0})", { p0: response.status }));
   }
   return response.json();
 }
@@ -307,7 +311,7 @@ export async function sendMessage(
   });
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => null);
-    throw new ApiError(response.status, body?.detail ?? `请求失败 (${response.status})`);
+    throw new ApiError(response.status, body?.detail ?? t("请求失败 ({p0})", { p0: response.status }));
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, sendMessage, type Board as BoardData, type HomeStatus, type ThreadMessage } from "../api";
 import { greeting } from "../format";
@@ -92,7 +93,7 @@ export default function Thread({
         else if (event.type === "error") updateLast((m) => ({ ...m, error: event.message }));
       });
     } catch (error) {
-      updateLast((m) => ({ ...m, error: error instanceof Error ? error.message : "发送失败" }));
+      updateLast((m) => ({ ...m, error: error instanceof Error ? error.message : t("发送失败") }));
     } finally {
       streaming.current = false;
       setBusy(false);
@@ -113,17 +114,17 @@ export default function Thread({
             <div className="welcome">
               <RelayMark size={32} />
               <h1>
-                {greeting()}，{userName}
+                {t("greetUser", { greeting: greeting(), name: userName })}
               </h1>
               <p>
                 {home
-                  ? "我会替你留意邮件、日程、审批和考勤，有需要你知道或决定的事会直接在这里告诉你。也可以随时让我帮你做事。"
-                  : "想让我帮你做什么？"}
+                  ? t("我会替你留意邮件、日程、审批和考勤，有需要你知道或决定的事会直接在这里告诉你。也可以随时让我帮你做事。")
+                  : t("想让我帮你做什么？")}
               </p>
               <div className="suggestions">
                 {SUGGESTIONS.map((text) => (
-                  <button key={text} className="chip" disabled={busy} onClick={() => send(text)}>
-                    {text}
+                  <button key={text} className="chip" disabled={busy} onClick={() => send(t(text))}>
+                    {t(text)}
                   </button>
                 ))}
               </div>
@@ -141,9 +142,9 @@ export default function Thread({
           model={model}
           onModel={setModel}
           onSend={send}
-          placeholder={home ? "回复 Relay，或让它帮你做点什么…" : "给 Relay 发消息…"}
+          placeholder={home ? t("回复 Relay，或让它帮你做点什么…") : t("给 Relay 发消息…")}
         />
-        <p className="composer-note">发邮件、回复会议邀请等操作都会先让你确认</p>
+        <p className="composer-note">{t("发邮件、回复会议邀请等操作都会先让你确认")}</p>
       </div>
     </main>
   );

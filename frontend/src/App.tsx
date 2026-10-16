@@ -1,6 +1,8 @@
+import { t } from "./i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type Conversation, type User } from "./api";
 import Icon, { RelayMark } from "./components/Icon";
+import { useLocale } from "./useLocale";
 import Login from "./components/Login";
 import Drawer from "./components/panels/Drawer";
 import Sidebar, { type PanelKind, type View } from "./components/Sidebar";
@@ -8,21 +10,25 @@ import Missions from "./components/Missions";
 import Thread from "./components/Thread";
 
 export default function App() {
+  useLocale();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [view, setView] = useState<View>({ type: "home" });
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    api
+  const loadUser = useCallback(() => {
+    setLoadError(false);
+    void api
       .me()
       .then(setUser)
       .catch((error) => {
         if (error instanceof ApiError && error.status === 401) setUser(null);
-        else throw error;
+        else setLoadError(true);
       });
   }, []);
+  useEffect(loadUser, [loadUser]);
 
   const refresh = useCallback(async () => setConversations(await api.conversations()), []);
 
@@ -36,7 +42,13 @@ export default function App() {
     if (user) void refresh();
   }, [user, refresh]);
 
-  if (user === undefined) return null;
+  if (user === undefined) return (
+    <div className="login"><div className="login-card">
+      <RelayMark size={32} />
+      <p role={loadError ? "alert" : "status"}>{t(loadError ? "loadError" : "loading")}</p>
+      {loadError && <button className="btn primary" onClick={loadUser}>{t("retry")}</button>}
+    </div></div>
+  );
   if (user === null) return <Login onLogin={setUser} />;
 
   const navigate = (next: View) => {
@@ -69,7 +81,7 @@ export default function App() {
       {menuOpen && <div className="sidebar-backdrop" onClick={() => setMenuOpen(false)} />}
       <div className="main">
         <div className="mobile-bar">
-          <button className="icon-button" onClick={() => setMenuOpen(true)} aria-label="菜单">
+          <button className="icon-button" onClick={() => setMenuOpen(true)} aria-label={t("菜单")}>
             <Icon name="menu" />
           </button>
           <RelayMark size={18} />

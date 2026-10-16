@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api } from "../api";
 import Icon from "./Icon";
@@ -57,12 +58,13 @@ export default function Composer({
         value={text}
         rows={1}
         placeholder={placeholder}
+        aria-label={placeholder}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
       />
       <div className="composer-bar">
         {models.length > 1 ? (
-          <select value={model ?? ""} onChange={(event) => onModel(event.target.value)} aria-label="模型">
+          <select value={model ?? ""} onChange={(event) => onModel(event.target.value)} aria-label={t("模型")}>
             {models.map((id) => (
               <option key={id} value={id}>
                 {id.split(":")[1]}
@@ -70,9 +72,9 @@ export default function Composer({
             ))}
           </select>
         ) : (
-          <span className="composer-hint">{models[0]?.split(":")[1] ?? "未配置模型"}</span>
+          <span className="composer-hint">{models[0]?.split(":")[1] ?? t("未配置模型")}</span>
         )}
-        <button className="send" disabled={busy || !text.trim()} onClick={submit} aria-label="发送">
+        <button className="send" disabled={busy || !text.trim()} onClick={submit} aria-label={t("发送")}>
           <Icon name="arrowUp" size={18} />
         </button>
       </div>

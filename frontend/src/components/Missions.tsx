@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api, type MissionData } from "../api";
 import { dayLabel, relative, timeOf } from "../format";
@@ -47,26 +48,26 @@ function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<st
         {open && (
           <span className="mission-tools">
             <button className="btn secondary" disabled={busy} onClick={() => act(() => api.wakeMission(mission.id))}>
-              <Icon name="refresh" /> 立即推进
+              <Icon name="refresh" /> {t("立即推进")}
             </button>
-            <button className="btn ghost" disabled={busy} onClick={() => window.confirm("停止这个任务？") && act(() => api.cancelMission(mission.id))}>
-              停止
+            <button className="btn ghost" disabled={busy} onClick={() => window.confirm(t("停止这个任务？")) && act(() => api.cancelMission(mission.id))}>
+              {t("停止")}
             </button>
           </span>
         )}
       </header>
       <p className="mission-goal">{mission.goal}</p>
       <p className="muted small">
-        已推进 {mission.runs} 次
-        {mission.status === "waiting" && mission.waiting_for ? ` · 正在等${mission.waiting_for}` : ""}
-        {mission.status === "active" && mission.next_run_at ? ` · 下次 ${dayLabel(mission.next_run_at)} ${timeOf(mission.next_run_at)}` : ""}
+        {t("runCount", { count: mission.runs })}
+        {mission.status === "waiting" && mission.waiting_for ? t(" · 正在等{p0}", { p0: mission.waiting_for }) : ""}
+        {mission.status === "active" && mission.next_run_at ? t(" · 下次 {p0} {p1}", { p0: dayLabel(mission.next_run_at), p1: timeOf(mission.next_run_at) }) : ""}
       </p>
 
       <MissionCard mission={mission} onChanged={refresh} />
 
       {mission.pending_actions.length > 0 && (
         <section>
-          <h3>等你确认</h3>
+          <h3>{t("等你确认")}</h3>
           <div className="cards">
             {mission.pending_actions.map((action) => (
               <ActionCard key={action.id} action={action} onChanged={refresh} />
@@ -77,7 +78,7 @@ function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<st
 
       {mission.plan.length > 0 && (
         <section>
-          <h3>计划</h3>
+          <h3>{t("计划")}</h3>
           <ul className="plan">
             {mission.plan.map((step, index) => (
               <li key={index} className={step.status === "done" ? "done" : ""}>
@@ -90,9 +91,9 @@ function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<st
       )}
 
       <section>
-        <h3>允许 Relay 在这个任务里自动做</h3>
-        <p className="muted small">默认所有对外操作都先问你。勾选后，这类操作在本任务里会直接执行，做完告诉你。审批始终需要你逐张处理。</p>
-        {Object.entries(grantable).map(([key, label]) => (
+        <h3>{t("允许 Relay 在这个任务里自动做")}</h3>
+        <p className="muted small">{t("默认所有对外操作都先问你。勾选后，这类操作在本任务里会直接执行，做完告诉你。审批始终需要你逐张处理。")}</p>
+        {Object.keys(grantable).map((key) => (
           <label key={key} className="toggle">
             <input
               type="checkbox"
@@ -103,7 +104,7 @@ function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<st
               }
             />
             <span>
-              <strong>{label}</strong>
+              <strong>{t(`grant.${key}`)}</strong>
             </span>
           </label>
         ))}
@@ -111,13 +112,13 @@ function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<st
 
       {mission.notes && (
         <section>
-          <h3>Relay 的工作笔记</h3>
+          <h3>{t("Relay 的工作笔记")}</h3>
           <div className="draft-body readonly">{mission.notes}</div>
         </section>
       )}
 
       <section>
-        <h3>时间线</h3>
+        <h3>{t("时间线")}</h3>
         <ol className="timeline">
           {(mission.logs ?? []).map((entry, index) => (
             <li key={index} className={`log-${entry.kind}`}>
@@ -152,7 +153,7 @@ export default function Missions({ selected, onSelect }: { selected: number | nu
           {selected ? (
             <>
               <button className="btn ghost small back" onClick={() => onSelect(null)}>
-                ← 全部长期任务
+                {t("← 全部长期任务")}
               </button>
               <Detail id={selected} grantable={grantable} onChanged={load} />
             </>
@@ -160,10 +161,10 @@ export default function Missions({ selected, onSelect }: { selected: number | nu
             <>
               <div className="welcome compact">
                 <RelayMark size={28} />
-                <h1>长期任务</h1>
-                <p>需要持续推进、要等别人回应的事，交给 Relay 在后台办。在主线里说“帮我盯着……直到……”“约齐……开会”就行。</p>
+                <h1>{t("长期任务")}</h1>
+                <p>{t("需要持续推进、要等别人回应的事，交给 Relay 在后台办。在主线里说“帮我盯着……直到……”“约齐……开会”就行。")}</p>
               </div>
-              {missions.length === 0 && <p className="empty-note">还没有长期任务。</p>}
+              {missions.length === 0 && <p className="empty-note">{t("还没有长期任务。")}</p>}
               <div className="cards">
                 {missions.map((mission) => (
                   <MissionCard key={mission.id} mission={mission} onChanged={load} onOpen={onSelect} />

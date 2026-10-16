@@ -478,6 +478,7 @@ async def item_json(session: AsyncSession, item: FollowUp) -> dict:
         "updated_at": cards.iso(item.updated_at), "count": len(item.signal_ids),
         "action": actions_json(action) if action else None,
         "ask": ask(item, action),
+        "ask_ui": cards.ask_ui(item, action),
         "source": cards.signal_card(last) if last else None,
         "detail": ((last.payload.get("detail") or {}).get("fields") or []) if last and item.kind == "approval" else [],
         # 可以在 Relay 里直接批准/驳回（不需要审批人补填内容）

@@ -1,8 +1,16 @@
-const WEEKDAYS = "日一二三四五六";
+import { intlLocale, t } from "./i18n";
 
 export function timeOf(value: string | null | undefined) {
   if (!value) return "";
-  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  return new Date(value).toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" });
+}
+
+export function monthOf(value: string | null) {
+  return value ? new Intl.DateTimeFormat(intlLocale(), { month: "short" }).format(new Date(value)) : "";
+}
+
+export function listOf(values: string[]) {
+  return new Intl.ListFormat(intlLocale(), { style: "short", type: "conjunction" }).format(values);
 }
 
 export function dayLabel(value: string) {
@@ -10,28 +18,25 @@ export function dayLabel(value: string) {
   const today = new Date();
   const tomorrow = new Date();
   tomorrow.setDate(today.getDate() + 1);
-  if (date.toDateString() === today.toDateString()) return "今天";
-  if (date.toDateString() === tomorrow.toDateString()) return "明天";
-  return `${date.getMonth() + 1}月${date.getDate()}日 周${WEEKDAYS[date.getDay()]}`;
+  if (date.toDateString() === today.toDateString()) return t("today");
+  if (date.toDateString() === tomorrow.toDateString()) return t("tomorrow");
+  return new Intl.DateTimeFormat(intlLocale(), { month: "short", day: "numeric", weekday: "short", ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" as const } : {}) }).format(date);
 }
 
 export function relative(value: string | null | undefined) {
   if (!value) return "";
   const minutes = Math.round((Date.now() - new Date(value).getTime()) / 60000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
+  if (Math.abs(minutes) < 1) return t("justNow");
+  const format = new Intl.RelativeTimeFormat(intlLocale(), { numeric: "auto" });
+  if (Math.abs(minutes) < 60) return format.format(-minutes, "minute");
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
+  if (Math.abs(hours) < 24) return format.format(-hours, "hour");
   return dayLabel(value);
 }
 
 export function greeting() {
   const hour = new Date().getHours();
-  if (hour < 5) return "夜深了";
-  if (hour < 11) return "早上好";
-  if (hour < 13) return "中午好";
-  if (hour < 18) return "下午好";
-  return "晚上好";
+  return t(hour < 5 ? "lateNight" : hour < 11 ? "morning" : hour < 13 ? "noon" : hour < 18 ? "afternoon" : "evening");
 }
 
 // 工具名 → 完成时 / 进行时的说法
@@ -79,9 +84,9 @@ const STEPS: Record<string, [string, string]> = {
 };
 
 export function stepDone(name: string) {
-  return STEPS[name]?.[0] ?? name;
+  return t(STEPS[name]?.[0] ?? name);
 }
 
 export function stepActive(name: string) {
-  return STEPS[name]?.[1] ?? name;
+  return t(STEPS[name]?.[1] ?? name);
 }

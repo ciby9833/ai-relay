@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -28,7 +29,7 @@ function CopyButton({ text, label }: { text: () => string; label?: string }) {
     <button
       type="button"
       className="copy-btn"
-      title="复制"
+      title={t("复制")}
       onClick={async () => {
         await copyText(text());
         setDone(true);
@@ -36,7 +37,7 @@ function CopyButton({ text, label }: { text: () => string; label?: string }) {
       }}
     >
       <Icon name={done ? "check" : "copy"} size={13} />
-      {label && <span>{done ? "已复制" : label}</span>}
+      {label && <span>{done ? t("已复制") : label}</span>}
     </button>
   );
 }
@@ -92,14 +93,13 @@ export default function Message({ message, onChanged }: { message: ThreadMessage
       <div className="msg-head">
         <RelayMark size={16} />
         <span className="msg-name">Relay</span>
-        {message.proactive && <span className="msg-tag">主动告诉你</span>}
+        {message.proactive && <span className="msg-tag">{t("主动告诉你")}</span>}
         {message.created_at && <span className="msg-time">{relative(message.created_at)}</span>}
       </div>
       <Steps steps={message.steps ?? []} active={!!message.pending} />
       {working && !(message.steps?.length) && (
         <div className="thinking">
-          <span className="spinner" /> 正在想…
-        </div>
+          <span className="spinner" /> {t("正在想…")} </div>
       )}
       {message.text && (
         <div className="prose">
@@ -108,7 +108,7 @@ export default function Message({ message, onChanged }: { message: ThreadMessage
       )}
       {message.text && !message.pending && (
         <div className="msg-actions">
-          <CopyButton text={() => message.text ?? ""} label="复制全文" />
+          <CopyButton text={() => message.text ?? ""} label={t("复制全文")} />
         </div>
       )}
       {message.cards && message.cards.length > 0 && (

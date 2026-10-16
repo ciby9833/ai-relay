@@ -89,6 +89,25 @@ async def conflicts_for(session: AsyncSession, signal: Signal) -> list[str]:
 RSVP_WORD = {"accept": "接受", "tentative": "待定", "decline": "拒绝"}
 
 
+def ask_ui(item: FollowUp, action: PendingAction | None) -> dict | None:
+    """Structured Web UI copy, translated at render time without rewriting user content."""
+    if item.status != "open":
+        return None
+    if action and action.status == "pending":
+        if action.kind == "send_mail":
+            key = "ask.followup" if action.summary.startswith("跟进") else "ask.draft"
+            return {"key": key}
+        if action.kind == "calendar_rsvp" and action.payload.get("status") in RSVP_WORD:
+            return {"key": f"ask.rsvp.{action.payload['status']}"}
+        if action.kind == "approval_decision":
+            return {"key": "ask.confirm", "values": {"summary": action.summary}}
+    if item.owner == "others":
+        return {"key": "ask.waiting", "values": {"person": item.waiting_on}} if item.waiting_on else {"key": "ask.waitingUnknown"}
+    if item.next_step:
+        return None
+    return {"key": "ask.approval" if item.kind == "approval" else "ask.handle"}
+
+
 def ask(item: FollowUp, action: PendingAction | None) -> str:
     """一句话说清楚：这件事要他做什么（或者不用他做）。"""
     if item.status != "open":

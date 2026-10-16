@@ -1,5 +1,7 @@
+import { t } from "../i18n";
 import { useEffect, useState } from "react";
 import { api, type User } from "../api";
+import LanguageSelect from "./LanguageSelect";
 import { RelayMark } from "./Icon";
 
 const ERRORS: Record<string, string> = {
@@ -22,14 +24,15 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
       <div className="login-card">
         <RelayMark size={40} />
         <h1>Relay</h1>
-        <p>替你留意邮件、日程和审批，该你知道的事会主动告诉你，该做的事先帮你准备好。</p>
-        {error && <p className="login-error">{ERRORS[error] ?? "登录失败。"}</p>}
+        <LanguageSelect />
+        <p>{t("替你留意邮件、日程和审批，该你知道的事会主动告诉你，该做的事先帮你准备好。")}</p>
+        {error && <p className="login-error">{ERRORS[error] ? t(ERRORS[error]) : t("登录失败。")}</p>}
         <a className="btn primary large" href="/api/auth/feishu/login">
-          使用飞书登录
+          {t("使用飞书登录")}
         </a>
         {devLogin && (
           <button className="btn ghost" onClick={() => api.devLogin().then(onLogin)}>
-            本地调试登录
+            {t("本地调试登录")}
           </button>
         )}
       </div>

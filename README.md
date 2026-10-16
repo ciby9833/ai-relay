@@ -29,6 +29,8 @@ docker compose -f compose.test.yml up --build --abort-on-container-exit --exit-c
 docker compose -f compose.test.yml down
 ```
 
+Web 界面语言支持、Figma 组件参考和交互检查记录见 [Web UI 与国际化](docs/WEB_UI.md)。
+
 ## 组成
 
 | 服务 | 作用 |
