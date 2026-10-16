@@ -1,0 +1,101 @@
+import type { Conversation, User } from "../api";
+import { relative } from "../format";
+import Icon, { RelayMark } from "./Icon";
+
+export type View = { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
+export type PanelKind = "memories" | "tasks" | "settings" | "integrations";
+
+const CHANNEL: Record<string, string | null> = { web: null, feishu: "飞书群", task: "定时", home: null };
+
+export default function Sidebar({
+  user,
+  conversations,
+  view,
+  open,
+  onNavigate,
+  onDelete,
+  onPanel,
+  onLogout,
+}: {
+  user: User;
+  conversations: Conversation[];
+  view: View;
+  open: boolean;
+  onNavigate: (view: View) => void;
+  onDelete: (id: string) => void;
+  onPanel: (panel: PanelKind) => void;
+  onLogout: () => void;
+}) {
+  return (
+    <aside className={`sidebar ${open ? "open" : ""}`}>
+      <div className="brand">
+        <RelayMark size={20} />
+        <span>Relay</span>
+      </div>
+
+      <nav className="nav">
+        <button className={`nav-item ${view.type === "home" ? "active" : ""}`} onClick={() => onNavigate({ type: "home" })}>
+          <Icon name="home" /> 主线
+        </button>
+        <button className={`nav-item ${view.type === "missions" ? "active" : ""}`} onClick={() => onNavigate({ type: "missions", id: null })}>
+          <Icon name="clock" /> 长期任务
+        </button>
+        <button
+          className={`nav-item ${view.type === "chat" && view.id === null ? "active" : ""}`}
+          onClick={() => onNavigate({ type: "chat", id: null })}
+        >
+          <Icon name="plus" /> 新对话
+        </button>
+      </nav>
+
+      {conversations.length > 0 && <div className="nav-label">最近</div>}
+      <div className="history">
+        {conversations.map((conversation) => (
+          <div
+            key={conversation.id}
+            className={`history-item ${view.type === "chat" && view.id === conversation.id ? "active" : ""}`}
+            onClick={() => onNavigate({ type: "chat", id: conversation.id })}
+          >
+            <span className="history-title">{conversation.title ?? "新对话"}</span>
+            {CHANNEL[conversation.channel] && <span className="history-tag">{CHANNEL[conversation.channel]}</span>}
+            <span className="history-time">{relative(conversation.updated_at)}</span>
+            <button
+              className="icon-button history-delete"
+              title="删除"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (window.confirm("删除这段对话？")) onDelete(conversation.id);
+              }}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="sidebar-foot">
+        <button className="nav-item" onClick={() => onPanel("memories")}>
+          <Icon name="memory" /> 记忆
+        </button>
+        <button className="nav-item" onClick={() => onPanel("tasks")}>
+          <Icon name="clock" /> 定时任务
+        </button>
+        <button className="nav-item" onClick={() => onPanel("settings")}>
+          <Icon name="settings" /> 提醒设置
+        </button>
+        {user.is_admin && (
+          <button className="nav-item" onClick={() => onPanel("integrations")}>
+            <Icon name="external" /> 业务系统接入
+          </button>
+        )}
+        <div className="me">
+          {user.avatar_url ? <img src={user.avatar_url} alt="" /> : <span className="avatar">{user.name.slice(0, 1)}</span>}
+          <span className="me-name">{user.name}</span>
+          <button className="icon-button" title="退出登录" onClick={onLogout}>
+            <Icon name="logout" size={15} />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}

@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

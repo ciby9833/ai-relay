@@ -1,0 +1,73 @@
+name: relay
+
+x-backend: &backend
+  build: ./backend
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://relay:${POSTGRES_PASSWORD}@db:5432/relay
+    # 有服务账号文件时挂进容器，Gemini 走 Vertex AI
+    GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_CREDENTIALS_FILE:+/run/secrets/gcp.json}
+  volumes:
+    - ${GOOGLE_CREDENTIALS_FILE:-/dev/null}:/run/secrets/gcp.json:ro
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: relay
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:-54329}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *backend
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # 宿主机 8098 → 容器 8000。飞书后台登记的本地回调是 http://localhost:8098/api/auth/feishu/callback
+      - "${BIND_ADDR:-127.0.0.1}:${API_PORT:-8098}:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  worker:
+    <<: *backend
+    depends_on:
+      api:
+        condition: service_healthy
+    command: python -m app.scheduler.worker
+
+  feishu:
+    <<: *backend
+    depends_on:
+      api:
+        condition: service_healthy
+    command: python -m app.feishu.longconn
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-5173}:80"
+
+volumes:
+  pgdata:

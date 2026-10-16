@@ -1,0 +1,28 @@
+# 独立测试环境，不读取 .env、不挂载凭证、不连接业务数据库。
+name: relay-tests
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: test-only-password
+      POSTGRES_DB: relay_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  tests:
+    build:
+      context: ./backend
+      target: test
+    environment:
+      SECRET_KEY: test-only-session-signing-key
+      DATABASE_URL: postgresql+asyncpg://relay:test-only-password@db:5432/relay_test
+      RUN_DB_TESTS: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && pytest -q"
