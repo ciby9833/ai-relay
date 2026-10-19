@@ -168,6 +168,24 @@ function SettingsForm() {
             </span>
           </label>
         ))}
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={settings.sources.private_chat ?? false}
+            onChange={(e) => update({ sources: { ...settings.sources, private_chat: e.target.checked } })}
+          />
+          <span>
+            <strong>{t("私聊里的待办")}</strong>
+            <span className="muted">
+              {t("开启后，Relay 以你的身份读你和常联系同事之间的私聊，找出别人让你做的事和你在等别人的事，有了结果自动结束。私聊内容只用于你自己的事项。")}
+            </span>
+            {status.private_chat?.error ? (
+              <span className="error-text">{status.private_chat.error}</span>
+            ) : status.private_chat?.last_synced_at ? (
+              <span className="muted">{t("syncedAt", { time: relative(status.private_chat.last_synced_at) })}</span>
+            ) : null}
+          </span>
+        </label>
       </section>
 
       <section>

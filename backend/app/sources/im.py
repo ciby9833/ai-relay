@@ -53,6 +53,9 @@ async def recent_messages(feishu: FeishuClient, user: User, chat_id: str, hours:
         for mention in item.get("mentions") or []:
             text = text.replace(mention.get("key", "\0"), f"@{mention.get('name') or '某人'}")
         messages.append({
+            "message_id": item.get("message_id"),
+            "mentions": [{"open_id": (m.get("id") if isinstance(m.get("id"), str) else (m.get("id") or {}).get("open_id")), "name": m.get("name")}
+                         for m in item.get("mentions") or []],
             "sender": (item.get("sender") or {}).get("id"), "sender_type": (item.get("sender") or {}).get("sender_type"),
             "text": text, "at": datetime.fromtimestamp(int(item.get("create_time", "0")) / 1000, UTC),
         })

@@ -20,9 +20,10 @@ from app.llm.base import LLMError
 from app.models import FollowUp, PendingAction, Signal, User
 from app.proactive import actions, cards
 from app.proactive.llm import complete_text
-from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM, REPLY_STATE_SYSTEM
+from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM, PROGRESS_SYSTEM, REPLY_STATE_SYSTEM
 from app.proactive.push import push
 from app.sources import approval as approval_source
+from app.sources.base import add_signal
 from app import automation, i18n, insights
 from app.proactive.settings import in_quiet_hours, language_of
 
@@ -129,18 +130,91 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
     signal.status = "tracked"
 
 
+PROGRESS_TOOL = {
+    "name": "judge_progress",
+    "description": "这条新消息对“在等的事”意味着什么",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "verdict": {"type": "string", "enum": ["done", "committed", "ack", "unrelated"]},
+            "evidence": {"type": "string"},
+            "due": {"type": "string"},
+        },
+        "required": ["verdict", "evidence"],
+        "additionalProperties": False,
+    },
+}
+
+
+async def judge_progress(session: AsyncSession, user: User, item: FollowUp, signal: Signal) -> dict:
+    """对方的新消息对这件事意味着什么：办完了 / 答应了时间 / 只是回应 / 无关。模型出错时当作只是回应（不关闭）。"""
+    from app.proactive.llm import complete_structured
+
+    tz = ZoneInfo(user.timezone)
+    waiting_for = f"{item.title}" + (f"（{item.summary}）" if item.summary else "")
+    sender = (signal.payload or {}).get("from_name") or (signal.payload or {}).get("from") or "对方"
+    try:
+        return await complete_structured(
+            PROGRESS_SYSTEM,
+            f"<now>{datetime.now(tz):%Y-%m-%d %H:%M %A}</now>\n在等的事：{waiting_for}\n\n"
+            f"<message>\n{sender}：《{signal.title}》\n{(signal.body or signal.summary or '')[:3000]}\n</message>\n\n"
+            + "evidence " + i18n.instruction(await language_of(session, user)),
+            PROGRESS_TOOL,
+        )
+    except Exception:  # noqa: BLE001 - 判断失败时不关闭任何事
+        logger.exception("判断进展失败 #%s", item.id)
+        return {"verdict": "ack", "evidence": f"{sender} 回复了《{signal.title}》"}
+
+
+async def apply_mail_progress(session: AsyncSession, user: User, item: FollowUp, signal: Signal, verdict: dict) -> None:
+    """按判断推进：办完 → 结束（起草的跟进邮件作废）；答应了时间 → 到时再核实；只是回应 → 不再催，记下对方说了什么。都告诉他。"""
+    kind, evidence = verdict.get("verdict"), verdict.get("evidence") or signal.title
+    who = item.waiting_on or "对方"
+    if kind == "unrelated":
+        return
+    pending = await session.get(PendingAction, item.action_id) if item.action_id else None
+    if kind == "done":
+        close(item, "done", evidence)
+        if pending and pending.status == "pending":
+            actions.cancel(pending)  # 起草好的跟进邮件用不上了
+        note = f"{who} 那边有结果了：{evidence}"
+    else:
+        if pending and pending.status == "pending":
+            actions.cancel(pending)  # 对方已经回应了，起草的“跟进一下”不合适了
+            item.action_id = None
+        item.summary = ("对方答应了：" if kind == "committed" else "对方回复了：") + evidence
+        due = None
+        if kind == "committed" and verdict.get("due"):
+            try:
+                due = datetime.fromisoformat(verdict["due"])
+                due = due if due.tzinfo else due.replace(tzinfo=ZoneInfo(user.timezone))
+            except ValueError:
+                due = None
+        item.remind_at = due or datetime.now(UTC) + WAITING_REMIND
+        item.due_at = due or item.due_at
+        item.nudges = 0
+        item.next_step = "Relay 会在对方答应的时间核实" if due else "Relay 继续盯着，没结果会提醒你"
+        item.updated_at = datetime.now(UTC)
+        note = f"{who} " + ("答应了：" if kind == "committed" else "回复了：") + evidence
+    if signal.id not in (item.signal_ids or []) and signal.kind != "invitation":
+        item.signal_ids = (item.signal_ids or []) + [signal.id]
+    await add_signal(session, user, "mail", f"progress:{item.id}:{signal.id}", kind="progress", title=note,
+                     payload={"item_id": item.id}, occurred_at=datetime.now(UTC), status="result")
+
+
 async def close_waiting_thread(session: AsyncSession, user: User, signal: Signal, fresh: bool) -> bool:
     """对方在正在等回复的线程里回了信，但不需要他再回（告知、确认、致谢）：这件事结束了，告诉他对方说了什么。"""
+    """对方在正在等回复的线程里回了信（不需要他再回的那种）：对照在等的事判断，办完了才结束。"""
     mail = signal.payload or {}
     thread = mail.get("thread_id")
     waiting = await get_item(session, user, f"mail-thread:{thread}") if thread else None
     if waiting is None or waiting.status != OPEN or waiting.kind != "waiting":
         return False
-    sender = mail.get("from_name") or mail.get("from_address") or "对方"
-    close(waiting, "done", f"{sender} 回复了：{signal.summary or signal.title}")
-    if signal.id not in (waiting.signal_ids or []):
-        waiting.signal_ids = (waiting.signal_ids or []) + [signal.id]
-    signal.status = "result" if fresh else "done"
+    verdict = await judge_progress(session, user, waiting, signal)
+    if verdict.get("verdict") == "unrelated":
+        verdict = {**verdict, "verdict": "ack"}  # 同一个线程里的回信总归是对这件事的回应
+    await apply_mail_progress(session, user, waiting, signal, verdict)
+    signal.status = "done"
     return True
 
 
@@ -442,9 +516,10 @@ async def _counterpart_activity(session: AsyncSession, user: User, item: FollowU
             or_(and_(Signal.kind == "mail", Signal.occurred_at > item.updated_at),
                 and_(Signal.kind == "invitation", Signal.created_at > item.updated_at)),
             Signal.id.notin_(item.signal_ids or [0]),
-        ).order_by(Signal.occurred_at).limit(5)
+        ).order_by(Signal.occurred_at).limit(10)
     )).scalars().all()
-    return next((s for s in rows if not thread or (s.payload or {}).get("thread_id") != thread), None)
+    return next((s for s in rows if (not thread or (s.payload or {}).get("thread_id") != thread)
+                 and item.id not in (s.payload or {}).get("judged_items", [])), None)
 
 
 async def advance(session: AsyncSession, user: User) -> None:
@@ -481,15 +556,11 @@ async def advance(session: AsyncSession, user: User) -> None:
             item.remind_at, item.nudges = datetime.now(UTC) + WAITING_REMIND, 0
             item.updated_at = datetime.now(UTC)
         elif item.kind == "waiting" and item.key.startswith("mail-thread:"):
-            # 对方在别的线程回了信、发来了会议邀请：已经回应了，不再催
+            # 对方在别的线程来信、发来会议邀请：对照在等的事判断是不是对这件事的回应，不是一有动静就关
             activity = await _counterpart_activity(session, user, item, last)
             if activity is not None:
-                what = "发来了会议邀请" if activity.kind == "invitation" or activity.title.lower().startswith(("invitation", "邀请")) \
-                    else "另外来信"
-                close(item, "done", f"{item.waiting_on or '对方'}{what}《{activity.title}》")
-                pending = await session.get(PendingAction, item.action_id) if item.action_id else None
-                if pending and pending.status == "pending":
-                    actions.cancel(pending)  # 起草好的跟进邮件用不上了
+                activity.payload = {**(activity.payload or {}), "judged_items": [*(activity.payload or {}).get("judged_items", []), item.id]}
+                await apply_mail_progress(session, user, item, activity, await judge_progress(session, user, item, activity))
         elif item.kind == "invitation" and last:
             meeting = (await session.execute(
                 select(Signal).where(Signal.user_id == user.id, Signal.kind == "meeting",

@@ -1,5 +1,13 @@
 // Source-language keys keep the existing UI copy searchable. Values are English and Indonesian.
 export const messages: Record<string, readonly [string, string]> = {
+  "私聊里的待办": [
+    "To-dos in private chats",
+    "Tugas dari chat pribadi"
+  ],
+  "开启后，Relay 以你的身份读你和常联系同事之间的私聊，找出别人让你做的事和你在等别人的事，有了结果自动结束。私聊内容只用于你自己的事项。": [
+    "When on, Relay reads your private chats with frequent contacts (as you) to find what others ask of you and what you are waiting on, and closes them when there is a result. Private messages are only used for your own items.",
+    "Jika aktif, Relay membaca chat pribadi Anda dengan kontak yang sering dihubungi (sebagai Anda) untuk menemukan permintaan orang lain dan hal yang Anda tunggu, lalu menutupnya saat ada hasil. Pesan pribadi hanya dipakai untuk urusan Anda sendiri."
+  ],
   "飞书后台开通了新功能，重新登录一次就能用上（例如看私聊里对方的回复）。": [
     "New Feishu permissions were enabled. Log in again to use them (e.g. seeing replies in private chats).",
     "Izin Feishu baru telah diaktifkan. Masuk lagi untuk menggunakannya (mis. melihat balasan di chat pribadi)."

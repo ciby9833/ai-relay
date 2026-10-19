@@ -131,6 +131,7 @@ DEFAULT_SETTINGS = {
         "approval": True,
         "attendance": True,
         "message": True,
+        "private_chat": False,  # 私聊感知：读他和常联系同事的私聊来识别待办，必须他自己开启
     },
     "quiet_start": "21:00",  # 免打扰开始（用户时区）
     "quiet_end": "08:00",
@@ -287,6 +288,8 @@ class ChatMessage(Base):
     text: Mapped[str] = mapped_column(Text)
     mentions: Mapped[list] = mapped_column(JSONB, server_default="[]")  # [{"open_id", "name"}]
     processed: Mapped[bool] = mapped_column(Boolean, server_default="false")  # 是否已提取过待办
+    # 私聊消息属于读取它的那位用户（以他的身份读到的），只用于他自己的事项，永远不给别人当背景；群消息为空
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -21,11 +21,13 @@ from app import i18n
 from app.sources import approval as approval_source
 from app.i18n import user_language
 from app.proactive.settings import language_of, in_quiet_hours, get_settings_row, is_workday, merged
-from app.sources import SYNCERS, calendar, docs
+from app.sources import SYNCERS, UNAVAILABLE, calendar, docs
 
 logger = logging.getLogger("relay.proactive")
 
 MENTION_WAIT = timedelta(hours=2)
+UNAVAILABLE_RETRY = timedelta(days=1)
+P2P_SCOPE = "im:message.p2p_msg:get_as_user"
 WEEKDAYS = "一二三四五六日"
 
 TRIAGE_TOOL = {
@@ -84,13 +86,31 @@ async def sync_sources(session: AsyncSession, feishu: FeishuClient, user: User, 
         state = await _state(session, user, source)
         if not force and state.last_synced_at and state.last_synced_at > now - timedelta(seconds=interval):
             continue
+        cursor = state.cursor or {}
+        if cursor.get("unavailable_until") and datetime.fromisoformat(cursor["unavailable_until"]) > now:
+            continue  # 他没有开通这项服务（例如没有邮箱）：先跳过，到时间再试一次
+        if source == "private_chat" and P2P_SCOPE not in (user.feishu_scopes or "").split():
+            state.last_error = "需要重新登录一次，授权 Relay 读取你的私聊（im:message.p2p_msg:get_as_user）"
+            state.last_synced_at = now
+            await session.commit()
+            continue
         try:
             async with session.begin_nested():
                 created = await sync(session, feishu, user, state)
             state.last_error = None
+            if cursor.get("unavailable_until"):
+                state.cursor = {k: v for k, v in (state.cursor or {}).items() if k != "unavailable_until"}
+                logger.info("%s 的 %s 已恢复", user.name, source)
             if created:
                 logger.info("%s 的 %s 新增 %s 条", user.name, source, created)
         except FeishuError as exc:
+            if exc.code in UNAVAILABLE.get(source, set()):
+                # 例如没有开通飞书邮箱：不算故障、不提醒重新登录，一天后自动再检测
+                state.cursor = {**cursor, "unavailable_until": (now + UNAVAILABLE_RETRY).isoformat()}
+                state.last_error = f"没有开通这项服务，{UNAVAILABLE_RETRY.days} 天后自动再检测：{exc}"[:500]
+                state.last_synced_at = now
+                await session.commit()
+                continue
             state.last_error = str(exc)[:500]
             # 授权过期，或 token 缺少用户身份权限（报错里写着 "under the user identity"）：都要重新登录
             reauth |= needs_reauth(exc)
