@@ -41,19 +41,23 @@ async def _resolve(ctx: ToolContext, names: list[str]) -> list[dict]:
 async def _finish(ctx: ToolContext, action: PendingAction) -> str:
     """准备好的操作：长期任务里若已获授权就直接执行，否则等用户确认。"""
     mission = ctx.mission
+    blocked = None
     if mission is not None:
         from app.missions import service  # 避免循环导入
 
         action.mission_id = mission.id
-        if action.kind in (mission.grants or []):
+        if action.kind == "send_chat" and action.kind in (mission.grants or []):
+            blocked = await service.auto_send_blocked(ctx.session, mission, ctx.user, action)
+        if action.kind in (mission.grants or []) and not blocked:
             result = await actions.execute(ctx.session, ctx.feishu, ctx.user, action)
             await service.log(ctx.session, mission, "action", f"按你的授权自动执行：{result}")
             if action.status != "done":
                 raise ToolError(result)
             return f"{result}（这类操作用户已授权在本任务里自动执行）"
-        await service.log(ctx.session, mission, "action", f"准备了「{action.summary}」，等你确认")
+        await service.log(ctx.session, mission, "action", f"准备了「{action.summary}」，等你确认" + (f"（{blocked}）" if blocked else ""))
     ctx.cards.append({"kind": "action", "action_id": action.id})
-    return f"已准备好（待确认操作 #{action.id}）：{action.summary}。用户确认后才会执行。"
+    reason = f"虽然用户授权了这类操作，但{blocked}。" if blocked else ""
+    return f"已准备好（待确认操作 #{action.id}）：{action.summary}。{reason}用户确认后才会执行。"
 
 
 def _parse_time(value: str, timezone: str) -> datetime:

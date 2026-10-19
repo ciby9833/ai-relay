@@ -280,12 +280,15 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
         elif action.kind == "send_chat":
             p = action.payload
             if p.get("as_user", False):
-                await im.send_as_user(feishu, user, p["receive_id"], p["receive_id_type"], p["body"])
+                sent = await im.send_as_user(feishu, user, p["receive_id"], p["receive_id_type"], p["body"])
             else:
-                await feishu.tenant_api(
+                sent = await feishu.tenant_api(
                     "POST", "/im/v1/messages", params={"receive_id_type": p["receive_id_type"]},
                     json={"receive_id": p["receive_id"], **rich_text(f"_{relay_signature(user)}_\n\n{p['body']}")},
                 )
+            # 记下消息落在哪个会话（私聊也有 chat_id），长期任务据此去等对方回复
+            action.payload = {**p, "chat_id": (sent or {}).get("chat_id") or (p["receive_id"] if p["receive_id_type"] == "chat_id" else None),
+                              "sent_at": datetime.now(UTC).isoformat()}
             result = f"已{action.summary}"
         elif action.kind == "create_task":
             p = action.payload

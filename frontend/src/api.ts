@@ -49,6 +49,8 @@ export interface MissionData {
   id: number;
   title: string;
   goal: string;
+  instruction?: string | null;
+  due_at?: string | null;
   status: "active" | "waiting" | "asking" | "done" | "failed" | "cancelled";
   plan: { step: string; status: "todo" | "done" }[];
   notes: string | null;
@@ -237,11 +239,22 @@ export class ApiError extends Error {
   }
 }
 
+// 后端的 detail 可能是字符串，也可能是校验错误列表（[{msg, loc}, ...]）：都转成能读的一句话
+function errorText(body: unknown, status: number): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((d) => (typeof d === "string" ? d : (d as { msg?: string })?.msg)).filter(Boolean);
+    if (parts.length) return parts.join("；");
+  }
+  return t("请求失败 ({p0})", { p0: status });
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, { credentials: "same-origin", ...init });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new ApiError(response.status, body?.detail ?? t("请求失败 ({p0})", { p0: response.status }));
+    throw new ApiError(response.status, errorText(body, response.status));
   }
   return response.json();
 }
@@ -311,7 +324,7 @@ export async function sendMessage(
   });
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => null);
-    throw new ApiError(response.status, body?.detail ?? t("请求失败 ({p0})", { p0: response.status }));
+    throw new ApiError(response.status, errorText(body, response.status));
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

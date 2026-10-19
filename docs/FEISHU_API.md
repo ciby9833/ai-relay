@@ -195,6 +195,7 @@ X-Relay-Signature: hex(HMAC-SHA256(密钥, "{timestamp}.{请求体原文}"))
 | 多维表格 | `bitable:app:readonly` / `base:table:read` |
 | 新建、追加文档 | 文档创建/编辑接口页列出的写权限 |
 | 用户身份搜群 | `im:chat:readonly` |
+| 长期任务查对方在私聊里的回复 | `im:message.p2p_msg:get_as_user`（没开时只能到点再看） |
 | 飞书任务 | `task:task:write` |
 
 所有接口还受用户本人对目标资源的访问级别限制。官方说明：[配置权限](https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-add-permissions-to-app)、[错误 99991679](https://open.feishu.cn/document/uAjLw4CM/ugTN1YjL4UTN24CO1UjN/trouble-shooting/how-to-resolve-error-99991679)。

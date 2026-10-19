@@ -172,8 +172,19 @@ async def board(session: SessionDep, user: UserDep):
     }
 
 
-@router.post("/items/{item_id}/{decision}")
-async def close_item(item_id: int, decision: Literal["done", "dismiss"], session: SessionDep, user: UserDep):
+# 写成两条固定路径：用 /items/{id}/{decision} 这种通配会先于后面的 /items/{id}/approval 匹配，
+# 把批准请求当成 decision="approval" 拦下来返回 422
+@router.post("/items/{item_id}/done")
+async def mark_item_done(item_id: int, session: SessionDep, user: UserDep):
+    return await _close_item(item_id, "done", session, user)
+
+
+@router.post("/items/{item_id}/dismiss")
+async def dismiss_item(item_id: int, session: SessionDep, user: UserDep):
+    return await _close_item(item_id, "dismiss", session, user)
+
+
+async def _close_item(item_id: int, decision: Literal["done", "dismiss"], session, user):
     item = await session.get(FollowUp, item_id)
     if item is None or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="事项不存在")

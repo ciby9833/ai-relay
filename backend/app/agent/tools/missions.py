@@ -5,12 +5,13 @@
 """
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.agent.tools.base import ToolContext, ToolError, tool
 from app.missions import service
-from app.models import Mission, Signal
+from app.models import Message, Mission, PendingAction, Signal
 
 CHAT = {"home", "web", "feishu"}
 MISSION = {"mission"}
@@ -29,6 +30,21 @@ def _current(ctx: ToolContext) -> Mission:
     return ctx.mission
 
 
+async def _user_words(ctx: ToolContext) -> str | None:
+    """用户这一轮说的原话（不含系统附加的 context 块）。"""
+    if ctx.conversation is None:
+        return None
+    row = (await ctx.session.execute(
+        select(Message).where(Message.conversation_id == ctx.conversation.id, Message.role == "user")
+        .order_by(Message.created_at.desc(), Message.id.desc()).limit(5)
+    )).scalars().all()
+    for message in row:
+        texts = [b.get("text", "") for b in message.content if b.get("type") == "text" and not b.get("meta")]
+        if any(t.strip() for t in texts):
+            return "\n".join(texts).strip()[:2000]
+    return None
+
+
 # ---------- 对话里 ----------
 
 
@@ -36,16 +52,29 @@ def _current(ctx: ToolContext) -> Mission:
     "start_mission",
     "把一件需要持续推进、跨越几小时到几周的事交给 Relay 在后台办，例如“盯着客户A的报价直到他确认”"
     "“约张三李四下周开会并跟到都接受”“每天下班前看看这几个需求有没有进展”。"
-    "一次就能办完的事不要用这个，直接做。goal 要写清楚做到什么程度算完成、有什么约束。",
+    "一次就能办完的事不要用这个，直接做。用户的原话会被原样保存，作为判断办成没有的依据。"
+    "goal 只复述用户要的结果，不要添加用户没提的要求（用户说“让他给个结果”，就不要写成“给出具体清单”）。",
     {
         "title": {"type": "string", "description": "简短的任务名"},
-        "goal": {"type": "string", "description": "目标、完成标准和约束"},
+        "goal": {"type": "string", "description": "用户要的结果和约束，忠实于原话"},
+        "due_at": {"type": "string", "description": "只有用户原话里提到了时间（“今天下班前”“周五”“月底”）才填，"
+                   "换算成 ISO 8601 本地时间，例如 2026-10-23T18:00；没提就不填，不要自己定"},
     },
     ["title", "goal"],
     channels=CHAT,
 )
 async def start_mission(ctx: ToolContext, args: dict) -> str:
-    mission = await service.create(ctx.session, ctx.user, args["title"], args["goal"])
+    due_at = None
+    if args.get("due_at"):
+        try:
+            due_at = datetime.fromisoformat(args["due_at"])
+        except ValueError:
+            raise ToolError("due_at 需要 ISO 8601 格式，例如 2026-10-23T18:00") from None
+        if due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=ZoneInfo(ctx.user.timezone))
+    mission = await service.create(
+        ctx.session, ctx.user, args["title"], args["goal"], instruction=await _user_words(ctx), due_at=due_at,
+    )
     ctx.cards.append(service.card(mission))
     return (
         f"已接下长期任务 #{mission.id}，Relay 会在后台开始推进（半分钟内第一次行动），进展会在主线里汇报。"
@@ -193,12 +222,14 @@ async def wait_until(ctx: ToolContext, args: dict) -> str:
 
 @tool(
     "wait_for_reply",
-    "等对方回复再继续：mail 等某封邮件线程有新回信；chat 等某个群里（某人）发言。超时没等到也会叫醒你。"
+    "等对方回复再继续：mail 等某封邮件线程有新回信；chat 等某个会话（群聊或私聊）里对方发言，"
+    "不传 chat_id 时默认等本任务最近一条发出的消息所在的会话。对方一回复就会叫醒你，超时没等到也会叫醒你。"
+    "用户原话没提时间时，超时最早到下一个工作日上午（不要当天反复催人）。"
     "你准备的待确认操作被用户处理后，也会自动叫醒你，不需要专门等。",
     {
         "kind": {"type": "string", "enum": ["mail", "chat"]},
         "mail_id": {"type": "integer", "description": "kind=mail 时：那封邮件的编号"},
-        "chat_id": {"type": "string", "description": "kind=chat 时：群的 chat_id"},
+        "chat_id": {"type": "string", "description": "kind=chat 时可选：会话的 chat_id"},
         "from_name": {"type": "string", "description": "kind=chat 时可选：只等这个人发言"},
         "timeout_hours": {"type": "number", "minimum": 1, "maximum": 336},
     },
@@ -207,15 +238,27 @@ async def wait_until(ctx: ToolContext, args: dict) -> str:
 )
 async def wait_for_reply(ctx: ToolContext, args: dict) -> str:
     mission = _current(ctx)
+    now = datetime.now(UTC)
     if args["kind"] == "mail":
         signal = await ctx.session.get(Signal, args.get("mail_id") or 0)
         if signal is None or signal.user_id != ctx.user.id or signal.kind != "mail":
             raise ToolError("需要一封已同步邮件的编号")
         wait = {"type": "mail_reply", "thread_id": signal.payload.get("thread_id") or signal.external_id}
     else:
-        if not args.get("chat_id"):
-            raise ToolError("需要 chat_id")
-        wait = {"type": "chat_message", "chat_id": args["chat_id"]}
+        last_sent = (await ctx.session.execute(
+            select(PendingAction).where(PendingAction.mission_id == mission.id, PendingAction.kind == "send_chat",
+                                        PendingAction.status == "done").order_by(PendingAction.decided_at.desc()).limit(1)
+        )).scalars().first()
+        chat_id = args.get("chat_id") or (last_sent.payload.get("chat_id") if last_sent else None)
+        if not chat_id:
+            raise ToolError("需要 chat_id：这个任务还没有发出过消息，先发消息或指定要等的群")
+        same = last_sent is not None and last_sent.payload.get("chat_id") == chat_id
+        wait = {
+            "type": "chat_message", "chat_id": chat_id,
+            "chat_name": (last_sent.payload.get("to") if same else None) or args.get("chat_name"),
+            # 从消息发出时开始算：发出后到现在之间的回复也算
+            "since": (last_sent.payload.get("sent_at") if same and last_sent.payload.get("sent_at") else now.isoformat()),
+        }
         if args.get("from_name"):
             from app.sources import people
 
@@ -225,11 +268,19 @@ async def wait_for_reply(ctx: ToolContext, args: dict) -> str:
                 found = []
             if found:
                 wait |= {"from_open_id": found[0]["open_id"], "from_name": found[0]["name"]}
-    mission.status, mission.wait_for = "waiting", wait
-    mission.next_run_at = datetime.now(UTC) + timedelta(hours=args.get("timeout_hours", 24))
+    timeout = now + timedelta(hours=args.get("timeout_hours", 24))
+    note = ""
+    if mission.due_at:
+        timeout = min(timeout, max(mission.due_at, now + timedelta(minutes=30)))
+    else:
+        earliest = service.next_work_morning(ctx.user.timezone, now)
+        if timeout < earliest:
+            timeout, note = earliest, "（用户没提时间，按默认节奏下一个工作日上午再看）"
+    mission.status, mission.wait_for, mission.next_run_at = "waiting", wait, timeout
     ctx.stop_turn = True
-    await service.log(ctx.session, mission, "step", f"等{service.describe_wait(wait)}")
-    return "好的，等到了会叫醒你。这一轮到此为止。"
+    local = timeout.astimezone(ZoneInfo(ctx.user.timezone))
+    await service.log(ctx.session, mission, "step", f"等{service.describe_wait(wait)}，最晚 {local:%m-%d %H:%M} 回来看{note}")
+    return f"好的，对方一回复就会叫醒你；最晚 {local:%m-%d %H:%M} 回来看{note}。这一轮到此为止。"
 
 
 @tool(

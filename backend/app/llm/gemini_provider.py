@@ -1,3 +1,4 @@
+import base64
 import uuid
 from collections.abc import AsyncIterator
 
@@ -5,6 +6,9 @@ from google import genai
 from google.genai import errors, types
 
 from app.llm.base import Completion, LLMError, StopReason, TextDelta
+
+
+SKIP_SIGNATURE = b"skip_thought_signature_validator"
 
 
 def to_gemini_contents(messages: list[dict]) -> list[types.Content]:
@@ -21,7 +25,10 @@ def to_gemini_contents(messages: list[dict]) -> list[types.Content]:
             elif block["type"] == "tool_use":
                 parts.append(
                     types.Part(
-                        function_call=types.FunctionCall(name=block["name"], args=block["input"])
+                        function_call=types.FunctionCall(name=block["name"], args=block["input"]),
+                        # Gemini 3 校验历史里函数调用的思考签名：存了就原样带回；没有（旧记录、换过模型）
+                        # 用官方给的占位签名，否则整段历史会被 400 拒绝（长期任务跨多次醒来时必然遇到）
+                        thought_signature=base64.b64decode(block["signature"]) if block.get("signature") else SKIP_SIGNATURE,
                     )
                 )
             elif block["type"] == "tool_result":
@@ -94,6 +101,7 @@ class GeminiProvider:
                                 "id": call.id or f"call_{uuid.uuid4().hex[:24]}",
                                 "name": call.name,
                                 "input": dict(call.args or {}),
+                                **({"signature": base64.b64encode(part.thought_signature).decode()} if part.thought_signature else {}),
                             }
                         )
                     elif part.text and not part.thought:

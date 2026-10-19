@@ -6,6 +6,7 @@
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import delete, select
@@ -46,6 +47,7 @@ class FakeFeishu:
     def __init__(self):
         self.sent: list[dict] = []
         self.cards: list[dict] = []
+        self.replies: list[dict] = []  # 以用户身份拉取会话消息时返回的内容
 
     async def send_card(self, open_id, card, fallback):
         self.cards.append(card)
@@ -55,9 +57,11 @@ class FakeFeishu:
         pass
 
     async def user_api(self, user, method, path, **kwargs):
+        if path == "/im/v1/messages" and method == "GET":  # 以用户本人身份查会话里的新消息
+            return {"items": self.replies}
         if path == "/im/v1/messages":  # 以用户本人身份发消息
             self.sent.append({**kwargs["json"], "as_user": True})
-            return {"message_id": "om_u"}
+            return {"message_id": "om_u", "chat_id": "oc_p2p_" + kwargs["json"]["receive_id"]}
         from app.feishu.client import FeishuError
 
         raise FeishuError("测试中没有用户授权")
@@ -84,6 +88,7 @@ async def test_mission_lifecycle(monkeypatch):
     provider = ScriptedProvider()
     monkeypatch.setattr(memory_service, "embed", no_embedding)
     monkeypatch.setattr(registry, "resolve", lambda model_id: (provider, "fake", "fake:fake"))
+    monkeypatch.setattr(service, "in_work_hours", lambda *args, **kwargs: True)
     feishu = FakeFeishu()
 
     async with SessionLocal() as session:
@@ -149,7 +154,7 @@ async def test_mission_lifecycle(monkeypatch):
         provider.add(call("ask_user", question="Andrew 说明天上午发，要不要同步给财务？"))  # 决定了接下来怎么办，这一轮就结束
         async with SessionLocal() as session:
             await service.run_due(session, feishu)
-        assert "[群里有新消息]" in provider.prompts[-2] and "明天上午发你" in provider.prompts[-2]
+        assert "[对方回复了]" in provider.prompts[-2] and "明天上午发你" in provider.prompts[-2]
         assert '好的，谢谢！' in feishu.sent[-1]["content"] and '"tag": "md"' in feishu.sent[-1]["content"]  # 已授权：直接发出（富文本）
         m = await mission_now()
         assert m.status == "asking" and "财务" in m.question
@@ -258,3 +263,161 @@ async def test_meeting_prepare_confirm_and_track_responses(monkeypatch):
             await session.execute(delete(Person).where(Person.open_id.in_(["ou_a", "ou_n"])))
             await session.commit()
             await engine.dispose()
+
+
+async def test_model_failure_never_leaves_mission_asleep_forever(monkeypatch):
+    """模型调用失败后要能按时重试：以前恢复成 waiting 却清掉了等待条件，任务就再也不会醒。"""
+    from app.db import SessionLocal, engine
+    from app.llm import registry
+    from app.llm.base import LLMError
+    from app.missions import service
+    from app.models import Conversation, Mission, User
+
+    class Failing:
+        name = "fake"
+
+        async def stream(self, **kwargs):
+            raise LLMError("Gemini 接口错误 (400)")
+            yield  # pragma: no cover
+
+    monkeypatch.setattr(registry, "resolve", lambda model_id: (Failing(), "fake", "fake:fake"))
+    async with SessionLocal() as session:
+        user = User(feishu_open_id=f"ou_{uuid.uuid4().hex}", name="Quillan", timezone="Asia/Jakarta")
+        session.add(user)
+        await session.flush()
+        conversation = Conversation(user_id=user.id, channel="mission", title="t")
+        session.add(conversation)
+        await session.flush()
+        mission = Mission(user_id=user.id, conversation_id=conversation.id, title="t", goal="g", status="waiting",
+                          wait_for={"type": "chat_message", "chat_id": "oc_x"}, next_run_at=datetime.now(UTC) - timedelta(minutes=1))
+        session.add(mission)
+        await session.commit()
+        user_id, mission_id = user.id, mission.id
+    try:
+        async with SessionLocal() as session:
+            await service.run(session, None, await session.get(Mission, mission_id), "[等待超时]")
+        async with SessionLocal() as session:
+            m = await session.get(Mission, mission_id)
+            assert m.status == "waiting" and m.wait_for == {"type": "chat_message", "chat_id": "oc_x"}
+            assert m.next_run_at > datetime.now(UTC)
+            # 已经卡住的旧数据（waiting 但没有等待条件）到点也要醒
+            m.wait_for, m.next_run_at = None, datetime.now(UTC) - timedelta(minutes=1)
+            await session.commit()
+            assert await service.wake_reason(session, m) == "[到点了] 按计划回来看看进展"
+    finally:
+        async with SessionLocal() as session:
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+        await engine.dispose()
+
+
+
+async def test_reply_rules_polling_timing_and_auto_send_limits(monkeypatch):
+    """复盘 #18 后的规则：以用户身份查回复、没提时间不当天反复催、换会话/催多了/下班后要确认、对方回复一定告诉用户。"""
+    from app.agent.tools.base import ToolContext, execute
+    from app.db import SessionLocal, engine
+    from app.llm import registry
+    from app.missions import service
+    from app.models import Conversation, Message, Mission, MissionLog, PendingAction, User
+
+    provider = ScriptedProvider()
+    monkeypatch.setattr(registry, "resolve", lambda model_id: (provider, "fake", "fake:fake"))
+    feishu = FakeFeishu()
+    feishu.user_name = lambda open_id: _name(open_id)
+
+    async with SessionLocal() as session:
+        user = User(feishu_open_id=f"ou_{uuid.uuid4().hex}", name="Quillan", timezone="Asia/Jakarta")
+        session.add(user)
+        await session.flush()
+        home = Conversation(user_id=user.id, channel="home", title="主线")
+        session.add(home)
+        await session.flush()
+        session.add(Message(conversation_id=home.id, role="user", content=[
+            {"type": "text", "text": "<context>…</context>", "meta": "context"},
+            {"type": "text", "text": "提醒下 Nikki 把需求进度同步给需求人，让他给个结果，帮我盯着"},
+        ]))
+        await session.commit()
+        user_id = user.id
+    try:
+        async with SessionLocal() as session:
+            user = await session.get(User, user_id)
+            home = (await session.execute(select(Conversation).where(Conversation.user_id == user_id))).scalars().first()
+            ctx = ToolContext(session, user, home, feishu)
+            await execute(ctx, "start_mission", {"title": "盯 Nikki", "goal": "让 Nikki 给个结果"})
+            mission = (await session.execute(select(Mission).where(Mission.user_id == user_id))).scalars().one()
+            assert mission.instruction == "提醒下 Nikki 把需求进度同步给需求人，让他给个结果，帮我盯着"
+            assert mission.due_at is None
+            mission.grants = ["send_chat"]
+            # 第一条消息已由用户确认发出（私聊）
+            first = PendingAction(user_id=user_id, kind="send_chat", summary="给 Nikki 发消息", status="done", mission_id=mission.id,
+                                  decided_at=datetime.now(UTC),
+                                  payload={"receive_id": "ou_nikki", "receive_id_type": "open_id", "to": "Nikki", "body": "记得同步",
+                                           "chat_id": "oc_p2p_nikki", "sent_at": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()})
+            session.add(first)
+            await session.commit()
+
+            mctx = ToolContext(session, user, await session.get(Conversation, mission.conversation_id), feishu, mission=mission)
+            # 没提时间：等回复的超时最早到下一个工作日上午，并默认等刚才那条消息所在的私聊
+            text, error = await execute(mctx, "wait_for_reply", {"kind": "chat", "timeout_hours": 2}, user_initiated=False)
+            assert not error, text
+            assert mission.wait_for["chat_id"] == "oc_p2p_nikki"
+            assert mission.next_run_at >= service.next_work_morning(user.timezone) - timedelta(seconds=5)
+            mission.updated_at = datetime.now(UTC)  # 和真实一轮结束时一样
+            await session.commit()
+
+            # 自己发的消息不算回复；对方在私聊里回了（机器人收不到，靠用户身份拉取）
+            assert await service.wake_reason(session, mission, feishu) is None
+            sent_at = int((datetime.now(UTC) - timedelta(minutes=1)).timestamp() * 1000)
+            feishu.replies = [
+                {"sender": {"id": user.feishu_open_id, "sender_type": "user"}, "msg_type": "text",
+                 "body": {"content": '{"text": "记得同步"}'}, "create_time": str(sent_at)},
+                {"sender": {"id": "ou_nikki", "sender_type": "user"}, "msg_type": "text",
+                 "body": {"content": '{"text": "1"}'}, "create_time": str(sent_at + 1000)},
+                {"sender": {"id": "ou_nikki", "sender_type": "user"}, "msg_type": "text",
+                 "body": {"content": '{"text": "预计月底前完成"}'}, "create_time": str(sent_at + 2000)},
+            ]
+            reason = await service.wake_reason(session, mission, feishu)
+            assert reason.startswith(service.REPLY_MARK) and "预计月底前完成" in reason and "记得同步" not in reason
+            assert "承诺了时间" in service.briefing(mission, reason, user)
+
+            # 模型没汇报：对方回复了也要告诉用户
+            provider.add(call("wait_until", hours=24))
+            await service.run(session, feishu, mission, reason)
+            reports = (await session.execute(select(MissionLog.text).where(
+                MissionLog.mission_id == mission.id, MissionLog.kind == "report"))).scalars().all()
+            assert any("预计月底前完成" in r for r in reports)
+
+            # 自动发消息的边界
+            monkeypatch.setattr(service, "in_work_hours", lambda *args, **kwargs: True)
+            group = PendingAction(user_id=user_id, kind="send_chat", summary="群里催", mission_id=mission.id,
+                                  payload={"receive_id": "oc_group", "receive_id_type": "chat_id"})
+            assert "新的会话" in await service.auto_send_blocked(session, mission, user, group)
+            again = PendingAction(user_id=user_id, kind="send_chat", summary="再催", mission_id=mission.id,
+                                  payload={"receive_id": "ou_nikki", "receive_id_type": "open_id"})
+            assert await service.auto_send_blocked(session, mission, user, again) is None
+            for _ in range(service.MAX_NUDGES):
+                session.add(PendingAction(user_id=user_id, kind="send_chat", summary="催", status="done", mission_id=mission.id,
+                                          payload={"receive_id": "ou_nikki", "receive_id_type": "open_id"}))
+            await session.flush()
+            assert "已经发过" in await service.auto_send_blocked(session, mission, user, again)
+            monkeypatch.setattr(service, "in_work_hours", lambda *args, **kwargs: False)
+            await session.execute(delete(PendingAction).where(PendingAction.mission_id == mission.id, PendingAction.summary == "催"))
+            assert "工作时间" in await service.auto_send_blocked(session, mission, user, again)
+            await session.rollback()
+    finally:
+        async with SessionLocal() as session:
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+        await engine.dispose()
+
+
+async def _name(open_id):
+    return {"ou_nikki": "Nikki"}.get(open_id)
+
+
+def test_next_work_morning_skips_weekend():
+    from app.missions import service
+
+    friday_evening = datetime(2026, 10, 23, 11, 0, tzinfo=UTC)  # 雅加达周五 18:00
+    monday = service.next_work_morning("Asia/Jakarta", friday_evening)
+    assert monday.astimezone(ZoneInfo("Asia/Jakarta")).strftime("%a %H:%M") == "Mon 09:30"

@@ -59,7 +59,8 @@ async def recent_messages(feishu: FeishuClient, user: User, chat_id: str, hours:
     return messages[::-1]
 
 
-async def send_as_user(feishu: FeishuClient, user: User, receive_id: str, receive_id_type: str, text: str) -> None:
-    await feishu.user_api(user, "POST", "/im/v1/messages", params={"receive_id_type": receive_id_type}, json={
+async def send_as_user(feishu: FeishuClient, user: User, receive_id: str, receive_id_type: str, text: str) -> dict:
+    """以用户本人身份发消息；返回飞书的消息记录（含 chat_id，私聊也有，用来之后查对方的回复）。"""
+    return await feishu.user_api(user, "POST", "/im/v1/messages", params={"receive_id_type": receive_id_type}, json={
         "receive_id": receive_id, **rich_text(text),
     })

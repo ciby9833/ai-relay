@@ -50,6 +50,7 @@ async def mission_json(session: AsyncSession, mission: Mission, logs: int = 0) -
     )).scalars().all()
     data = {
         "id": mission.id, "title": mission.title, "goal": mission.goal, "status": mission.status,
+        "instruction": mission.instruction, "due_at": mission.due_at.isoformat() if mission.due_at else None,
         "plan": mission.plan, "notes": mission.notes, "grants": mission.grants, "question": mission.question,
         "result": mission.result, "runs": mission.runs,
         "waiting_for": mission_service.describe_wait(mission.wait_for) if mission.status == "waiting" and mission.wait_for else None,

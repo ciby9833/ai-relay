@@ -299,6 +299,10 @@ class Mission(Base):
     conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
     title: Mapped[str] = mapped_column(String(255))
     goal: Mapped[str] = mapped_column(Text)
+    # 用户交代这件事时的原话（逐字保存）：判断“办成没有”以原话为准，不以 Relay 改写的 goal 为准
+    instruction: Mapped[str | None] = mapped_column(Text)
+    # 原话里提到的截止/复查时间；没提时为空，催人节奏按默认规则（下一个工作日上午）
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # active（等时间）| waiting（等事件）| asking（等用户回答）| done | failed | cancelled
     status: Mapped[str] = mapped_column(String(16), server_default="active")
     plan: Mapped[list] = mapped_column(JSONB, server_default="[]")  # [{"step", "status": todo|doing|done}]

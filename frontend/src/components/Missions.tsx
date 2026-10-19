@@ -56,7 +56,9 @@ function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<st
           </span>
         )}
       </header>
+      {mission.instruction && <p className="mission-goal">{t("你交代的：")}「{mission.instruction}」</p>}
       <p className="mission-goal">{mission.goal}</p>
+      {mission.due_at && <p className="muted small">{t("截止 / 复查：")}{dayLabel(mission.due_at)} {timeOf(mission.due_at)}</p>}
       <p className="muted small">
         {t("runCount", { count: mission.runs })}
         {mission.status === "waiting" && mission.waiting_for ? t(" · 正在等{p0}", { p0: mission.waiting_for }) : ""}
