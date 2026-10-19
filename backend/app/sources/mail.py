@@ -149,7 +149,10 @@ async def list_folder(feishu: FeishuClient, user: User, folder: str, limit: int 
 
 
 QUOTE = re.compile(
-    r"\n\s*(On .{5,200}wrote:|在 .{5,100}写道[:：]|发件人[:：]|From:\s|-{3,}\s*Original Message|-{5,}|>)", re.S,
+    r"(\n\s*(On .{5,200}wrote:|在 .{5,100}写道[:：]|发件人[:：]|From:\s|-{3,}\s*Original Message|-{5,}|>)"
+    # 有的邮件纯文本没有换行，引用头和正文挤在一行：From: "张三"<a@b.com> / 发件人： "张三"<a@b.com>
+    r"|\s(From|发件人)[:：]\s*\"?[^<\n]{0,80}<[^>\s]+@[^>\s]+>)",
+    re.S,
 )
 
 

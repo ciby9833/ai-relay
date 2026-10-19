@@ -13,6 +13,9 @@ def test_strip_quote_keeps_only_new_text():
     assert strip_quote(text) == "Joining now, see you."
     assert strip_quote("好的，周一见\n\n发件人：Fiona\n主题：Re") == "好的，周一见"
     assert strip_quote("没有引用") == "没有引用"
+    inline = 'We can proceed as scheduled. Thank you! Best regards, Wu Chuan From: "Fiona Cheong"<fiona@sales.openai.com> Date: Mon'
+    assert strip_quote(inline) == "We can proceed as scheduled. Thank you! Best regards, Wu Chuan"
+    assert strip_quote("Meet me at the front desk. From now on we use room B.") == "Meet me at the front desk. From now on we use room B."
 
 
 db = pytest.mark.skipif(not os.getenv("RUN_DB_TESTS"), reason="需要 RUN_DB_TESTS=1 和数据库")
