@@ -267,7 +267,7 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
             if p.get("before") is not None and await cloud.before_write(feishu, user, p["operation"], p["arguments"]) != p["before"]:
                 raise ActionError("原内容已变化，本次未写入。请重新读取并准备修改，让用户确认最新预览。")
             data = await cloud.call(feishu, user, p["operation"], p["arguments"], allow_write=True,
-                client_token=str(uuid.uuid5(uuid.NAMESPACE_URL, f"relay:{user.id}:{action.id}")))
+                client_token=idempotency_key(user, action))
             action.payload = {**p, "response": data}
             result = cloud_result(action.summary, p["operation"], data)
         elif action.kind == "send_mail":
@@ -295,7 +295,7 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
             p = action.payload
             try:
                 record = await bitable.add_record(feishu, user, p["app_token"], p["table_id"], p["fields"],
-                                                  client_token=str(uuid.uuid5(uuid.NAMESPACE_URL, f"relay:{user.id}:{action.id}")))
+                                                  client_token=idempotency_key(user, action))
             except FeishuError as exc:
                 if needs_reauth(exc):
                     raise
@@ -405,6 +405,15 @@ def confirm_card(action: PendingAction) -> tuple[dict, str]:
         cards.callback(i18n.ui("cancel"), "cancel", action_id=action.id),
     ]
     return cards.card(i18n.ui("pending_confirm", x=action.summary), text, buttons, "wathet"), f"{action.summary}\n\n{text}"
+
+
+def idempotency_key(user: User, action: PendingAction) -> str:
+    """飞书写接口的 client_token：同一个操作重试时不变（不会重复写入），格式必须是标准 UUID v4。
+
+    uuid5 是 v5 格式，飞书会拒绝（Invalid client token）；取它的字节、把版本位改成 4。
+    """
+    seed = uuid.uuid5(uuid.NAMESPACE_URL, f"relay:{user.id}:{action.id}")
+    return str(uuid.UUID(bytes=seed.bytes, version=4))
 
 
 def relay_signature(user: User) -> str:

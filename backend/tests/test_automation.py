@@ -124,3 +124,16 @@ async def test_scheduled_task_grant_auto_run_revoke_and_undo():
             await session.execute(delete(User).where(User.id == user_id))
             await session.commit()
             await engine.dispose()
+
+
+def test_client_token_is_stable_uuid_v4():
+    import uuid as _uuid
+
+    from app.proactive.actions import idempotency_key
+
+    user, action = SimpleNamespace(id="u1"), SimpleNamespace(id=42)
+    key = idempotency_key(user, action)
+    parsed = _uuid.UUID(key)
+    assert parsed.version == 4 and parsed.variant == _uuid.RFC_4122
+    assert key == idempotency_key(user, action)  # 同一个操作重试时不变
+    assert key != idempotency_key(user, SimpleNamespace(id=43))
