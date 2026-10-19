@@ -3,7 +3,7 @@
 只开放两类场景：
 - 理解：浏览知识库、云空间，读表格和多维表格，帮 Relay 弄懂背景、回答问题（读文档正文用 read_feishu_doc）；
 - 产出：把整理好的内容写成一份新文档、追加到已有文档末尾，或按单元格填别人发来的表格，都要用户确认。
-其余操作（覆盖表格、改记录、建知识库节点、画板、订阅等）在 sources/cloud.py 里保留实现，需要时再加入 EXPOSED。
+多维表格新增记录见 tools/bitable.py。其余操作（覆盖表格、改记录、建知识库节点、画板、订阅等）在 sources/cloud.py 里保留实现，需要时再加入 EXPOSED。
 """
 import json
 
@@ -14,7 +14,7 @@ from app.sources import cloud, sheets
 
 EXPOSED = (
     "list_wiki_spaces", "list_wiki_nodes", "list_drive_files",
-    "list_base_tables", "list_base_fields", "list_base_records",
+    "list_base_tables", "list_base_records",
     "create_doc", "append_doc_text",
 )
 

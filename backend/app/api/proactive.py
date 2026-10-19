@@ -8,13 +8,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app import insights
+from app import automation, insights
 from app.db import SessionLocal
 from fastapi.responses import RedirectResponse
 from app.deps import FeishuDep, SessionDep, UserDep
 from app.home import post
 from app.llm.base import LLMError
-from app.models import FollowUp, PendingAction, Signal, SourceState, User
+from app.models import FollowUp, PendingAction, ScheduledTask, Signal, SourceState, User
 from app.proactive import actions, cards, items
 from app.proactive.engine import morning_brief, sync_sources
 from app.proactive.settings import get_settings_row, merged
@@ -59,19 +59,32 @@ async def list_actions(session: SessionDep, user: UserDep):
 
 @router.post("/actions/{action_id}/{decision}")
 async def decide_action(
-    action_id: int, decision: Literal["confirm", "cancel"], session: SessionDep, user: UserDep, feishu: FeishuDep
+    action_id: int, decision: Literal["confirm", "cancel", "grant", "undo"], session: SessionDep, user: UserDep, feishu: FeishuDep
 ):
+    """confirm 执行；cancel 不用了；grant 执行并授权所属定时任务以后直接办；undo 撤销一次已执行的操作。"""
     try:
         action = await actions.own_action(session, user, action_id)
     except actions.ActionError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if decision == "confirm":
+    if decision == "undo":
+        message = await automation.undo(session, feishu, user, action)
+        await session.commit()
+        if action.undone_at is None:
+            raise HTTPException(status_code=400, detail=message)
+        return {"message": message, "status": action.status}
+    if decision in ("confirm", "grant"):
         message = await actions.execute(session, feishu, user, action)
+        if decision == "grant" and action.status == "done" and action.scheduled_task_id:
+            task = await session.get(ScheduledTask, action.scheduled_task_id)
+            if task is not None and task.user_id == user.id:
+                label = automation.grant_task(task, action)
+                message = f"{message}。以后《{task.title}》会直接{label}"
+                await insights.record(session, user, "grant", action=action)
     else:
         message = actions.cancel(action)
         await insights.record(session, user, "cancel", action=action)
     await session.commit()
-    if decision == "confirm" and action.status != "done":
+    if decision in ("confirm", "grant") and action.status != "done":
         # 没执行成功：让前端把原因显示在卡片上
         raise HTTPException(status_code=400, detail=message)
     return {"message": message, "status": action.status}
@@ -304,3 +317,27 @@ async def open_original(item_id: int, u: str, s: str, f: str = "web"):
 async def get_insights(session: SessionDep, user: UserDep, days: int = 7):
     """这段时间他怎么处理的：多少件不看原文就处理了、多少件替他办掉了、哪些类别他总是同样处理。"""
     return await insights.summary(session, user, max(1, min(days, 90)))
+
+
+@router.get("/automations")
+async def list_automations(session: SessionDep, user: UserDep):
+    """自动办的事：当前有哪些授权（可收回），最近按授权办了什么（能撤销的可撤销）。"""
+    return await automation.overview(session, user)
+
+
+class RevokeBody(BaseModel):
+    source: Literal["mission", "task"]
+    source_id: int
+    kind: str = Field(max_length=32)
+    index: int | None = None
+
+
+@router.post("/automations/revoke")
+async def revoke_automation(body: RevokeBody, session: SessionDep, user: UserDep):
+    try:
+        message = await automation.revoke(session, user, body.source, body.source_id, body.kind, body.index)
+    except PermissionError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await insights.record(session, user, "revoke", detail={"source": body.source, "source_id": body.source_id, "kind": body.kind})
+    await session.commit()
+    return {"message": message}

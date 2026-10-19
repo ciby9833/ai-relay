@@ -196,6 +196,7 @@ async def run_turn(
     feishu: FeishuClient,
     model_id: str | None = None,
     mission=None,
+    task=None,
 ) -> AsyncIterator[dict]:
     """处理用户的一条消息，产出事件流：
 
@@ -211,7 +212,7 @@ async def run_turn(
     user_initiated = conversation.channel not in ("task", "mission")
     insights.via.set("chat" if user_initiated else "system")
     tools = tool_specs(user_initiated, conversation.channel)
-    ctx = ToolContext(session=session, user=user, conversation=conversation, feishu=feishu, mission=mission)
+    ctx = ToolContext(session=session, user=user, conversation=conversation, feishu=feishu, mission=mission, task=task)
 
     messages = await load_history(session, conversation.id)
     if user_initiated:

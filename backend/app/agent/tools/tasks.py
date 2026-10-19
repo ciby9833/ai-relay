@@ -22,7 +22,9 @@ def _describe(task: ScheduledTask) -> str:
     "create_scheduled_task",
     "创建定时任务。到点后 Relay 会按 prompt 独立执行一轮，并把结果通过飞书私聊发给用户。"
     "周期任务给 cron，一次性提醒给 run_at，二者必须且只能给一个，时间都按用户所在时区理解。"
-    "prompt 要写成到时候能独立执行的完整指令，因为执行时看不到当前这段对话。",
+    "prompt 要写成到时候能独立执行的完整指令，因为执行时看不到当前这段对话。"
+    "用户要的是“到点替我办”（例如每天提交工作餐表单）时，prompt 写成去办这件事，带上链接和要填的内容，"
+    "而不是“提醒他去办”：到点会准备好操作推给他确认，他确认时可以授权这个任务以后直接办。",
     {
         "title": {"type": "string", "description": "简短的任务名"},
         "prompt": {"type": "string", "description": "到点时要执行的完整指令"},

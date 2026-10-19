@@ -12,8 +12,8 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.feishu.client import FeishuClient, FeishuError
 from app.llm.base import LLMError
-from app.models import FeishuCard, FollowUp, User
-from app import i18n, insights
+from app.models import FeishuCard, FollowUp, User, ScheduledTask
+from app import automation, i18n, insights
 from app.proactive.settings import language_of
 from app.proactive import actions, items
 from app.proactive.push import render
@@ -56,6 +56,20 @@ async def handle_card_action(
                 action = await actions.own_action(session, user, int(value["action_id"]))
                 message = await actions.execute(session, feishu, user, action)
                 ok = action.status == "done"
+            elif kind == "grant":
+                # 确认这次，并授权这个定时任务以后直接办同一件事（同一张表 / 同一个人）
+                action = await actions.own_action(session, user, int(value["action_id"]))
+                message = await actions.execute(session, feishu, user, action)
+                ok = action.status == "done"
+                if ok and action.scheduled_task_id:
+                    task = await session.get(ScheduledTask, action.scheduled_task_id)
+                    if task is not None and task.user_id == user.id:
+                        label = automation.grant_task(task, action)
+                        message = f"{message}。以后《{task.title}》会直接{label}，在网页“自动办的事”里可以随时收回"
+                        await insights.record(session, user, "grant", action=action)
+            elif kind == "undo":
+                action = await actions.own_action(session, user, int(value["action_id"]))
+                message = await automation.undo(session, feishu, user, action)
             elif kind == "cancel":
                 action = await actions.own_action(session, user, int(value["action_id"]))
                 message = actions.cancel(action)
@@ -74,7 +88,7 @@ async def handle_card_action(
             if ok:
                 await session.commit()
                 await items.advance(session, user)  # 让对应的事项立即反映结果（关闭、转为等对方回复……）
-            elif kind == "confirm":
+            elif kind in ("confirm", "grant"):
                 # 失败/结果未知也必须保存，不能让下一次点击重复外部写入。
                 await session.commit()
             else:

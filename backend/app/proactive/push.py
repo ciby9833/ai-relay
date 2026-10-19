@@ -110,11 +110,25 @@ async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expande
 
 
 def _action_panel(action: PendingAction, expanded: bool, timezone: str) -> tuple[dict, str]:
+    from app import automation
+
     if action.status != "pending":
+        if action.auto and action.status == "done":
+            # 按授权自动办的：告诉他办了什么，能撤销的给撤销按钮
+            line = f"🤖 **{i18n.ui('auto_done')}**：{action.result or action.summary}"
+            if action.undone_at:
+                return fc.markdown(f"~~{line}~~　<font color='grey'>{i18n.ui('undone')}</font>"), line
+            if automation.undoable(action):
+                return panel(line, [fc.button_row([fc.callback(i18n.ui("undo"), "undo", action_id=action.id)])], True), line
+            return fc.markdown(line), line
         line = f"✅ ~~{action.summary}~~　<font color='grey'>{action.result or action.status}</font>"
         return fc.markdown(line), line
     p = action.payload
     body = [f"**对象**：{p.get('to')}"] if p.get("to") else []
+    if action.kind == "base_record":
+        body += [f"**{k}**：{v}" for k, v in (p.get("shown") or {}).items()]
+        if p.get("previous"):
+            body.append(f"<font color='grey'>{p['previous']}</font>")
     if action.kind == "create_event" and p.get("start"):
         body.append(f"**时间**：{_time(p['start'], timezone)}")
     if action.kind == "create_task" and p.get("due"):
@@ -123,11 +137,12 @@ def _action_panel(action: PendingAction, expanded: bool, timezone: str) -> tuple
         body.append("> " + p["body"].replace("\n", "\n> "))
     header = f"✍️ **{action.summary}**\n<font color='blue'>→ 确认后执行</font>"
     elements = [fc.markdown("\n".join(body))] if body else []
-    elements.append(fc.button_row([
-        fc.callback(i18n.ui("confirm_run"), "confirm", "primary", action_id=action.id),
-        fc.link("去网页修改", get_settings().frontend_url),
-        fc.callback(i18n.ui("not_needed"), "cancel", action_id=action.id),
-    ]))
+    buttons = [fc.callback(i18n.ui("confirm_run"), "confirm", "primary", action_id=action.id)]
+    if action.scheduled_task_id:
+        # 定时任务里的操作：确认的同时可以授权这个任务以后直接办（只限同一个对象）
+        buttons.append(fc.callback(i18n.ui("confirm_and_grant"), "grant", action_id=action.id))
+    buttons += [fc.link("去网页修改", get_settings().frontend_url), fc.callback(i18n.ui("not_needed"), "cancel", action_id=action.id)]
+    elements.append(fc.button_row(buttons))
     return panel(header, elements, expanded), f"{action.summary}\n" + "\n".join(body)
 
 

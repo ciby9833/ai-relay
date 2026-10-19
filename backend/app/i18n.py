@@ -75,6 +75,10 @@ _STRINGS = {
     "mute": {"zh": "这类不用提醒", "en": "Don't remind me of these", "id": "Jangan ingatkan yang seperti ini"},
     "pending_confirm": {"zh": "✍️ 待确认：{x}", "en": "✍️ Needs your OK: {x}", "id": "✍️ Perlu konfirmasi: {x}"},
     "things_to_know": {"zh": "Relay｜{n} 件事需要你知道", "en": "Relay | {n} things you should know", "id": "Relay | {n} hal yang perlu Anda ketahui"},
+    "confirm_and_grant": {"zh": "确认，以后直接办", "en": "Confirm & always do this", "id": "Konfirmasi & lakukan otomatis"},
+    "undo": {"zh": "撤销", "en": "Undo", "id": "Batalkan"},
+    "undone": {"zh": "已撤销", "en": "Undone", "id": "Dibatalkan"},
+    "auto_done": {"zh": "已按你的授权自动办理", "en": "Done automatically as you authorized", "id": "Dikerjakan otomatis sesuai izin Anda"},
     "update": {"zh": "Relay｜有新进展", "en": "Relay | Update", "id": "Relay | Ada perkembangan"},
 }
 

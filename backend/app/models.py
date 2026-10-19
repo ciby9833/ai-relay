@@ -107,6 +107,8 @@ class ScheduledTask(Base):
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    # 用户授权这个任务直接办的事：[{"kind", "scope", "label", "granted_at"}]，scope 限定到具体对象（哪张表、哪个会话）
+    grants: Mapped[list] = mapped_column(JSONB, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -208,6 +210,10 @@ class PendingAction(Base):
     signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id", ondelete="SET NULL"))
     # 由长期任务发起的操作：用户确认/取消后，这个任务会被唤醒继续
     mission_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    # 定时任务里准备的操作：确认时可以顺带授权“这个任务以后直接办”
+    scheduled_task_id: Mapped[int | None] = mapped_column(ForeignKey("scheduled_tasks.id", ondelete="SET NULL"))
+    auto: Mapped[bool] = mapped_column(Boolean, server_default="false")  # 按用户的授权自动执行的（没有逐次确认）
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 用户撤销了这次操作
     status: Mapped[str] = mapped_column(String(16), server_default="pending")  # pending | done | cancelled | failed
     result: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

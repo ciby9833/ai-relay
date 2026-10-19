@@ -26,7 +26,8 @@ export interface Action {
     | "create_event"
     | "update_event"
     | "delete_event"
-    | "add_attendees";
+    | "add_attendees"
+    | "base_record";
   summary: string;
   status: "pending" | "done" | "cancelled" | "failed";
   result: string | null;
@@ -43,6 +44,34 @@ export interface Action {
   mission_id?: number | null;
   cells?: { cell: string; before: string; after: string | number }[] | null;
   notes?: string[] | null;
+  auto?: boolean; // 按授权自动执行的
+  undoable?: boolean; // 能撤销（删除提交的记录、撤回消息……）
+  undone_at?: string | null;
+  grantable?: boolean; // 定时任务里准备的：确认时可以顺带授权以后直接办
+  shown?: Record<string, string> | null; // 多维表格：要提交的字段和值
+}
+
+export interface AutomationGrant {
+  source: "mission" | "task";
+  source_id: number;
+  source_title: string;
+  kind: string;
+  index?: number;
+  label: string;
+  granted_at: string | null;
+}
+
+export interface AutomationRun {
+  action_id: number;
+  kind: string;
+  summary: string;
+  status: Action["status"];
+  result: string | null;
+  at: string;
+  source: "mission" | "task" | null;
+  source_title: string | null;
+  undoable: boolean;
+  undone_at: string | null;
 }
 
 export interface MissionData {
@@ -280,7 +309,12 @@ export const api = {
   deleteMemory: (id: number) => request(`/memories/${id}`, { method: "DELETE" }),
   tasks: () => request<Task[]>("/tasks"),
   deleteTask: (id: number) => request(`/tasks/${id}`, { method: "DELETE" }),
-  decide: (id: number, decision: "confirm" | "cancel") =>
+  automations: () => request<{ grants: AutomationGrant[]; history: AutomationRun[] }>("/automations"),
+  revokeAutomation: (grant: AutomationGrant) =>
+    request<{ message: string }>("/automations/revoke", json("POST", {
+      source: grant.source, source_id: grant.source_id, kind: grant.kind, index: grant.index ?? null,
+    })),
+  decide: (id: number, decision: "confirm" | "cancel" | "grant" | "undo") =>
     request<{ message: string; status: Action["status"] }>(`/actions/${id}/${decision}`, { method: "POST" }),
   editDraft: (id: number, body: string) => request(`/actions/${id}`, json("PATCH", { body })),
   setReplyAll: (id: number, replyAll: boolean) => request(`/actions/${id}`, json("PATCH", { reply_all: replyAll })),

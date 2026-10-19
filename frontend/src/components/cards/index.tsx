@@ -469,6 +469,7 @@ const ACTION_ICON: Record<Action["kind"], string> = {
   update_event: "calendar",
   delete_event: "calendar",
   add_attendees: "calendar",
+  base_record: "doc",
 };
 
 /** 待确认的操作：说清楚要做什么、对谁，确认后才执行。 */
@@ -500,8 +501,29 @@ export function ActionCard({ action, onChanged }: { action: Action; onChanged: (
             <button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.decide(action.id, "confirm"); onChanged(); })}>
               <Icon name="check" /> {t("确认执行")}
             </button>
+            {action.grantable && (
+              <button
+                className="btn ghost"
+                disabled={busy}
+                title={t("只授权这个定时任务、同一个对象；在“自动办的事”里可以随时收回")}
+                onClick={() => run(async () => { await api.decide(action.id, "grant"); onChanged(); })}
+              >
+                {t("确认，以后直接办")}
+              </button>
+            )}
             <button className="btn ghost" disabled={busy} onClick={() => run(async () => { await api.decide(action.id, "cancel"); onChanged(); })}>
               {t("不用了")}
+            </button>
+            {error && <span className="card-error">{error}</span>}
+          </>
+        ) : action.undoable ? (
+          <>
+            <button
+              className="btn ghost"
+              disabled={busy}
+              onClick={() => window.confirm(t("撤销「{p0}」？", { p0: action.summary })) && run(async () => { await api.decide(action.id, "undo"); onChanged(); })}
+            >
+              {t("撤销")}
             </button>
             {error && <span className="card-error">{error}</span>}
           </>
@@ -512,8 +534,24 @@ export function ActionCard({ action, onChanged }: { action: Action; onChanged: (
         ) : undefined
       }
     >
-      <div className="card-title">{action.summary}</div>
+      <div className="card-title">
+        {action.auto && <span className="auto-tag">{t("自动办理")}</span>}
+        {action.summary}
+        {action.undone_at && <span className="muted"> · {t("已撤销")}</span>}
+      </div>
       {action.to && <p className="next-step">{t("对象：")}{action.to}</p>}
+      {action.shown && (
+        <div className="detail-fields">
+          <dl>
+            {Object.entries(action.shown).map(([name, value]) => (
+              <div key={name}>
+                <dt>{name}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
       {action.start && <p className="next-step">{t("时间：")}{dayLabel(action.start)} {timeOf(action.start)}</p>}
       {action.due && <p className="next-step">{t("截止：")}{dayLabel(action.due)} {timeOf(action.due)}</p>}
       {action.cells ? (

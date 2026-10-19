@@ -5,6 +5,7 @@ import { dayLabel, relative, timeOf } from "../../format";
 import Icon from "../Icon";
 import type { PanelKind } from "../Sidebar";
 import LanguageSelect from "../LanguageSelect";
+import Automations from "./Automations";
 import Integrations from "./Integrations";
 
 function Shell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -227,6 +228,7 @@ export default function Drawer({ kind, onClose }: { kind: PanelKind; onClose: ()
   const titles: Record<PanelKind, string> = {
     memories: t("Relay 记住的事"),
     tasks: t("定时任务"),
+    automations: t("自动办的事"),
     settings: t("提醒设置"),
     integrations: t("业务系统接入"),
   };
@@ -234,6 +236,7 @@ export default function Drawer({ kind, onClose }: { kind: PanelKind; onClose: ()
     <Shell title={titles[kind]} onClose={onClose}>
       {kind === "memories" && <Memories />}
       {kind === "tasks" && <Tasks />}
+      {kind === "automations" && <Automations />}
       {kind === "settings" && <SettingsForm />}
       {kind === "integrations" && <Integrations />}
     </Shell>

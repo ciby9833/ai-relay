@@ -14,12 +14,13 @@ from sqlalchemy import select
 from app.agent.loop import run_turn_text
 from app.config import get_settings
 from app.db import SessionLocal
-from app.feishu.client import FeishuClient
+from app.feishu.client import FeishuClient, FeishuError
 from app.llm.base import LLMError
-from app.models import Conversation, ScheduledTask, User
+from app.models import Conversation, PendingAction, ScheduledTask, User
 from app.missions import service as mission_service
 from app.proactive import chats
 from app.proactive.engine import run_for_user
+from app.proactive.push import push
 from app.scheduler.schedule import next_cron_run
 
 logger = logging.getLogger("relay.worker")
@@ -75,6 +76,7 @@ async def run_task(task_id: int, feishu: FeishuClient) -> None:
             session.add(conversation)
         await session.commit()
 
+        started = datetime.now(UTC)
         try:
             reply = await run_turn_text(
                 session,
@@ -82,10 +84,23 @@ async def run_task(task_id: int, feishu: FeishuClient) -> None:
                 conversation=conversation,
                 text=f"[定时任务：{task.title}]\n{task.prompt}",
                 feishu=feishu,
+                task=task,
             )
         except LLMError as exc:
             reply = f"执行失败：{exc}"
         title, open_id = task.title, user.feishu_open_id
+        # 这次准备的（等他确认，可以顺带授权以后直接办）和按授权直接办的（可以撤销）都要让他看到
+        prepared = (await session.execute(
+            select(PendingAction).where(PendingAction.scheduled_task_id == task.id, PendingAction.created_at >= started)
+            .order_by(PendingAction.id)
+        )).scalars().all()
+        if prepared:
+            try:
+                await push(session, feishu, user, f"⏰ {title}", reply or "", [{"kind": "action", "action_id": a.id} for a in prepared])
+                await session.commit()
+                return
+            except FeishuError:
+                logger.exception("定时任务推送卡片失败")
 
     if reply:
         await feishu.send_text(open_id, f"**⏰ {title}**\n\n{reply}")

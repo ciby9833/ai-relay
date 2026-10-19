@@ -21,7 +21,7 @@ from app.proactive import chats
 from app.proactive.llm import complete_text
 from app.proactive.prompts import DRAFT_SYSTEM
 from app.proactive.render import RSVP_LABEL
-from app.sources import approval, calendar, cloud, docs, im, mail, scheduling, tasks, sheets
+from app.sources import approval, calendar, cloud, docs, im, mail, scheduling, tasks, sheets, bitable
 
 
 class ActionError(Exception):
@@ -185,6 +185,7 @@ GRANTABLE = {
     "add_attendees": "给已有会议加参会人",
     "calendar_rsvp": "回复会议邀请",
     "send_mail": "发送邮件",
+    "base_record": "往多维表格提交记录",
 }
 
 
@@ -286,10 +287,21 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
                     "POST", "/im/v1/messages", params={"receive_id_type": p["receive_id_type"]},
                     json={"receive_id": p["receive_id"], **rich_text(f"_{relay_signature(user)}_\n\n{p['body']}")},
                 )
-            # 记下消息落在哪个会话（私聊也有 chat_id），长期任务据此去等对方回复
+            # 记下消息落在哪个会话（私聊也有 chat_id），长期任务据此去等对方回复；message_id 用来撤回
             action.payload = {**p, "chat_id": (sent or {}).get("chat_id") or (p["receive_id"] if p["receive_id_type"] == "chat_id" else None),
-                              "sent_at": datetime.now(UTC).isoformat()}
+                              "message_id": (sent or {}).get("message_id"), "sent_at": datetime.now(UTC).isoformat()}
             result = f"已{action.summary}"
+        elif action.kind == "base_record":
+            p = action.payload
+            try:
+                record = await bitable.add_record(feishu, user, p["app_token"], p["table_id"], p["fields"],
+                                                  client_token=str(uuid.uuid5(uuid.NAMESPACE_URL, f"relay:{user.id}:{action.id}")))
+            except FeishuError as exc:
+                if needs_reauth(exc):
+                    raise
+                raise ActionError(bitable.explain(exc, writing=True)) from exc
+            action.payload = {**p, "record_id": record.get("record_id")}
+            result = f"已在《{p.get('table_name') or '多维表格'}》提交：" + "；".join(f"{k}={v}" for k, v in (p.get("shown") or {}).items())
         elif action.kind == "create_task":
             p = action.payload
             due = datetime.fromisoformat(p["due"]) if p.get("due") else None
@@ -382,6 +394,10 @@ def confirm_card(action: PendingAction) -> tuple[dict, str]:
         text = f"**收件人** {action.payload.get('to')}\n\n{body}"
     elif action.kind == "cloud_write":
         text = action.payload["body"]
+    elif action.kind == "base_record":
+        text = "\n".join(f"**{k}**：{v}" for k, v in (action.payload.get("shown") or {}).items())
+        if action.payload.get("previous"):
+            text += f"\n\n{action.payload['previous']}"
     else:
         text = action.summary
     buttons = [

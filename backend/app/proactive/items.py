@@ -23,7 +23,7 @@ from app.proactive.llm import complete_text
 from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM
 from app.proactive.push import push
 from app.sources import approval as approval_source
-from app import i18n, insights
+from app import automation, i18n, insights
 from app.proactive.settings import in_quiet_hours, language_of
 
 logger = logging.getLogger("relay.items")
@@ -536,6 +536,11 @@ def actions_json(action: PendingAction) -> dict:
         "others": [o.get("name") or o.get("mail_address") for o in p.get("others") or []],
         "link": (p.get("task") or {}).get("url") or (p.get("event") or {}).get("app_link"),
         "mission_id": action.mission_id,
+        "auto": action.auto, "undone_at": action.undone_at.isoformat() if action.undone_at else None,
+        "undoable": automation.undoable(action),
+        # 定时任务里准备、还在等确认：卡片上可以“确认，以后直接办”
+        "grantable": bool(action.scheduled_task_id) and action.status == "pending",
+        "shown": p.get("shown") if action.kind == "base_record" else None,
         "cells": p.get("cells") if p.get("operation") == "fill_sheet_cells" else None,
         "notes": p.get("notes") if p.get("operation") == "fill_sheet_cells" else None,
     }

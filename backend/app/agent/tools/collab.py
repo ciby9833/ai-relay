@@ -38,8 +38,20 @@ async def _resolve(ctx: ToolContext, names: list[str]) -> list[dict]:
     return resolved
 
 
+async def _auto_execute(ctx: ToolContext, action: PendingAction) -> str:
+    """按用户的授权直接执行：标记为自动执行（会出现在“自动办的事”里，能撤销的可以撤销）。"""
+    from app import insights
+
+    action.auto = True
+    token = insights.via.set("auto")
+    try:
+        return await actions.execute(ctx.session, ctx.feishu, ctx.user, action)
+    finally:
+        insights.via.reset(token)
+
+
 async def _finish(ctx: ToolContext, action: PendingAction) -> str:
-    """准备好的操作：长期任务里若已获授权就直接执行，否则等用户确认。"""
+    """准备好的操作：长期任务/定时任务里若已获授权就直接执行，否则等用户确认。"""
     mission = ctx.mission
     blocked = None
     if mission is not None:
@@ -49,21 +61,25 @@ async def _finish(ctx: ToolContext, action: PendingAction) -> str:
         if action.kind == "send_chat" and action.kind in (mission.grants or []):
             blocked = await service.auto_send_blocked(ctx.session, mission, ctx.user, action)
         if action.kind in (mission.grants or []) and not blocked:
-            from app import insights
-
-            token = insights.via.set("auto")
-            try:
-                result = await actions.execute(ctx.session, ctx.feishu, ctx.user, action)
-            finally:
-                insights.via.reset(token)
+            result = await _auto_execute(ctx, action)
             await service.log(ctx.session, mission, "action", f"按你的授权自动执行：{result}")
             if action.status != "done":
                 raise ToolError(result)
             return f"{result}（这类操作用户已授权在本任务里自动执行）"
         await service.log(ctx.session, mission, "action", f"准备了「{action.summary}」，等你确认" + (f"（{blocked}）" if blocked else ""))
+    elif ctx.task is not None:
+        from app import automation
+
+        action.scheduled_task_id = ctx.task.id
+        if automation.task_allows(ctx.task, action):
+            result = await _auto_execute(ctx, action)
+            if action.status != "done":
+                raise ToolError(result)
+            return f"{result}（用户授权过这个定时任务直接办这件事；会通知他，他可以撤销）"
     ctx.cards.append({"kind": "action", "action_id": action.id})
     reason = f"虽然用户授权了这类操作，但{blocked}。" if blocked else ""
-    return f"已准备好（待确认操作 #{action.id}）：{action.summary}。{reason}用户确认后才会执行。"
+    grantable = "用户确认时可以顺带授权这个定时任务以后直接办。" if ctx.task is not None else ""
+    return f"已准备好（待确认操作 #{action.id}）：{action.summary}。{reason}用户确认后才会执行。{grantable}"
 
 
 def _parse_time(value: str, timezone: str) -> datetime:

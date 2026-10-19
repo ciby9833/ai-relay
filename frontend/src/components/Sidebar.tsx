@@ -4,7 +4,7 @@ import { relative } from "../format";
 import Icon, { RelayMark } from "./Icon";
 
 export type View = { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
-export type PanelKind = "memories" | "tasks" | "settings" | "integrations";
+export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations";
 
 const CHANNEL: Record<string, string | null> = { web: null, feishu: "飞书群", task: "定时", home: null };
 
@@ -82,6 +82,9 @@ export default function Sidebar({
         </button>
         <button className="nav-item" onClick={() => onPanel("tasks")}>
           <Icon name="clock" /> {t("定时任务")}
+        </button>
+        <button className="nav-item" onClick={() => onPanel("automations")}>
+          <Icon name="check" /> {t("自动办的事")}
         </button>
         <button className="nav-item" onClick={() => onPanel("settings")}>
           <Icon name="settings" /> {t("提醒设置")}

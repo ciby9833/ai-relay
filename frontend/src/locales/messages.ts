@@ -1,5 +1,61 @@
 // Source-language keys keep the existing UI copy searchable. Values are English and Indonesian.
 export const messages: Record<string, readonly [string, string]> = {
+  "只授权这个定时任务、同一个对象；在“自动办的事”里可以随时收回": [
+    "Only for this scheduled task and the same target; you can revoke it anytime in “Done automatically”",
+    "Hanya untuk tugas terjadwal ini dan target yang sama; bisa dicabut kapan saja di “Dikerjakan otomatis”"
+  ],
+  "确认，以后直接办": [
+    "Confirm & always do this",
+    "Konfirmasi & lakukan otomatis"
+  ],
+  "撤销「{p0}」？": [
+    "Undo “{p0}”?",
+    "Batalkan “{p0}”?"
+  ],
+  "撤销": [
+    "Undo",
+    "Batalkan"
+  ],
+  "自动办理": [
+    "Auto",
+    "Otomatis"
+  ],
+  "已撤销": [
+    "Undone",
+    "Dibatalkan"
+  ],
+  "自动办的事": [
+    "Done automatically",
+    "Dikerjakan otomatis"
+  ],
+  "已授权直接办": [
+    "Authorized to do directly",
+    "Diizinkan langsung dikerjakan"
+  ],
+  "还没有授权。定时任务或长期任务准备的操作，确认时可以选“以后直接办”；只覆盖那个任务、那个对象。": [
+    "Nothing authorized yet. When confirming an action prepared by a scheduled task or mission, choose “always do this”; it only covers that task and that target.",
+    "Belum ada izin. Saat mengonfirmasi tindakan dari tugas terjadwal atau misi, pilih “lakukan otomatis”; hanya berlaku untuk tugas dan target itu."
+  ],
+  "收回这项授权？以后会重新先问你。": [
+    "Revoke this authorization? Relay will ask you first again.",
+    "Cabut izin ini? Relay akan bertanya dulu lagi."
+  ],
+  "收回": [
+    "Revoke",
+    "Cabut"
+  ],
+  "最近自动办的事": [
+    "Recently done automatically",
+    "Baru-baru ini dikerjakan otomatis"
+  ],
+  "最近 30 天没有自动办过事。": [
+    "Nothing was done automatically in the last 30 days.",
+    "Tidak ada yang dikerjakan otomatis dalam 30 hari terakhir."
+  ],
+  "加载中…": [
+    "Loading…",
+    "Memuat…"
+  ],
   "查了 {count} 项": [
     "Checked {count} things",
     "Memeriksa {count} hal"

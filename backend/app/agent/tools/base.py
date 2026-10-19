@@ -23,6 +23,8 @@ class ToolContext:
     cards: list[dict] = field(default_factory=list)
     # 在长期任务里运行时，当前任务（工具据此关联操作、判断是否已获授权）
     mission: object | None = None
+    # 在定时任务里运行时，当前定时任务（判断这类操作是否已获授权直接办）
+    task: object | None = None
     # 工具要求这一轮到此结束（长期任务决定了接下来等什么）
     stop_turn: bool = False
 

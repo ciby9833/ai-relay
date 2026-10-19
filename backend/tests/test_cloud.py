@@ -118,9 +118,9 @@ async def test_prepare_shows_readable_preview_without_writing():
 
 def test_only_understanding_and_doc_output_tools_are_exposed():
     from app.agent.tools.cloud import EXPOSED
-    exposed = {name for name in TOOLS if name.removeprefix("prepare_") in cloud.OPS} - {"list_sheet_tabs", "read_sheet_range"}
+    exposed = {name for name in TOOLS if name.removeprefix("prepare_") in cloud.OPS} - {"list_sheet_tabs", "read_sheet_range", "list_base_fields"}
     assert exposed == {n if not cloud.OPS[n].write else f"prepare_{n}" for n in EXPOSED}
-    assert "prepare_fill_sheet_cells" in TOOLS
+    assert "prepare_fill_sheet_cells" in TOOLS and "prepare_add_base_record" in TOOLS
     assert "prepare_write_sheet_range" not in TOOLS and "read_calendar_events" not in TOOLS
 
 
