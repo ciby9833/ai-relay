@@ -10,6 +10,9 @@ x-backend: &backend
     GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_CREDENTIALS_FILE:+/run/secrets/gcp.json}
   volumes:
     - ${GOOGLE_CREDENTIALS_FILE:-/dev/null}:/run/secrets/gcp.json:ro
+  # 服务器没有 IPv6 出口：Google 鉴权偶尔解析到 IPv6 地址就会报 Network is unreachable，只走 IPv4
+  sysctls:
+    net.ipv6.conf.all.disable_ipv6: 1
 
 services:
   db:

@@ -125,3 +125,18 @@ def test_card_notes_go_to_next_user_message_not_assistant():
 def test_leaked_card_note_is_stripped():
     leaked = "（以下内容以卡片形式展示给了用户）\n[doc] 合同 片段\n[doc] 合同 片段2\n结论：可以同意"
     assert strip_leaked_notes(leaked) == "结论：可以同意"
+
+
+def test_interrupted_tool_turn_is_closed_before_new_message():
+    """上一轮在工具调用后被打断：新消息不能并进工具结果那一条（Gemini 会拒绝），要先补一句助手的话。"""
+    from types import SimpleNamespace
+
+    from app.agent.loop import _with_card_notes, sanitize_history
+
+    rows = [
+        SimpleNamespace(role="user", content=[{"type": "text", "text": "查一下"}]),
+        SimpleNamespace(role="assistant", content=[{"type": "tool_use", "id": "t1", "name": "x", "input": {}}]),
+        SimpleNamespace(role="user", content=[{"type": "tool_result", "tool_use_id": "t1", "name": "x", "content": "ok"}]),
+    ]
+    history = sanitize_history(_with_card_notes(rows, {}, {}))
+    assert history[-1]["role"] == "user" and history[-1]["content"][0]["type"] == "tool_result"

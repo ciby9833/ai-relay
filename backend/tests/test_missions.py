@@ -421,3 +421,54 @@ def test_next_work_morning_skips_weekend():
     friday_evening = datetime(2026, 10, 23, 11, 0, tzinfo=UTC)  # 雅加达周五 18:00
     monday = service.next_work_morning("Asia/Jakarta", friday_evening)
     assert monday.astimezone(ZoneInfo("Asia/Jakarta")).strftime("%a %H:%M") == "Mon 09:30"
+
+
+async def test_new_message_after_interrupted_tool_turn_keeps_turns_valid(monkeypatch):
+    """上一轮在工具调用后被打断（例如部署重启）：发给模型的消息里，新问题必须是独立的一轮，前面补一句助手的话。"""
+    from app.agent.loop import run_turn_text
+    from app.db import SessionLocal, engine
+    from app.llm import registry
+    from app.memory import service as memory_service
+    from app.models import Conversation, Message, User
+
+    seen = []
+
+    class Recorder:
+        name = "fake"
+
+        async def stream(self, *, model, system, messages, tools):
+            from app.llm.base import Completion, TextDelta
+
+            seen.append(messages)
+            yield TextDelta("好的")
+            yield Completion(blocks=[{"type": "text", "text": "好的"}], stop_reason="end")
+
+    async def no_embedding(text):
+        return None
+
+    monkeypatch.setattr(memory_service, "embed", no_embedding)
+    monkeypatch.setattr(registry, "resolve", lambda model_id: (Recorder(), "fake", "fake:fake"))
+    async with SessionLocal() as session:
+        user = User(feishu_open_id=f"ou_{uuid.uuid4().hex}", name="Quillan", timezone="Asia/Jakarta")
+        session.add(user)
+        await session.flush()
+        conversation = Conversation(user_id=user.id, channel="home", title="主线")
+        session.add(conversation)
+        await session.flush()
+        session.add_all([
+            Message(conversation_id=conversation.id, role="user", content=[{"type": "text", "text": "查一下群"}]),
+            Message(conversation_id=conversation.id, role="assistant", content=[{"type": "tool_use", "id": "t1", "name": "find_chats", "input": {}}]),
+            Message(conversation_id=conversation.id, role="user", content=[{"type": "tool_result", "tool_use_id": "t1", "name": "find_chats", "content": "群A"}]),
+        ])
+        await session.commit()
+        user_id = user.id
+        try:
+            await run_turn_text(session, user=user, conversation=conversation, text="新问题", feishu=None)
+            roles = [m["role"] for m in seen[0]]
+            assert roles[-3:] == ["user", "assistant", "user"]
+            assert seen[0][-2]["content"][0]["text"].startswith("（上一轮处理被中断")
+            assert all(b["type"] != "tool_result" for b in seen[0][-1]["content"])
+        finally:
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+            await engine.dispose()

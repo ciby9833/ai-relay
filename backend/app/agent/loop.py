@@ -241,7 +241,12 @@ async def run_turn(
         conversation.title = text.strip().splitlines()[0][:60] if text.strip() else None
     conversation.updated_at = datetime.now(UTC)
     await session.commit()
-    if messages and messages[-1]["role"] == "user":
+    if messages and messages[-1]["role"] == "user" and _has(messages[-1], "tool_result"):
+        # 上一轮在工具调用之后被打断（例如部署重启），没有给出回答：补一句说明再接新消息。
+        # 不能把新消息并进工具结果那一条——Gemini 会拒绝（Requests ending with a model turn are not supported）
+        messages.append({"role": "assistant", "content": [{"type": "text", "text": "（上一轮处理被中断，没有给出回答）"}]})
+        messages.append({"role": "user", "content": user_content})
+    elif messages and messages[-1]["role"] == "user":
         messages[-1] = {"role": "user", "content": messages[-1]["content"] + user_content}
     else:
         messages.append({"role": "user", "content": user_content})
