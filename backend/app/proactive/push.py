@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.feishu import cards as fc
 from app.feishu.client import FeishuClient
 from app.models import FeishuCard, FollowUp, Mission, PendingAction, Signal, User
-from app import i18n
+from app import i18n, insights
 from app.proactive.settings import language_of
 from app.proactive.cards import ask
 from app.proactive.render import RSVP_LABEL
@@ -100,7 +100,8 @@ async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expande
     if item.url:
         # 需要补填/分配的审批：主按钮就是打开飞书原生审批
         buttons.append(
-            fc.link("去飞书审批", item.url, "primary") if native_approval else fc.link("在飞书查看", item.url)
+            fc.link("去飞书审批", insights.open_link(item, "feishu"), "primary") if native_approval
+            else fc.link("在飞书查看", insights.open_link(item, "feishu"))
         )
     buttons.append(fc.callback(i18n.ui("done"), "item_done", item_id=item.id))
     elements = [fc.markdown("\n\n".join(body))] if body else []
@@ -136,8 +137,8 @@ async def render(
     """sections: [[分组标题, [卡片数据...]], ...]；卡片数据与主线消息里的卡片相同。"""
     i18n.current.set(await language_of(session, user))
     total_items = sum(1 for _, group in sections for c in group if c["kind"] == "item")
-    elements = [fc.markdown(text)]
-    fallback = [text]
+    elements = [fc.markdown(text)] if text.strip() else []
+    fallback = [text] if text.strip() else []
     for label, group in sections:
         if not group:
             continue

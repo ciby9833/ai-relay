@@ -8,10 +8,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app import insights
+from app.db import SessionLocal
+from fastapi.responses import RedirectResponse
 from app.deps import FeishuDep, SessionDep, UserDep
 from app.home import post
 from app.llm.base import LLMError
-from app.models import FollowUp, PendingAction, Signal, SourceState
+from app.models import FollowUp, PendingAction, Signal, SourceState, User
 from app.proactive import actions, cards, items
 from app.proactive.engine import morning_brief, sync_sources
 from app.proactive.settings import get_settings_row, merged
@@ -62,9 +65,11 @@ async def decide_action(
         action = await actions.own_action(session, user, action_id)
     except actions.ActionError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    message = (
-        await actions.execute(session, feishu, user, action) if decision == "confirm" else actions.cancel(action)
-    )
+    if decision == "confirm":
+        message = await actions.execute(session, feishu, user, action)
+    else:
+        message = actions.cancel(action)
+        await insights.record(session, user, "cancel", action=action)
     await session.commit()
     if decision == "confirm" and action.status != "done":
         # 没执行成功：让前端把原因显示在卡片上
@@ -101,6 +106,7 @@ async def edit_draft(action_id: int, data: DraftBody, session: SessionDep, user:
         actions.update_draft(action, data.body, data.reply_all)
     except actions.ActionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await insights.record(session, user, "edit", action=action)
     await session.commit()
     return {"ok": True}
 
@@ -189,6 +195,7 @@ async def _close_item(item_id: int, decision: Literal["done", "dismiss"], sessio
     if item is None or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="事项不存在")
     items.close(item, "done" if decision == "done" else "dismissed", "你标记为已处理" if decision == "done" else "你说不用再跟了")
+    await insights.record(session, user, decision, item=item)
     if item.action_id:
         action = await session.get(PendingAction, item.action_id)
         if action and action.status == "pending":
@@ -271,3 +278,29 @@ async def brief_now(session: SessionDep, user: UserDep, feishu: FeishuDep):
     settings = merged((await get_settings_row(session, user)).data)
     await morning_brief(session, feishu, user, settings, force=True)
     return {"ok": True}
+
+
+@router.get("/open/{item_id}")
+async def open_original(item_id: int, u: str, s: str, f: str = "web"):
+    """“在飞书查看”：先记下他打开了原文（衡量 Relay 给的信息够不够他直接做决定），再跳过去。
+
+    链接带签名，不依赖登录态：飞书内置浏览器里没有 Relay 的 cookie。
+    """
+    if not insights.verify(item_id, u, s):
+        raise HTTPException(status_code=404)
+    async with SessionLocal() as session:
+        item = await session.get(FollowUp, item_id)
+        if item is None or str(item.user_id) != u or not item.url:
+            raise HTTPException(status_code=404)
+        user = await session.get(User, item.user_id)
+        insights.via.set("feishu_card" if f == "feishu" else "web")
+        await insights.record(session, user, "open_original", item=item)
+        await session.commit()
+        url = item.url
+    return RedirectResponse(url, status_code=302)
+
+
+@router.get("/insights")
+async def get_insights(session: SessionDep, user: UserDep, days: int = 7):
+    """这段时间他怎么处理的：多少件不看原文就处理了、多少件替他办掉了、哪些类别他总是同样处理。"""
+    return await insights.summary(session, user, max(1, min(days, 90)))

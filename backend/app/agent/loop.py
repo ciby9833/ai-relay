@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import i18n
+from app import i18n, insights
 from app.proactive.settings import get_settings_row, language_of
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.tools import ToolContext, execute, tool_specs
@@ -130,6 +130,8 @@ def _with_card_notes(rows: list[Message], actions: dict[int, PendingAction], fol
             pending = []
         if row.role == "assistant":
             pending += [card_text(c, actions, follow_ups) for c in cards]
+            if cards and not blocks:
+                blocks = [{"type": "text", "text": "（发了卡片）"}]  # 只有卡片的主动提醒：保持用户/助手交替
         if blocks:
             messages.append({"role": row.role, "content": blocks})
     if pending and messages and not _has(messages[-1], "tool_use"):
@@ -207,6 +209,7 @@ async def run_turn(
     provider, model, model_id = registry.resolve(model_id)
     # 定时任务和长期任务是无人值守的，不提供“确认执行”一类的工具
     user_initiated = conversation.channel not in ("task", "mission")
+    insights.via.set("chat" if user_initiated else "system")
     tools = tool_specs(user_initiated, conversation.channel)
     ctx = ToolContext(session=session, user=user, conversation=conversation, feishu=feishu, mission=mission)
 

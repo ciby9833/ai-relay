@@ -368,7 +368,7 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
       footer={
         <>
           {item.kind === "approval" && !item.quick_approve && item.url && (
-            <a className="btn primary" href={item.url} target="_blank" rel="noreferrer">
+            <a className="btn primary" href={item.open_url ?? item.url} target="_blank" rel="noreferrer">
               <Icon name="external" /> {t("去飞书审批")}
             </a>
           )}
@@ -407,7 +407,7 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
             </>
           )}
           {item.url && !(item.kind === "approval" && !item.quick_approve) && (
-            <a className="btn ghost" href={item.url} target="_blank" rel="noreferrer">
+            <a className="btn ghost" href={item.open_url ?? item.url} target="_blank" rel="noreferrer">
               <Icon name="external" /> {t("在飞书查看")}
             </a>
           )}
@@ -432,7 +432,7 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
       </p>
       {item.summary && <p className="card-text">{item.summary}</p>}
       {item.detail.length > 0 && (
-        <details className="detail-fields" open={!compact}>
+        <details className="detail-fields" open={!compact || item.detail.length <= 5}>
           <summary>{t("申请内容")}</summary>
           <dl>
             {item.detail.map((field) => (

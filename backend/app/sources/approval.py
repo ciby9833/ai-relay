@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,6 +80,80 @@ def _value(value) -> str:
     return str(value)
 
 
+# 考勤类“组合控件”（请假、补卡、出差、外出、加班、换班）：控件没有名字，值是一个对象，要拆成几行
+GROUP_LABELS = {
+    "leavegroup": "请假", "leavegroupv2": "请假", "remedygroup": "补卡", "remedygroupv2": "补卡",
+    "tripgroup": "出差", "outgroup": "外出", "workgroup": "加班", "shiftgroup": "换班", "shiftgroupv2": "换班",
+}
+UNITS = {"DAY": "天", "HALF_DAY": "个半天", "HOUR": "小时"}
+
+
+def _local(value: str, offset_minutes: int | None) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return moment.astimezone(timezone(timedelta(minutes=-offset_minutes))) if offset_minutes is not None else moment
+
+
+def leave_range(widget: dict) -> tuple[datetime, datetime] | None:
+    """请假控件的起止时间（按天请假时，结束时间是最后一天的次日零点）。"""
+    value = widget.get("value")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    if (widget.get("type") or "").lower() not in ("leavegroup", "leavegroupv2") or not isinstance(value, dict):
+        return None
+    start, end = _local(value.get("start"), value.get("timezoneOffset")), _local(value.get("end"), value.get("timezoneOffset"))
+    return (start, end) if start and end else None
+
+
+def _when(value: str, offset_minutes: int | None, date_only: bool, inclusive_end: bool = False) -> str:
+    """表单里的时间带着发起人填写时的时区；按表单给的 timezoneOffset（JS 写法，UTC+7 为 -420）换回当地时间。"""
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if offset_minutes is not None:
+        moment = moment.astimezone(timezone(timedelta(minutes=-offset_minutes)))
+    if inclusive_end and date_only and (moment.hour, moment.minute) == (0, 0):
+        moment -= timedelta(days=1)  # 按天请假：结束时间是次日零点，显示成最后一天
+    weekday = "一二三四五六日"[moment.weekday()]
+    return f"{moment:%m-%d} 周{weekday}" if date_only else f"{moment:%m-%d} 周{weekday} {moment:%H:%M}"
+
+
+def group_fields(widget: dict) -> list[dict]:
+    kind = (widget.get("type") or "").lower()
+    value = widget.get("value")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    if kind not in GROUP_LABELS or not isinstance(value, dict):
+        return []
+    label = GROUP_LABELS[kind]
+    offset = value.get("timezoneOffset")
+    date_only = value.get("unit") == "DAY"
+    fields = []
+    if value.get("name"):
+        fields.append({"name": f"{label}类型", "value": str(value["name"])})
+    if value.get("start") and value.get("end"):
+        fields.append({"name": "时间", "value": f"{_when(value['start'], offset, date_only)} 至 {_when(value['end'], offset, date_only, inclusive_end=True)}"})
+    for key, name in (("remedyTime", "补卡时间"), ("shiftTime", "换班时间"), ("returnTime", "还班时间")):
+        if value.get(key):
+            fields.append({"name": name, "value": _when(value[key], offset, False)})
+    if value.get("interval"):
+        fields.append({"name": "时长", "value": f"{value['interval']} {UNITS.get(value.get('unit'), value.get('unit') or '')}".strip()})
+    if isinstance(value.get("schedule"), list) and value["schedule"]:
+        fields.append({"name": "行程", "value": f"{len(value['schedule'])} 段"})
+    if value.get("reason"):
+        fields.append({"name": "事由", "value": str(value["reason"])[:300]})
+    return fields
+
+
 async def instance_detail(feishu: FeishuClient, instance_code: str, open_id: str | None = None) -> dict:
     data = await feishu.tenant_api(
         "GET", f"/approval/v4/instances/{instance_code}", params={"locale": "zh-CN", "user_id_type": "open_id"},
@@ -88,8 +162,13 @@ async def instance_detail(feishu: FeishuClient, instance_code: str, open_id: str
         form = json.loads(data.get("form") or "[]")
     except ValueError:
         form = []
-    fields, empty = [], []
+    fields, empty, leave = [], [], None
     for widget in form:
+        leave = leave or leave_range(widget)
+        grouped = group_fields(widget)
+        if grouped:
+            fields.extend(grouped)
+            continue
         text = _value(widget.get("value"))
         if widget.get("name") and text:
             fields.append({"name": widget["name"], "value": text[:300]})
@@ -112,6 +191,8 @@ async def instance_detail(feishu: FeishuClient, instance_code: str, open_id: str
         "serial_number": data.get("serial_number"),
         "started_at": datetime.fromtimestamp(int(started) / 1000, UTC).isoformat() if started else None,
         "fields": fields[:FIELD_LIMIT],
+        # 请假起止（ISO），用来看同一时间段团队里还有谁请假
+        "leave": [leave[0].isoformat(), leave[1].isoformat()] if leave else None,
         "fields_total": len(fields),
         "fields_truncated": len(fields) > FIELD_LIMIT,
         "comments": comments[:5],

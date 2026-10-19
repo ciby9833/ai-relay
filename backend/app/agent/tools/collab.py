@@ -49,7 +49,13 @@ async def _finish(ctx: ToolContext, action: PendingAction) -> str:
         if action.kind == "send_chat" and action.kind in (mission.grants or []):
             blocked = await service.auto_send_blocked(ctx.session, mission, ctx.user, action)
         if action.kind in (mission.grants or []) and not blocked:
-            result = await actions.execute(ctx.session, ctx.feishu, ctx.user, action)
+            from app import insights
+
+            token = insights.via.set("auto")
+            try:
+                result = await actions.execute(ctx.session, ctx.feishu, ctx.user, action)
+            finally:
+                insights.via.reset(token)
             await service.log(ctx.session, mission, "action", f"按你的授权自动执行：{result}")
             if action.status != "done":
                 raise ToolError(result)

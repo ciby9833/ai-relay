@@ -5,6 +5,7 @@ import httpx
 from fastapi import FastAPI
 
 from app.api import assistant, auth, conversations, feishu_events, integrations, missions, proactive
+from app import insights
 from app.config import get_settings
 from app.feishu.client import FeishuClient
 
@@ -19,6 +20,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Relay", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def decision_source(request, call_next):
+    # 网页上点按钮做的决定记为 web（对话里说“发吧”由 run_turn 改记为 chat）
+    insights.via.set("web")
+    return await call_next(request)
+
 app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(assistant.router)

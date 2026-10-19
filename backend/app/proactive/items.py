@@ -23,7 +23,7 @@ from app.proactive.llm import complete_text
 from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM
 from app.proactive.push import push
 from app.sources import approval as approval_source
-from app import i18n
+from app import i18n, insights
 from app.proactive.settings import in_quiet_hours, language_of
 
 logger = logging.getLogger("relay.items")
@@ -206,6 +206,33 @@ async def result_facts(session: AsyncSession, user: User) -> list[str]:
     return [f"{s.title}" for s in signals]
 
 
+async def leave_overlap(session: AsyncSession, user: User, signal: Signal) -> str | None:
+    """同一时间段还有谁请假（只看得到他能看到的审批：要他审批的、抄送他的）。"""
+    mine = (signal.payload.get("detail") or {}).get("leave")
+    if not mine:
+        return None
+    start, end = datetime.fromisoformat(mine[0]), datetime.fromisoformat(mine[1])
+    me = set(signal.payload.get("initiators") or [])
+    rows = (await session.execute(
+        select(Signal).where(Signal.user_id == user.id, Signal.kind.in_(["approval_pending", "approval_update"]),
+                             Signal.id != signal.id, Signal.payload["detail"]["leave"].isnot(None))
+        .order_by(Signal.id.desc()).limit(300)
+    )).scalars().all()
+    others = {}
+    for row in rows:
+        other = row.payload["detail"]["leave"]
+        if not other or set(row.payload.get("initiators") or []) & me:
+            continue
+        if str(row.payload.get("process_status")) in ("3", "4", "REJECTED", "CANCELED", "Rejected", "Canceled"):
+            continue
+        if datetime.fromisoformat(other[0]) < end and start < datetime.fromisoformat(other[1]):
+            name = "、".join(row.payload.get("initiator_names") or []) or "有人"
+            others.setdefault(name, f"{datetime.fromisoformat(other[0]):%m-%d}~{datetime.fromisoformat(other[1]) - timedelta(minutes=1):%m-%d}")
+    if not others:
+        return "同期没有看到其他人请假（只统计要你审批或抄送你的请假单）"
+    return "同期也请假的：" + "；".join(f"{n}（{r}）" for n, r in list(others.items())[:5])
+
+
 async def _from_simple(session: AsyncSession, user: User, signal: Signal, fresh: bool) -> None:
     if signal.kind == "approval_update":
         await _from_approval_update(session, user, signal, fresh)
@@ -216,6 +243,7 @@ async def _from_simple(session: AsyncSession, user: User, signal: Signal, fresh:
             session, user, f"approval:{signal.external_id}", signal, silent=not fresh,
             kind="approval", owner="me", title=f"{initiators}：{signal.title}",
             summary=await summarize_approval(signal, await language_of(session, user)), next_step=approval_next_step(signal), url=signal.url,
+            recommendation=await leave_overlap(session, user, signal),
             remind_at=datetime.now(UTC) + APPROVAL_REMIND,
         )
     elif signal.kind == "attendance_missing":
@@ -251,11 +279,16 @@ def approval_next_step(signal: Signal) -> str:
     return "批准或驳回"
 
 
+NO_DETAIL = "表单内容暂时读不到，需要在飞书里看原单"
+
+
 async def summarize_approval(signal: Signal, lang: str = "zh") -> str | None:
     """一句话说清这张单子要批什么；没有明细时退回到发起人信息。"""
     detail = signal.payload.get("detail")
     if not detail or not detail.get("fields"):
-        return signal.body
+        return NO_DETAIL  # 标题里已经有发起人；读不到表单就直说，不复述发起人
+    if detail.get("leave") or len(detail["fields"]) <= 4:
+        return None  # 请假、补卡这类字段很少的单子：卡片上的申请内容一眼就能看完，不再加一句复述
     fields = "\n".join(f"{f['name']}：{f['value']}" for f in detail["fields"])
     try:
         return await complete_text(
@@ -277,8 +310,11 @@ async def refresh_approvals(session: AsyncSession, user: User) -> None:
         if signal is None:
             continue
         item.next_step = approval_next_step(signal)
-        if (item.summary or "").startswith("发起人：") and (signal.payload.get("detail") or {}).get("fields"):
-            item.summary = await summarize_approval(signal, await language_of(session, user))
+        if item.summary in (None, NO_DETAIL) or item.summary.startswith("发起人："):
+            if (signal.payload.get("detail") or {}).get("fields"):
+                item.summary = await summarize_approval(signal, await language_of(session, user))
+        if item.recommendation is None:
+            item.recommendation = await leave_overlap(session, user, signal)
     await session.commit()
 
 
@@ -443,11 +479,14 @@ async def announce(
         return
     described = [describe(i, await session.get(PendingAction, i.action_id) if i.action_id else None) for i in items]
     facts = extra_facts + described
-    try:
-        text = await complete_text(NARRATE_SYSTEM, f"用户：{user.name}\n\n发生的事：\n" + "\n".join(f"- {f}" for f in facts)
-                                   + "\n\n" + i18n.instruction(i18n.user_language(settings)))
-    except LLMError:
-        text = "\n".join(f"- {f}" for f in facts)
+    if len(items) == 1 and not extra_facts:
+        text = ""  # 只有一件事：卡片已经说清楚了，不再加一句复述
+    else:
+        try:
+            text = await complete_text(NARRATE_SYSTEM, f"用户：{user.name}\n\n发生的事：\n" + "\n".join(f"- {f}" for f in facts)
+                                       + "\n\n" + i18n.instruction(i18n.user_language(settings)))
+        except LLMError:
+            text = "\n".join(f"- {f}" for f in extra_facts)
     message_cards = [{"kind": "item", "item_id": i.id} for i in items[:8]]
     try:
         await post(session, user, event="Relay 告诉用户：\n" + "\n".join(facts), text=text, cards=message_cards)
@@ -473,7 +512,7 @@ async def item_json(session: AsyncSession, item: FollowUp) -> dict:
     return {
         "id": item.id, "kind": item.kind, "owner": item.owner, "title": item.title, "summary": item.summary,
         "next_step": item.next_step, "recommendation": item.recommendation, "waiting_on": item.waiting_on,
-        "url": item.url, "importance": item.importance, "status": item.status, "resolution": item.resolution,
+        "url": item.url, "open_url": insights.open_link(item), "importance": item.importance, "status": item.status, "resolution": item.resolution,
         "due_at": cards.iso(item.due_at), "remind_at": cards.iso(item.remind_at),
         "updated_at": cards.iso(item.updated_at), "count": len(item.signal_ids),
         "action": actions_json(action) if action else None,

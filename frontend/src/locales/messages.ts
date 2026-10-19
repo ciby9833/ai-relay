@@ -1,5 +1,9 @@
 // Source-language keys keep the existing UI copy searchable. Values are English and Indonesian.
 export const messages: Record<string, readonly [string, string]> = {
+  "查了 {count} 项": [
+    "Checked {count} things",
+    "Memeriksa {count} hal"
+  ],
   "你交代的：": [
     "You asked: ",
     "Permintaan Anda: "

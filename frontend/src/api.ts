@@ -120,6 +120,7 @@ export interface FollowUp {
   recommendation: string | null;
   waiting_on: string | null;
   url: string | null;
+  open_url?: string | null; // 经 Relay 跳转到原文（会记下他打开了原文）
   importance: "urgent" | "normal";
   status: "open" | "done" | "dismissed";
   resolution: string | null;

@@ -66,7 +66,8 @@ async def post(
     )
     message = Message(
         conversation_id=conversation.id, role="assistant",
-        content=[{"type": "text", "text": text}] + [{"type": "card", "card": c} for c in cards or []],
+        # 只有卡片、没有话要补充时不放空文字块（卡片本身就是这次要说的）
+        content=([{"type": "text", "text": text}] if text.strip() else []) + [{"type": "card", "card": c} for c in cards or []],
     )
     session.add(message)
     conversation.updated_at = datetime.now(UTC)

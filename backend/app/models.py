@@ -369,3 +369,25 @@ class IntegrationEvent(Base):
     status: Mapped[str] = mapped_column(String(16))  # delivered | partial | unmatched | resolved
     detail: Mapped[str | None] = mapped_column(Text)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserDecision(Base):
+    """用户怎么处理每件事（批了/拒了/接受/确认发送/标记已处理/去飞书看原文……）。
+
+    用来回答两个问题：Relay 有没有帮他省时间（处理时还要不要打开原文），
+    以及哪一类事他总是同样处理——之后可以提议“这类以后我直接办”（必须他授权）。
+    """
+
+    __tablename__ = "user_decisions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    subject: Mapped[str] = mapped_column(String(32))  # 事情的种类：approval | invitation | reply | send_mail | send_chat | …
+    category: Mapped[str | None] = mapped_column(String(255))  # 同一类的依据：审批类型、组织者、收件人、发件人……
+    decision: Mapped[str] = mapped_column(String(32))  # approve | reject | accept | decline | confirm | cancel | edit | done | dismiss | mute | open_original
+    via: Mapped[str] = mapped_column(String(16))  # web | feishu_card | chat | auto
+    item_id: Mapped[int | None] = mapped_column(BigInteger)
+    action_id: Mapped[int | None] = mapped_column(BigInteger)
+    seconds_to_decide: Mapped[int | None] = mapped_column(Integer)  # 从事情出现到他处理用了多久
+    detail: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

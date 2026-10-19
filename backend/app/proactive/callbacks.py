@@ -13,7 +13,7 @@ from app.db import SessionLocal
 from app.feishu.client import FeishuClient, FeishuError
 from app.llm.base import LLMError
 from app.models import FeishuCard, FollowUp, User
-from app import i18n
+from app import i18n, insights
 from app.proactive.settings import language_of
 from app.proactive import actions, items
 from app.proactive.push import render
@@ -36,6 +36,7 @@ async def handle_card_action(
             return None
         user_id, open_id = user.id, user.feishu_open_id
         i18n.current.set(await language_of(session, user))
+        insights.via.set("feishu_card")
         kind = value.get("relay")
         message, ok = None, True
         try:
@@ -56,14 +57,18 @@ async def handle_card_action(
                 message = await actions.execute(session, feishu, user, action)
                 ok = action.status == "done"
             elif kind == "cancel":
-                message = actions.cancel(await actions.own_action(session, user, int(value["action_id"])))
+                action = await actions.own_action(session, user, int(value["action_id"]))
+                message = actions.cancel(action)
+                await insights.record(session, user, "cancel", action=action)
             elif kind == "item_done":
                 item = await session.get(FollowUp, int(value["item_id"]))
                 if item is None or item.user_id != user.id:
                     raise actions.ActionError("找不到这件事")
                 items.close(item, "done", "你标记为已处理")
+                await insights.record(session, user, "done", item=item)
             elif kind == "mute":
                 message = await actions.mute(session, user, int(value["signal_id"]))
+                await insights.record(session, user, "mute", detail={"signal_id": int(value["signal_id"])})
             else:
                 return None
             if ok:

@@ -60,10 +60,20 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   );
 }
 
+// 过程默认收起：做的时候显示进度，做完只留一行“查了 N 项”，需要时再展开
 function Steps({ steps, active }: { steps: string[]; active: boolean }) {
+  const [open, setOpen] = useState(false);
   if (!steps.length) return null;
   const unique = [...new Set(steps)];
   const last = steps[steps.length - 1];
+  if (!active && !open) {
+    return (
+      <button type="button" className="steps-toggle" onClick={() => setOpen(true)}>
+        <Icon name="check" size={12} /> {t("查了 {count} 项", { count: unique.length })}
+        <Icon name="chevron" size={12} />
+      </button>
+    );
+  }
   return (
     <div className="steps">
       {unique.map((name) => {
@@ -75,6 +85,11 @@ function Steps({ steps, active }: { steps: string[]; active: boolean }) {
           </span>
         );
       })}
+      {!active && (
+        <button type="button" className="steps-toggle" onClick={() => setOpen(false)}>
+          {t("收起")}
+        </button>
+      )}
     </div>
   );
 }

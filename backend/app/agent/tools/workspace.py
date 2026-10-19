@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
+from app import insights
 from app.agent.tools.base import ToolContext, ToolError, tool
 from app.feishu.client import FeishuError
 from app.models import FollowUp, Signal, SourceState
@@ -361,6 +362,7 @@ async def revise_draft(ctx: ToolContext, args: dict) -> str:
                 f"{args['instructions']}\n\n（在这份草稿基础上修改：）\n{action.payload['body']}",
             )
         actions.update_draft(action, body, args.get("reply_all"))
+        await insights.record(ctx.session, ctx.user, "edit", action=action)
         body = action.payload["body"]
     except actions.ActionError as exc:
         raise ToolError(str(exc)) from exc
@@ -418,4 +420,5 @@ async def close_followup(ctx: ToolContext, args: dict) -> str:
     if item is None or item.user_id != ctx.user.id:
         raise ToolError(f"没有找到事项 #{args['followup_id']}")
     items.close(item, args["status"], args.get("note") or ("已处理" if args["status"] == "done" else "不用再跟了"))
+    await insights.record(ctx.session, ctx.user, "done" if args["status"] == "done" else "dismiss", item=item)
     return f"已结束跟进：{item.title}"

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.feishu import cards
 from app.config import get_settings
-from app import i18n
+from app import i18n, insights
 from app.feishu.client import FeishuClient, FeishuError, needs_reauth, rich_text
 from app.memory import service as memory_service
 from app.models import PendingAction, Signal, User
@@ -361,6 +361,7 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
         action.decided_at = datetime.now(UTC)
         return f"执行失败：{exc}"
     action.status, action.result, action.decided_at = "done", result, datetime.now(UTC)
+    await insights.record(session, user, insights.action_decision(action), action=action)
     if action.signal_id:
         signal = await session.get(Signal, action.signal_id)
         if signal and signal.status != "scheduled":
