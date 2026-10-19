@@ -5,6 +5,7 @@ export interface User {
   name: string;
   email: string | null;
   avatar_url: string | null;
+  missing_scopes?: string[]; // 应用新开通、他的登录还没包含的权限：需要重新登录一次
 }
 
 export interface Conversation {

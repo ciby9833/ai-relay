@@ -12,10 +12,11 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.feishu.client import FeishuClient
-from app.models import ChatMessage, Signal, User
+from app.models import ChatMessage, FollowUp, Signal, User
 from app.proactive import items
 from app.proactive.llm import complete_structured
 from app.proactive.prompts import CHAT_TASKS_SYSTEM
+from app.sources.base import add_signal
 
 logger = logging.getLogger("relay.chats")
 
@@ -44,9 +45,22 @@ TASKS_TOOL = {
                     "required": ["message_ref", "requester", "assignee", "task", "due"],
                     "additionalProperties": False,
                 },
-            }
+            },
+            "resolved": {
+                "type": "array",
+                "description": "<open> 里列出的未结事项中，新消息表明已经办完或已经有了答复的",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "item_id": {"type": "integer"},
+                        "evidence": {"type": "string", "description": "哪条消息说明了这一点，一句话"},
+                    },
+                    "required": ["item_id", "evidence"],
+                    "additionalProperties": False,
+                },
+            },
         },
-        "required": ["tasks"],
+        "required": ["tasks", "resolved"],
         "additionalProperties": False,
     },
 }
@@ -77,17 +91,35 @@ async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[
         involved = {m.sender_open_id for m in new} | {x.get("open_id") for m in new for x in m.mentions}
         for message in new:
             message.processed = True
-        if not involved & set(users):
-            continue  # 这段新消息和任何 Relay 用户都无关
+        # 这个群里还没结的事（等别人回复、别人让他做的事）：新消息可能就是答复，要一起判断
+        open_items = list((await session.execute(
+            select(FollowUp).where(FollowUp.status == "open", FollowUp.url == chat_link(chat_id), FollowUp.key.like("chat:%"))
+        )).scalars())
+        if not involved & set(users) and not open_items:
+            continue  # 这段新消息和任何 Relay 用户都无关，也没有在等这个群里的答复
         lines = [f"（之前）{m.sender_name or '某人'}：{m.text}" for m in earlier]
         lines += [f"[{i}] {m.sender_name or '某人'}：{m.text}" for i, m in enumerate(new)]
+        pending = "\n".join(f"[#{i.id}] {i.title}" for i in open_items)
         try:
             result = await complete_structured(
-                CHAT_TASKS_SYSTEM, "<chat>\n" + "\n".join(lines) + "\n</chat>", TASKS_TOOL
+                CHAT_TASKS_SYSTEM,
+                "<chat>\n" + "\n".join(lines) + "\n</chat>" + (f"\n\n<open>\n{pending}\n</open>" if pending else ""),
+                TASKS_TOOL,
             )
         except Exception:
             logger.exception("提取群聊待办失败 %s", chat_id)
             continue
+        by_id = {i.id: i for i in open_items}
+        for done in result.get("resolved") or []:
+            item = by_id.get(done.get("item_id"))
+            if item is not None and item.status == "open":
+                items.close(item, "done", f"群里有了答复：{done.get('evidence') or ''}".rstrip("："))
+                owner = next((u for u in users.values() if u.id == item.user_id), None)
+                if owner is not None and item.owner == "others":
+                    # 他在等的事有了答复：下一轮主动提醒时告诉他一声
+                    await add_signal(session, owner, "chat", f"resolved:{item.id}", kind="chat_result",
+                                     title=f"{item.title.removeprefix('等 ')} —— {done.get('evidence') or '已有答复'}",
+                                     payload={"item_id": item.id}, occurred_at=datetime.now(UTC), status="result")
         for task in result["tasks"]:
             if not 0 <= task["message_ref"] < len(new):
                 continue

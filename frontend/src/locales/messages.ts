@@ -1,5 +1,13 @@
 // Source-language keys keep the existing UI copy searchable. Values are English and Indonesian.
 export const messages: Record<string, readonly [string, string]> = {
+  "飞书后台开通了新功能，重新登录一次就能用上（例如看私聊里对方的回复）。": [
+    "New Feishu permissions were enabled. Log in again to use them (e.g. seeing replies in private chats).",
+    "Izin Feishu baru telah diaktifkan. Masuk lagi untuk menggunakannya (mis. melihat balasan di chat pribadi)."
+  ],
+  "重新登录": [
+    "Log in again",
+    "Masuk lagi"
+  ],
   "只授权这个定时任务、同一个对象；在“自动办的事”里可以随时收回": [
     "Only for this scheduled task and the same target; you can revoke it anytime in “Done automatically”",
     "Hanya untuk tugas terjadwal ini dan target yang sama; bisa dicabut kapan saja di “Dikerjakan otomatis”"

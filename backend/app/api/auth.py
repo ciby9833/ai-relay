@@ -136,8 +136,16 @@ async def dev_login(session: SessionDep, response: Response):
 
 
 @router.get("/me")
-async def me(user: UserDep):
-    return _user_json(user)
+async def me(user: UserDep, feishu: FeishuDep):
+    data = _user_json(user)
+    # 应用在飞书后台新开通了权限，但他的登录还没包含：提示重新登录一次（新权限只在登录时申请）
+    try:
+        granted = set(await feishu.granted_user_scopes())
+    except FeishuError:
+        granted = set()
+    have = set((user.feishu_scopes or "").split())
+    data["missing_scopes"] = sorted(granted - have) if have else []
+    return data
 
 
 @router.post("/logout")

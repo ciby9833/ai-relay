@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +20,7 @@ from app.llm.base import LLMError
 from app.models import FollowUp, PendingAction, Signal, User
 from app.proactive import actions, cards
 from app.proactive.llm import complete_text
-from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM
+from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM, REPLY_STATE_SYSTEM
 from app.proactive.push import push
 from app.sources import approval as approval_source
 from app import automation, i18n, insights
@@ -109,7 +109,9 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             except (actions.ActionError, LLMError):
                 logger.exception("自动起草失败 #%s", signal.id)
                 item.next_step = "回复这封邮件（自动起草失败，可以让 Relay 重试）"
-    elif action_type == "review":
+    elif await close_waiting_thread(session, user, signal, fresh) and action_type == "fyi":
+        return
+    if action_type == "review":
         day = local_day(signal.occurred_at or datetime.now(UTC), user)
         key = f"batch:{mail.get('from_address')}:{day}"
         item = await get_item(session, user, key)
@@ -125,6 +127,21 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             due_at=_due(mail.get("due"), user),
         )
     signal.status = "tracked"
+
+
+async def close_waiting_thread(session: AsyncSession, user: User, signal: Signal, fresh: bool) -> bool:
+    """对方在正在等回复的线程里回了信，但不需要他再回（告知、确认、致谢）：这件事结束了，告诉他对方说了什么。"""
+    mail = signal.payload or {}
+    thread = mail.get("thread_id")
+    waiting = await get_item(session, user, f"mail-thread:{thread}") if thread else None
+    if waiting is None or waiting.status != OPEN or waiting.kind != "waiting":
+        return False
+    sender = mail.get("from_name") or mail.get("from_address") or "对方"
+    close(waiting, "done", f"{sender} 回复了：{signal.summary or signal.title}")
+    if signal.id not in (waiting.signal_ids or []):
+        waiting.signal_ids = (waiting.signal_ids or []) + [signal.id]
+    signal.status = "result" if fresh else "done"
+    return True
 
 
 async def _subjects(session: AsyncSession, signal_ids: list[int]) -> list[str]:
@@ -203,7 +220,11 @@ async def result_facts(session: AsyncSession, user: User) -> list[str]:
     )).scalars().all()
     for signal in signals:
         signal.status = "done"
-    return [f"{s.title}" for s in signals]
+    return [
+        f"{s.payload.get('from_name') or s.payload.get('from') or '对方'} 回复了《{s.title}》：{s.summary or ''}".rstrip("：")
+        if s.kind == "mail" else s.title
+        for s in signals
+    ]
 
 
 async def leave_overlap(session: AsyncSession, user: User, signal: Signal) -> str | None:
@@ -336,7 +357,7 @@ async def track(session: AsyncSession, feishu: FeishuClient, user: User) -> None
                         continue  # 还没分级（存量邮件分批分级），下一轮再处理
                     if signal.importance in ("urgent", "normal"):
                         await _from_mail(session, feishu, user, signal, fresh)
-                    else:
+                    elif not await close_waiting_thread(session, user, signal, fresh):
                         signal.status = "ignored"
                 elif signal.kind == "invitation":
                     await _from_invitation(session, user, signal, fresh)
@@ -349,6 +370,81 @@ async def track(session: AsyncSession, feishu: FeishuClient, user: User) -> None
 
 
 # ---------- 自动推进与关闭 ----------
+
+
+REPLY_STATE_TOOL = {
+    "name": "reply_state",
+    "description": "判断他回复之后还要不要等对方",
+    "input_schema": {
+        "type": "object",
+        "properties": {"needs_response": {"type": "boolean"}, "summary": {"type": "string"}},
+        "required": ["needs_response", "summary"],
+        "additionalProperties": False,
+    },
+}
+
+
+async def _my_reply(session: AsyncSession, user: User, thread: str | None, action: PendingAction | None, after) -> Signal | str | None:
+    """他刚回的那封：Relay 替他发的用草稿正文，他自己在飞书里回的用已发送邮件的正文。"""
+    if action and action.status == "done" and action.kind == "send_mail":
+        return action.payload.get("body")
+    if not thread:
+        return None
+    sent = (await session.execute(
+        select(Signal).where(Signal.user_id == user.id, Signal.kind == "mail_sent", Signal.payload["thread_id"].astext == thread,
+                             Signal.occurred_at > after).order_by(Signal.occurred_at.desc()).limit(1)
+    )).scalars().first()
+    return sent.body if sent else None
+
+
+async def judge_reply(theirs: Signal | None, mine: str | None, lang: str = "zh") -> tuple[bool, str | None]:
+    """他回复之后：还需要等对方吗？拿不到正文或模型出错时，保守地当作要等。"""
+    if not mine:
+        return True, None
+    their_text = f"{theirs.payload.get('from')}：《{theirs.title}》\n{(theirs.body or '')[:3000]}" if theirs else "（不知道）"
+    try:
+        from app.proactive.llm import complete_structured
+
+        result = await complete_structured(
+            REPLY_STATE_SYSTEM,
+            f"<mail>\n对方上一封：{their_text}\n\n他的回复：\n{mine[:3000]}\n</mail>\n\nsummary " + i18n.instruction(lang),
+            REPLY_STATE_TOOL,
+        )
+        return bool(result.get("needs_response", True)), (result.get("summary") or None)
+    except Exception:  # noqa: BLE001 - 判断失败不影响主流程
+        logger.exception("判断回复状态失败")
+        return True, None
+
+
+def _who(signal: Signal | None) -> tuple[str | None, str | None]:
+    if signal is None:
+        return None, None
+    p = signal.payload or {}
+    return (p.get("from_address") or "").lower() or None, p.get("from_name") or None
+
+
+async def _counterpart_activity(session: AsyncSession, user: User, item: FollowUp, last: Signal | None) -> Signal | None:
+    """他回复之后，对方在别处有没有动静：另一封邮件、会议邀请。有就说明对方已经回应了，不该再催。"""
+    address, name = _who(last)
+    if not (address or name):
+        return None
+    thread = (last.payload or {}).get("thread_id") if last else None
+    conditions = []
+    if address:
+        conditions.append(func.lower(Signal.payload["from_address"].astext) == address)
+    if name:
+        conditions.append(Signal.payload["from_name"].astext == name)
+        conditions.append(Signal.payload["organizer"].astext == name)
+    rows = (await session.execute(
+        select(Signal).where(
+            Signal.user_id == user.id, Signal.kind.in_(["mail", "invitation"]), or_(*conditions),
+            # 邮件看收到时间；会议邀请的 occurred_at 是开会时间，看它进来的时间
+            or_(and_(Signal.kind == "mail", Signal.occurred_at > item.updated_at),
+                and_(Signal.kind == "invitation", Signal.created_at > item.updated_at)),
+            Signal.id.notin_(item.signal_ids or [0]),
+        ).order_by(Signal.occurred_at).limit(5)
+    )).scalars().all()
+    return next((s for s in rows if not thread or (s.payload or {}).get("thread_id") != thread), None)
 
 
 async def advance(session: AsyncSession, user: User) -> None:
@@ -368,14 +464,32 @@ async def advance(session: AsyncSession, user: User) -> None:
             if replied_elsewhere and action and action.status == "pending":
                 actions.cancel(action)  # Relay 起草的那版用不上了
         if item.kind == "reply" and ((action and action.status == "done") or replied_elsewhere):
-            # 回复已发出：转为等对方回复
-            item.kind, item.owner = "waiting", "others"
-            item.waiting_on = (last.payload.get("from_name") or last.payload.get("from_address")) if last else None
-            item.title = f"等 {item.waiting_on or '对方'} 回复"
+            # 回复已发出：看他回了什么，判断是已经办完，还是要等对方回应
+            mine = await _my_reply(session, user, (last.payload or {}).get("thread_id") if last else None, action,
+                                   (last.occurred_at if last else None) or item.created_at)
+            needs_response, state = await judge_reply(last, mine, await language_of(session, user))
+            who = (last.payload.get("from_name") or last.payload.get("from_address")) if last else None
+            if not needs_response:
+                close(item, "done", state or "你已经回复了")
+                continue
+            # 转成“等对方”时，所有描述“该你做什么”的字段一起换掉，不能留下“紧急、今天截止、回复对方”这类旧内容
+            item.kind, item.owner, item.waiting_on = "waiting", "others", who
+            item.title = f"等 {who or '对方'} 回复"
+            item.summary = state or (f"你已回复《{last.title}》" if last else "你已回复")
             item.next_step = "Relay 盯着对方的回复，3 天没回会提醒你"
-            item.recommendation, item.action_id = None, None
+            item.recommendation, item.action_id, item.importance, item.due_at = None, None, "normal", None
             item.remind_at, item.nudges = datetime.now(UTC) + WAITING_REMIND, 0
             item.updated_at = datetime.now(UTC)
+        elif item.kind == "waiting" and item.key.startswith("mail-thread:"):
+            # 对方在别的线程回了信、发来了会议邀请：已经回应了，不再催
+            activity = await _counterpart_activity(session, user, item, last)
+            if activity is not None:
+                what = "发来了会议邀请" if activity.kind == "invitation" or activity.title.lower().startswith(("invitation", "邀请")) \
+                    else "另外来信"
+                close(item, "done", f"{item.waiting_on or '对方'}{what}《{activity.title}》")
+                pending = await session.get(PendingAction, item.action_id) if item.action_id else None
+                if pending and pending.status == "pending":
+                    actions.cancel(pending)  # 起草好的跟进邮件用不上了
         elif item.kind == "invitation" and last:
             meeting = (await session.execute(
                 select(Signal).where(Signal.user_id == user.id, Signal.kind == "meeting",
@@ -504,6 +618,31 @@ async def announce(
     except FeishuError:
         logger.exception("推送到飞书失败")
     await session.commit()
+
+
+async def context_line(session: AsyncSession, item: FollowUp, timezone: str) -> str:
+    """对话里给模型看的一行：不只是标题，还有最近一次往来——谁什么时候说了什么、他回了没有。"""
+    tz = ZoneInfo(timezone)
+    parts = [f"#{item.id} [{'等他' if item.owner == 'me' else '等别人'}] {item.title}"]
+    last = await session.get(Signal, item.signal_ids[-1]) if item.signal_ids else None
+    if last is not None and last.kind == "mail":
+        who = last.payload.get("from_name") or last.payload.get("from") or "对方"
+        when = (last.occurred_at or item.created_at).astimezone(tz)
+        parts.append(f"{who} {when:%m-%d %H:%M} 来信：{(last.summary or last.title)[:80]}")
+        thread = last.payload.get("thread_id")
+        if thread:
+            mine = (await session.execute(
+                select(Signal).where(Signal.user_id == item.user_id, Signal.kind == "mail_sent",
+                                     Signal.payload["thread_id"].astext == thread, Signal.occurred_at > last.occurred_at)
+                .order_by(Signal.occurred_at.desc()).limit(1)
+            )).scalars().first()
+            if mine is not None:
+                parts.append(f"你 {mine.occurred_at.astimezone(tz):%m-%d %H:%M} 已回复：{(mine.body or '')[:80]}")
+    elif item.summary:
+        parts.append(item.summary[:100])
+    if item.action_id:
+        parts.append(f"待确认操作 #{item.action_id}")
+    return "；".join(parts)
 
 
 async def item_json(session: AsyncSession, item: FollowUp) -> dict:

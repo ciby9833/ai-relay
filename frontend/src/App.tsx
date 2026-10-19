@@ -87,6 +87,12 @@ export default function App() {
           <RelayMark size={18} />
           <span>Relay</span>
         </div>
+        {(user.missing_scopes?.length ?? 0) > 0 && (
+          <div className="reauth-bar">
+            {t("飞书后台开通了新功能，重新登录一次就能用上（例如看私聊里对方的回复）。")}
+            <a className="btn primary" href="/api/auth/feishu/login">{t("重新登录")}</a>
+          </div>
+        )}
         {view.type === "missions" ? (
           <Missions selected={view.id} onSelect={(id) => setView({ type: "missions", id })} />
         ) : (

@@ -6,7 +6,7 @@ import re
 import uuid
 import weakref
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -162,12 +162,19 @@ async def build_context(
         .order_by(FollowUp.updated_at.desc()).limit(12)
     )).scalars().all()
     if open_items:
-        lines.append("正在跟进的事：")
-        lines += [
-            f"- #{i.id} [{'等他' if i.owner == 'me' else '等别人'}] {i.title}"
-            + (f"（待确认操作 #{i.action_id}）" if i.action_id else "")
-            for i in open_items
-        ]
+        from app.proactive import items as follow_ups  # 避免循环导入
+
+        lines.append("正在跟进的事（含最近一次往来）：")
+        lines += [f"- {await follow_ups.context_line(session, i, user.timezone)}" for i in open_items]
+    closed = (await session.execute(
+        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status != "open",
+                               FollowUp.closed_at > datetime.now(UTC) - timedelta(days=1))
+        .order_by(FollowUp.closed_at.desc()).limit(5)
+    )).scalars().all()
+    if closed:
+        # 用户问“那件事怎么样了”时，刚结束的事也要知道怎么结束的
+        lines.append("最近一天结束的事：")
+        lines += [f"- #{i.id} {i.title} → {i.resolution or i.status}" for i in closed]
     if conversation.channel != "mission":
         missions = (await session.execute(
             select(Mission).where(Mission.user_id == user.id, Mission.status.in_(["active", "waiting", "asking"]))

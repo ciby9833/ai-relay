@@ -55,6 +55,8 @@ async def get_message(feishu: FeishuClient, user: User, message_id: str) -> dict
         "smtp_message_id": message.get("smtp_message_id"),
         "references": message.get("references"),
         "thread_id": message.get("thread_id"),
+        # UNREAD 未读、REPLIED 他已回复过这封（在飞书邮箱里直接回的也算）
+        "labels": message.get("label_ids") or [],
         "attachments": [
             {"id": a.get("id"), "filename": a.get("filename") or "（未命名）"}
             for a in message.get("attachments") or [] if a.get("id") and not a.get("is_inline")
@@ -146,23 +148,36 @@ async def list_folder(feishu: FeishuClient, user: User, folder: str, limit: int 
     return results
 
 
+QUOTE = re.compile(
+    r"\n\s*(On .{5,200}wrote:|在 .{5,100}写道[:：]|发件人[:：]|From:\s|-{3,}\s*Original Message|-{5,}|>)", re.S,
+)
+
+
+def strip_quote(text: str) -> str:
+    """只留这封信新写的部分（去掉下面引用的历史邮件）。"""
+    match = QUOTE.search("\n" + (text or ""))
+    return (text[: max(0, match.start() - 1)] if match else text or "").strip()
+
+
 async def _sync_sent(session: AsyncSession, feishu: FeishuClient, user: User) -> None:
-    """记下用户最近发出的邮件（只要线程号和时间）：他在 Relay 之外自己回过的信，对应的事要转成“等对方回复”。"""
+    """记下用户最近发出的邮件：他在 Relay 之外自己回过的信，对应的事要据此判断——办完了，还是转成“等对方回复”。
+
+    正文也要存（去掉引用的历史）：只知道“他回了”不够，要知道他回了什么，才能判断还需不需要等对方。
+    """
     data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages", params={"folder_id": "SENT", "page_size": 20})
     ids = data.get("items") or []
     known = await existing_ids(session, user, "mail_sent", ids)
     for message_id in ids:
         if message_id in known:
             continue
-        meta = (await feishu.user_api(
-            user, "GET", f"{MAILBOX}/messages/{message_id}", params={"format": "metadata"}
-        )).get("message") or {}
-        sent = meta.get("internal_date")
+        mail = await get_message(feishu, user, message_id)
+        sent = mail.get("internal_date")
         await add_signal(
-            session, user, "mail_sent", message_id, kind="mail_sent", title=meta.get("subject") or "（无主题）",
-            payload={"thread_id": meta.get("thread_id"), "to": [_address(a) for a in meta.get("to") or []]},
+            session, user, "mail_sent", message_id, kind="mail_sent", title=mail["subject"],
+            body=strip_quote(mail["body"])[:4000],
+            payload={"thread_id": mail.get("thread_id"), "to": mail["to"], "to_addresses": mail["to_addresses"]},
             occurred_at=datetime.fromtimestamp(int(sent) / 1000, UTC) if sent else datetime.now(UTC),
-            status="ignored",  # 只作为“他已回复”的依据，不提醒
+            status="ignored",  # 只作为“他已回复、回了什么”的依据，不提醒
         )
 
 
@@ -185,13 +200,17 @@ async def ensure_signal(session: AsyncSession, feishu: FeishuClient, user: User,
 
 
 async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: SourceState) -> int:
-    data = await feishu.user_api(
-        user, "GET", f"{MAILBOX}/messages",
-        params={"folder_id": "INBOX", "only_unread": "true", "page_size": 20},
-    )
+    # 不只看未读：他在飞书邮箱里先打开过的信（往往正是对方的回复）也要进来，否则“等对方回复”永远等不到
+    data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages", params={"folder_id": "INBOX", "page_size": 20})
     ids = data.get("items") or []
     known = await existing_ids(session, user, "mail", ids)
     first_sync = not state.cursor.get("initialized")
+    # 正在跟进的邮件线程：对方在这些线程里的新信，即使他已经在飞书里看过，也要拿来推进对应的事
+    from app.models import FollowUp
+
+    watched = {k.removeprefix("mail-thread:") for k in (await session.execute(
+        select(FollowUp.key).where(FollowUp.user_id == user.id, FollowUp.status == "open", FollowUp.key.like("mail-thread:%"))
+    )).scalars()}
     created = 0
     for message_id in ids:
         if message_id in known:
@@ -201,8 +220,9 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
             datetime.fromtimestamp(int(mail["internal_date"]) / 1000, UTC)
             if mail["internal_date"] else datetime.now(UTC)
         )
-        # 第一次同步时已有的未读邮件只进简报，不逐封打扰
-        stale = first_sync or received < datetime.now(UTC) - timedelta(days=2)
+        # 第一次同步时已有的邮件只进简报，不逐封打扰；他已经看过的信也不再打扰，除非是正在跟进的线程里的新回复
+        already_read = bool(mail["labels"]) and "UNREAD" not in mail["labels"] and mail.get("thread_id") not in watched
+        stale = first_sync or already_read or received < datetime.now(UTC) - timedelta(days=2)
         created += await add_signal(
             session, user, "mail", message_id,
             kind="mail", title=mail["subject"], body=mail["body"], payload=mail,
