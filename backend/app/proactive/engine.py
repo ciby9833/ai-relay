@@ -21,7 +21,8 @@ from app import i18n
 from app.sources import approval as approval_source
 from app.i18n import user_language
 from app.proactive.settings import language_of, in_quiet_hours, get_settings_row, is_workday, merged
-from app.sources import SYNCERS, UNAVAILABLE, calendar, docs
+from app.sources import SYNCERS, calendar, docs
+from app.sources import unavailable as source_unavailable
 
 logger = logging.getLogger("relay.proactive")
 
@@ -104,7 +105,7 @@ async def sync_sources(session: AsyncSession, feishu: FeishuClient, user: User, 
             if created:
                 logger.info("%s 的 %s 新增 %s 条", user.name, source, created)
         except FeishuError as exc:
-            if exc.code in UNAVAILABLE.get(source, set()):
+            if source_unavailable(source, exc):
                 # 例如没有开通飞书邮箱：不算故障、不提醒重新登录，一天后自动再检测
                 state.cursor = {**cursor, "unavailable_until": (now + UNAVAILABLE_RETRY).isoformat()}
                 state.last_error = f"没有开通这项服务，{UNAVAILABLE_RETRY.days} 天后自动再检测：{exc}"[:500]

@@ -274,7 +274,7 @@ async def test_mail_sync_is_idempotent_and_skips_missing_mailbox(monkeypatch):
 
         async def user_api(self, user, method, path, **kwargs):
             if self.no_mailbox:
-                raise FeishuError("user not found", 15180001)
+                raise FeishuError("[15180001] user not found", 4013)  # 飞书实际的返回
             if path.endswith("/messages") and kwargs["params"]["folder_id"] == "INBOX":
                 return {"items": ["m1", "m2"]}
             if path.endswith("/messages") and kwargs["params"]["folder_id"] == "SENT":

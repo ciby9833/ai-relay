@@ -11,5 +11,11 @@ SYNCERS = {
     "private_chat": (p2p.sync, 300),
 }
 
-# 不同数据源“这个人根本没有开通”的报错：跳过，隔一段时间再试（开通后自动恢复）
-UNAVAILABLE = {"mail": {15180001}}
+# 不同数据源“这个人根本没有开通”的报错：跳过，隔一段时间再试（开通后自动恢复）。
+# 飞书没开邮箱时返回 code=4013，子错误码 15180001 只出现在 msg 里（“[15180001] user not found”）
+UNAVAILABLE = {"mail": ("15180001",)}
+
+
+def unavailable(source: str, exc) -> bool:
+    markers = UNAVAILABLE.get(source, ())
+    return any(marker == str(exc.code) or f"[{marker}]" in str(exc) for marker in markers)
