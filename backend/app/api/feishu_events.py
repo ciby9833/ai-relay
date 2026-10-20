@@ -1,6 +1,7 @@
-"""飞书事件：机器人收到消息后交给 Agent 处理并回复。
+"""飞书事件：机器人收到消息后交给 Agent 处理并回复；卡片按钮的回调。
 
-默认通过长连接接收（app.feishu.longconn）；这里的 HTTP 回调供以后改用公网回调地址时使用。
+可以走长连接（app.feishu.longconn），也可以走这里的 HTTP 回调（飞书后台配置请求地址）。
+同一个应用若有多个长连接在线，飞书会把事件随机分给其中一个；HTTP 回调只发到配置的地址，不会被分走。
 """
 
 import asyncio
@@ -19,6 +20,7 @@ from app.db import SessionLocal
 from app.feishu.client import FeishuClient
 from app.feishu.events import decrypt_event, extract_text, mentioned_people, text_with_names
 from app.home import home_conversation, turn_lock
+from app.proactive.callbacks import respond
 from app.llm.base import LLMError
 from app.models import ChatMessage, Conversation, FeishuCard, FeishuEvent, FollowUp, Signal, User
 from app.sources import people
@@ -55,6 +57,17 @@ async def feishu_events(request: Request):
 
     if body.get("type") == "url_verification":
         return {"challenge": body.get("challenge")}
+
+    if header.get("event_type") == "card.action.trigger":
+        # 卡片按钮：走 HTTP 回调时飞书只发到这个地址，不会被其他用同一个应用的长连接分走
+        if header.get("tenant_key") and header.get("tenant_key") != settings.feishu_tenant_key:
+            return {}
+        event = body.get("event") or {}
+        operator = (event.get("operator") or {}).get("open_id")
+        value = (event.get("action") or {}).get("value") or {}
+        if not operator or "relay" not in value:
+            return {}
+        return await respond(request.app.state.feishu, operator, value, (event.get("context") or {}).get("open_message_id"))
 
     await dispatch_event(request.app.state.feishu, body)
     return {}
