@@ -78,6 +78,9 @@ class GeminiProvider:
         text_parts: list[str] = []
         finish = None
         usage: dict = {}
+        from app.llm.google import ensure_fresh
+
+        await ensure_fresh()  # 令牌快过期才当场换（正常由后台提前换好）
         try:
             # 请求偶尔会卡住不返回（鉴权、网络）：设上限，超时按模型错误处理，调用方会重试或告诉用户
             async with asyncio.timeout(STREAM_TIMEOUT):

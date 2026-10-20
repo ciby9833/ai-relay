@@ -22,6 +22,7 @@ from app.api.feishu_events import dispatch_event
 from app.proactive.callbacks import respond
 from app.config import get_settings
 from app.feishu.client import FeishuClient
+from app.llm.google import keep_fresh
 
 logger = logging.getLogger("relay.feishu")
 
@@ -38,6 +39,7 @@ def main() -> None:
 
     loop = asyncio.new_event_loop()
     threading.Thread(target=loop.run_forever, name="relay-events", daemon=True).start()
+    asyncio.run_coroutine_threadsafe(keep_fresh(), loop)  # Google 访问令牌后台提前刷新
     feishu = FeishuClient(settings, httpx.AsyncClient(timeout=30))
 
     def on_message(data: lark.im.v1.P2ImMessageReceiveV1) -> None:

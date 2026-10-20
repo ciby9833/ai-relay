@@ -50,6 +50,9 @@ async def embed(text: str) -> list[float] | None:
         if provider == "gemini":
             from google.genai import types
 
+            from app.llm.google import ensure_fresh
+
+            await ensure_fresh()
             response = await genai_client().aio.models.embed_content(
                 model=model,
                 contents=text,

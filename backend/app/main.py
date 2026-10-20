@@ -9,6 +9,7 @@ from app.api import assistant, auth, conversations, feishu_events, integrations,
 from app import insights
 from app.config import get_settings
 from app.feishu.client import FeishuClient
+from app.llm.google import keep_fresh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -26,9 +27,11 @@ async def lifespan(app: FastAPI):
         # 开发环境热重载只重启 uvicorn，不会重跑容器启动命令里的迁移：拉了新代码后在这里补上
         # （生产环境由容器启动命令执行迁移）。迁移脚本里有 asyncio.run，放到线程里执行。
         await asyncio.to_thread(_upgrade_database)
+    refresher = asyncio.create_task(keep_fresh())  # Google 访问令牌后台提前刷新
     async with httpx.AsyncClient(timeout=30) as http:
         app.state.feishu = FeishuClient(get_settings(), http)
         yield
+    refresher.cancel()
 
 
 app = FastAPI(title="Relay", lifespan=lifespan)

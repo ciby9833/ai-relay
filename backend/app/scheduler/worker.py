@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.feishu.client import FeishuClient, FeishuError
 from app.llm.base import LLMError
+from app.llm.google import keep_fresh
 from app.models import Conversation, PendingAction, ScheduledTask, User
 from app.missions import service as mission_service
 from app.proactive import chats
@@ -134,6 +135,7 @@ async def main() -> None:
     async with httpx.AsyncClient(timeout=30) as http:
         feishu = FeishuClient(get_settings(), http)
         logger.info("worker 已启动，每 %s 秒检查一次", POLL_SECONDS)
+        refresher = asyncio.create_task(keep_fresh())  # Google 访问令牌后台提前刷新  # noqa: F841
         while True:
             try:
                 for task_id in await claim_due_tasks():
