@@ -21,3 +21,6 @@ credentials
 probe.py
 .ruff_cache
 .coverage
+
+# Versioned blog metadata is required for production import.
+!content/blog/**/post.json

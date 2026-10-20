@@ -31,6 +31,8 @@ docker compose -f compose.test.yml down
 
 Web 界面语言支持、Figma 组件参考和交互检查记录见 [Web UI 与国际化](docs/WEB_UI.md)。
 
+Blog 位于 `/blog/`，文章原始 HTML、图片和视频存储在 PostgreSQL，API 启动时自动导入随版本附带的文章。新增文章、草稿和生产部署步骤见 [Blog 发布与维护](docs/BLOG.md)。
+
 ## 组成
 
 | 服务 | 作用 |

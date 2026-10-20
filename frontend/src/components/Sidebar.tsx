@@ -77,6 +77,9 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-foot">
+        <a className="nav-item blog-link" href="/blog/">
+          <Icon name="doc" /> {t("blogTitle")}
+        </a>
         <button className="nav-item" onClick={() => onPanel("memories")}>
           <Icon name="memory" /> {t("记忆")}
         </button>

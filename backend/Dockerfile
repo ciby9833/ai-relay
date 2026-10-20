@@ -22,7 +22,9 @@ FROM base AS production
 COPY app ./app
 COPY migrations ./migrations
 COPY scripts ./scripts
+COPY content ./content
 COPY alembic.ini ./
+RUN SECRET_KEY=blog-build-validation python -m app.blog_import --check
 USER relay
 
 EXPOSE 8000

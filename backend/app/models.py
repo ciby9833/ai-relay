@@ -1,15 +1,17 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Date,
     ForeignKey,
     Identity,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -21,6 +23,33 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
 EMBEDDING_DIM = 1536
+
+
+class BlogPost(Base):
+    __tablename__ = "blog_posts"
+
+    slug: Mapped[str] = mapped_column(String(160), primary_key=True)
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
+    language: Mapped[str] = mapped_column(String(32))
+    published_at: Mapped[date | None] = mapped_column(Date)
+    draft: Mapped[bool] = mapped_column(Boolean)
+    cover: Mapped[str | None] = mapped_column(Text)
+    bundle_hash: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BlogAsset(Base):
+    __tablename__ = "blog_assets"
+
+    post_slug: Mapped[str] = mapped_column(
+        ForeignKey("blog_posts.slug", ondelete="CASCADE"), primary_key=True
+    )
+    path: Mapped[str] = mapped_column(Text, primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(128))
+    sha256: Mapped[str] = mapped_column(String(64))
+    # HTML is stored as bytes too: importing and serving never reformat the original.
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
 
 
 class User(Base):

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from app.api import assistant, auth, conversations, feishu_events, integrations, missions, proactive
+from app.api import assistant, auth, blog, conversations, feishu_events, integrations, missions, proactive
 from app import insights
 from app.config import get_settings
 from app.feishu.client import FeishuClient
@@ -27,6 +27,13 @@ async def lifespan(app: FastAPI):
         # 开发环境热重载只重启 uvicorn，不会重跑容器启动命令里的迁移：拉了新代码后在这里补上
         # （生产环境由容器启动命令执行迁移）。迁移脚本里有 asyncio.run，放到线程里执行。
         await asyncio.to_thread(_upgrade_database)
+    # Production's container command migrates first; both environments import the same bundle.
+    from app.blog_import import import_bundle
+    try:
+        await import_bundle()
+    except Exception:
+        # 文章包有问题不能拖垮助手本身：保留数据库里上一版文章，记日志后照常启动
+        logging.getLogger("relay.blog").exception("博客文章导入失败，继续使用数据库中的上一版")
     refresher = asyncio.create_task(keep_fresh())  # Google 访问令牌后台提前刷新
     async with httpx.AsyncClient(timeout=30) as http:
         app.state.feishu = FeishuClient(get_settings(), http)
@@ -50,6 +57,7 @@ app.include_router(feishu_events.router)
 app.include_router(proactive.router)
 app.include_router(missions.router)
 app.include_router(integrations.router)
+app.include_router(blog.router)
 
 
 @app.get("/api/health")

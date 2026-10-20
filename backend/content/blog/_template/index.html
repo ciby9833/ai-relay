@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 复制整个 _template 目录并改名为文章 slug（小写字母、数字、连字符），再按 docs/BLOG.md 的“发文章清单”逐项检查。
+     title、lang、description 要与 post.json 一致；不要引用外部字体/脚本/图片，所有素材放进本目录。 -->
+<title>文章标题</title>
+<meta name="description" content="一两句话的摘要，用在文章列表和分享卡片上。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="文章标题">
+<meta property="og:description" content="一两句话的摘要，用在文章列表和分享卡片上。">
+<!-- 有封面时取消注释，并在 post.json 里写 "cover": "img/cover.jpg"（1200×630）：
+<meta property="og:image" content="img/cover.jpg"> -->
+<style>
+:root {
+  --paper: #faf9f5; --ink: #141413; --ink-2: #3d3d3a; --muted: #73726c; --rule: #e2dfd3; --accent: #c96442;
+  --display: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif;
+  --body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #262624; --ink: #f5f4ef; --ink-2: #dcdad2; --muted: #a3a199; --rule: #3e3e38; --accent: #d97757; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+img, video { max-width: 100%; height: auto; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.8 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+article { max-width: 720px; margin: 0 auto; padding-block: 56px 80px; }
+h1 { font: 700 clamp(32px, 5vw, 48px)/1.25 var(--display); margin: 0 0 12px; text-wrap: balance; }
+h2 { font: 700 26px/1.4 var(--display); margin: 48px 0 12px; }
+p { color: var(--ink-2); margin: 0 0 18px; }
+a { color: var(--accent); }
+.meta { color: var(--muted); font-size: 14px; margin-bottom: 40px; }
+figure { margin: 28px 0; }
+figure img { display: block; border: 1px solid var(--rule); border-radius: 12px; }
+figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<article>
+  <h1>文章标题</h1>
+  <p class="meta"><time datetime="2026-01-01">2026 年 1 月 1 日</time></p>
+
+  <p>开头一段先说清楚这篇文章讲什么、对读者有什么用。</p>
+
+  <h2>小标题</h2>
+  <p>正文。截图放进 img/ 目录，用相对路径引用，并写好 alt 说明图里是什么。</p>
+  <!--
+  <figure>
+    <img src="img/example.jpg" alt="说明图里是什么" width="1600" height="900" loading="lazy">
+    <figcaption>图注</figcaption>
+  </figure>
+  -->
+
+  <p class="meta">演示中的人名、公司和数据均为虚构。（用了真实数据就删掉这句。）</p>
+</article>
+</body>
+</html>

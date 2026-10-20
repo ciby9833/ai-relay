@@ -1,5 +1,13 @@
 // Entries: Chinese, English, Indonesian.
 export const common: Record<string, readonly [string, string, string]> = {
+  "blogTitle": ["博客", "Blog", "Blog"],
+  "blogArticles": ["文章", "Articles", "Artikel"],
+  "blogArticle": ["文章", "Article", "Artikel"],
+  "blogLoadError": ["文章暂时无法加载，请重试。", "Unable to load articles. Please try again.", "Artikel tidak dapat dimuat. Silakan coba lagi."],
+  "blogNavigation": ["博客导航", "Blog navigation", "Navigasi blog"],
+  "blogOpenRelay": ["打开 Relay", "Open Relay", "Buka Relay"],
+  "blogIntro": ["关于 Relay 的新进展、使用指南，以及它如何帮你把每一件事跟进到底。", "News, guides, and stories about Relay and how it follows every task through.", "Kabar, panduan, dan cerita tentang Relay dan caranya menindaklanjuti setiap tugas hingga tuntas."],
+  "blogEmpty": ["文章即将发布。", "Articles are coming soon.", "Artikel akan segera hadir."],
   "replyAllCount": [
     "回复全部（同时抄送原邮件的其他 {count} 人）",
     "Reply all (copy {count} other recipients)",
@@ -179,6 +187,11 @@ export const common: Record<string, readonly [string, string, string]> = {
     "添加参会人",
     "Add attendees",
     "Tambah peserta"
+  ],
+  "grant.base_record": [
+    "往多维表格提交记录",
+    "Submit records to Base tables",
+    "Kirim catatan ke tabel Base"
   ],
   "example.title": [
     "订单 JT123 清关异常，需要确认是否改派",

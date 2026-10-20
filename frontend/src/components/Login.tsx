@@ -35,6 +35,7 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
             {t("本地调试登录")}
           </button>
         )}
+        <a className="btn ghost" href="/blog/">{t("blogTitle")}</a>
       </div>
     </div>
   );
