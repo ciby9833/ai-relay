@@ -54,7 +54,11 @@ def main() -> None:
         if not operator or "relay" not in value:
             return P2CardActionTriggerResponse({})
         message_id = event.context.open_message_id if event.context else None
-        future = asyncio.run_coroutine_threadsafe(respond(feishu, operator, value, message_id), loop)
+        header = getattr(data, "header", None)
+        future = asyncio.run_coroutine_threadsafe(respond(
+            feishu, operator, value, message_id,
+            created_us=getattr(header, "create_time", None), update_token=getattr(event, "token", None),
+        ), loop)
         try:
             return P2CardActionTriggerResponse(future.result(timeout=2.8))
         except Exception:

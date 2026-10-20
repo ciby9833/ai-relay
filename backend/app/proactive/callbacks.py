@@ -111,46 +111,73 @@ async def handle_card_action(
         return {"ok": ok, "message": message, "card": card, "open_id": open_id}
 
 
-async def deferred_update(feishu: FeishuClient, message_id: str | None, result: dict | None) -> None:
-    """回调已经先响应了“处理中”：等一会儿再更新卡片（飞书要求延时更新必须在响应回调之后），失败时另发消息。"""
+async def deferred_update(feishu: FeishuClient, message_id: str | None, result: dict | None, update_token: str | None = None) -> None:
+    """回调已经先响应了“处理中”：再更新卡片，失败时另发消息。
+
+    按飞书文档：更新必须在回调响应之后（不能并行或提前），优先用回调里的 event.token 调延时更新接口
+    （30 分钟内有效、最多 2 次），不行再用消息 PATCH。
+    """
     if not result:
         return
-    await asyncio.sleep(1.5)
-    if message_id and result["card"]:
+    await asyncio.sleep(1.0)
+    updated = False
+    if result["card"] and update_token:
+        try:
+            await feishu.tenant_api("POST", "/interactive/v1/card/update", json={"token": update_token, "card": result["card"]})
+            updated = True
+        except FeishuError:
+            logger.exception("延时更新卡片失败，改用消息 PATCH")
+    if result["card"] and not updated and message_id:
         try:
             await feishu.tenant_api("PATCH", f"/im/v1/messages/{message_id}", json={"content": json.dumps(result["card"], ensure_ascii=False)})
+            updated = True
         except FeishuError:
             logger.exception("更新卡片失败")
-            result["card"] = None
-    if result["message"] and (not result["ok"] or not result["card"]):
+    if result["message"] and (not result["ok"] or not updated):
         await feishu.send_text(result["open_id"], result["message"])
 
 
-CALLBACK_WAIT_SECONDS = 2.2  # 飞书要求 3 秒内响应卡片回调
+CALLBACK_WAIT_SECONDS = 2.2  # 不知道路上用了多久时（长连接）最多等这么久
+CALLBACK_DEADLINE = 3.0  # 飞书要求从发出回调起 3 秒内响应
+SAFETY = 0.6  # 留给回程网络的余量
 CARD_LIMIT = 28 * 1024  # 回调响应里的卡片上限约 30KB
 _pending: set[asyncio.Task] = set()
 
 
-async def respond(feishu: FeishuClient, operator: str, value: dict, message_id: str | None) -> dict:
+async def respond(
+    feishu: FeishuClient, operator: str, value: dict, message_id: str | None,
+    created_us: int | str | None = None, update_token: str | None = None,
+) -> dict:
     """处理一次卡片按钮点击，返回给飞书的回调响应（长连接和 HTTP 回调共用）。
 
     2.2 秒内做完就把新卡片放进响应；来不及（例如要调模型起草）先回“正在处理”，做完再单独更新卡片。
     """
     started = time.monotonic()
-    logger.info("收到卡片回调 operator=%s relay=%s message=%s", operator, value.get("relay"), message_id)
+    # 飞书从发出回调起算 3 秒：卡片回调走的是飞书海外节点，到这里路上可能已经用掉 2 秒。
+    # 按发出时间（header.create_time，微秒）算还剩多少，留出余量；来不及就先回“正在处理”，做完再更新卡片。
+    lag = None
+    if created_us:
+        try:
+            lag = max(0.0, time.time() - int(created_us) / 1_000_000)
+        except (TypeError, ValueError):
+            lag = None
+    wait = CALLBACK_WAIT_SECONDS if lag is None else max(0.0, min(CALLBACK_WAIT_SECONDS, CALLBACK_DEADLINE - SAFETY - lag))
+    logger.info("收到卡片回调 operator=%s relay=%s message=%s 路上用时=%s 可等=%.1fs", operator, value.get("relay"), message_id,
+                f"{lag:.1f}s" if lag is not None else "未知", wait)
     task = asyncio.ensure_future(handle_card_action(feishu, operator, value, message_id))
     _pending.add(task)
     task.add_done_callback(_pending.discard)
     try:
-        result = await asyncio.wait_for(asyncio.shield(task), CALLBACK_WAIT_SECONDS)
+        result = await asyncio.wait_for(asyncio.shield(task), wait)
     except TimeoutError:
         logger.info("卡片回调 %.1fs 内没处理完，先回 toast，处理完再更新卡片", time.monotonic() - started)
+        token = update_token
 
         def later(done: asyncio.Task) -> None:
             if done.cancelled() or done.exception():
                 logger.error("卡片按钮处理失败", exc_info=done.exception())
                 return
-            follow = asyncio.ensure_future(deferred_update(feishu, message_id, done.result()))
+            follow = asyncio.ensure_future(deferred_update(feishu, message_id, done.result(), token))
             _pending.add(follow)
             follow.add_done_callback(_pending.discard)
 
@@ -168,7 +195,7 @@ async def respond(feishu: FeishuClient, operator: str, value: dict, message_id: 
             response["card"] = {"type": "raw", "data": result["card"]}
         else:
             # 卡片太大放不进回调响应（飞书会报 200671）：只回 toast，再单独更新卡片
-            follow = asyncio.ensure_future(deferred_update(feishu, message_id, result))
+            follow = asyncio.ensure_future(deferred_update(feishu, message_id, result, update_token))
             _pending.add(follow)
             follow.add_done_callback(_pending.discard)
     if not result["ok"] and result["message"] and len(result["message"]) > 60:

@@ -67,7 +67,10 @@ async def feishu_events(request: Request):
         value = (event.get("action") or {}).get("value") or {}
         if not operator or "relay" not in value:
             return {}
-        return await respond(request.app.state.feishu, operator, value, (event.get("context") or {}).get("open_message_id"))
+        return await respond(
+            request.app.state.feishu, operator, value, (event.get("context") or {}).get("open_message_id"),
+            created_us=header.get("create_time"), update_token=event.get("token"),
+        )
 
     await dispatch_event(request.app.state.feishu, body)
     return {}

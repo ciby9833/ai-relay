@@ -45,3 +45,60 @@ async def test_card_click_over_http_returns_new_card_or_processing(monkeypatch):
         monkeypatch.setattr(callbacks, "deferred_update", lambda *a, **k: asyncio.sleep(0))
         body = (await client.post("/api/feishu/events", json=card_event("vt-test", "draft_reply"))).json()
         assert body == {"toast": {"type": "info", "content": "收到，正在处理…"}}
+
+
+async def test_late_callback_answers_at_once_and_updates_with_event_token(monkeypatch):
+    """回调在路上已经用了 2.6 秒：立刻回“正在处理”，处理完用回调里的 event.token 延时更新卡片。"""
+    import time
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "feishu_verification_token", "vt-test")
+    app.state.feishu = object()
+    updates = []
+
+    async def quick_but_not_instant(feishu, operator, value, message_id):
+        await asyncio.sleep(0.3)
+        return {"ok": True, "message": "已批准", "card": {"schema": "2.0"}, "open_id": operator}
+
+    async def record(feishu, message_id, result, update_token=None):
+        updates.append((message_id, result["message"], update_token))
+
+    monkeypatch.setattr(callbacks, "handle_card_action", quick_but_not_instant)
+    monkeypatch.setattr(callbacks, "deferred_update", record)
+    event = card_event("vt-test")
+    event["header"]["create_time"] = str(int((time.time() - 2.6) * 1_000_000))
+    event["event"]["token"] = "c-update-token"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://relay") as client:
+        started = time.monotonic()
+        body = (await client.post("/api/feishu/events", json=event)).json()
+        assert time.monotonic() - started < 0.2  # 没有再等
+    assert body == {"toast": {"type": "info", "content": "收到，正在处理…"}}
+    await asyncio.sleep(0.5)
+    assert updates == [("om_1", "已批准", "c-update-token")]
+
+
+async def test_deferred_update_prefers_official_token_then_falls_back(monkeypatch):
+    from app.feishu.client import FeishuError
+
+    calls = []
+
+    class Feishu:
+        fail_token = False
+
+        async def tenant_api(self, method, path, **kwargs):
+            calls.append((method, path))
+            if path == "/interactive/v1/card/update" and self.fail_token:
+                raise FeishuError("token expired", 300030)
+            return {}
+
+        async def send_text(self, open_id, text):
+            calls.append(("text", text))
+
+    feishu = Feishu()
+    result = {"ok": True, "message": "已批准", "card": {"schema": "2.0"}, "open_id": "ou_me"}
+    await callbacks.deferred_update(feishu, "om_1", result, "c-token")
+    assert calls == [("POST", "/interactive/v1/card/update")]
+    calls.clear()
+    feishu.fail_token = True
+    await callbacks.deferred_update(feishu, "om_1", result, "c-token")
+    assert calls == [("POST", "/interactive/v1/card/update"), ("PATCH", "/im/v1/messages/om_1")]
