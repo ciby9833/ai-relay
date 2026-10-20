@@ -1,8 +1,8 @@
 """Gemini 客户端：配置了服务账号就走 Vertex AI，否则用 Gemini API key。
 
-服务账号的访问令牌大约一小时过期，要去 oauth2.googleapis.com 换新的。生产服务器到这个地址的连接时好时坏：
-如果在用户的请求里才去刷新，碰上连不上就要等很久（默认 120 秒）——用户看到的就是“Gemini 响应超时”。
-所以令牌由后台提前刷新（剩不到 15 分钟就换），每次最多等 10 秒、失败重试；请求里只在快过期时才补刷一次。
+访问令牌用服务账号私钥在本地签发（self-signed JWT），不去 oauth2.googleapis.com 换：
+生产服务器到那个地址时好时坏、有时完全连不上，在用户请求里换令牌会一直等到超时（“Gemini 响应超时”）。
+本地签发不需要网络；令牌约一小时过期，后台仍按“剩不到 15 分钟就换”提前续签，请求里只在快过期时补签。
 """
 
 import asyncio
@@ -49,7 +49,10 @@ def gemini_configured() -> bool:
 @lru_cache
 def credentials() -> service_account.Credentials | None:
     path = _credentials_file()
-    return service_account.Credentials.from_service_account_file(path, scopes=SCOPES) if path else None
+    if not path:
+        return None
+    # always_use_jwt_access：令牌在本地签发，不依赖 oauth2.googleapis.com
+    return service_account.Credentials.from_service_account_file(path, scopes=SCOPES).with_always_use_jwt_access(True)
 
 
 def _remaining(creds) -> timedelta:

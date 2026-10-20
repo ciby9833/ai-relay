@@ -49,3 +49,42 @@ def test_quick_request_caps_timeout(monkeypatch):
     monkeypatch.setattr(google.Request, "__call__", fake_call)
     google._QuickRequest()(url="https://oauth2.googleapis.com/token", method="POST")
     assert seen["timeout"] == google.REFRESH_TIMEOUT
+
+
+def test_credentials_are_self_signed(monkeypatch):
+    """令牌在本地签发：刷新不需要访问 oauth2.googleapis.com。"""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from google.auth import crypt
+
+    # credentials() 必须打开本地签发
+    seen = {}
+
+    class Loaded:
+        def with_always_use_jwt_access(self, value):
+            seen["jwt"] = value
+            return self
+
+    monkeypatch.setattr(google, "_credentials_file", lambda: "/tmp/sa.json")
+    monkeypatch.setattr(google.service_account.Credentials, "from_service_account_file", lambda path, scopes: Loaded())
+    google.credentials.cache_clear()
+    try:
+        google.credentials()
+        assert seen == {"jwt": True}
+    finally:
+        google.credentials.cache_clear()
+
+    # 本地签发的令牌：刷新时不碰网络
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+    creds = google.service_account.Credentials(
+        crypt.RSASigner.from_string(pem, "k"), "relay@p.iam.gserviceaccount.com", "https://oauth2.googleapis.com/token",
+        scopes=google.SCOPES, always_use_jwt_access=True,
+    )
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("不应该访问网络")
+
+    monkeypatch.setattr(google.Request, "__call__", no_network)
+    creds.refresh(google._QuickRequest())
+    assert creds.token and creds.token.count(".") == 2 and google._remaining(creds) > timedelta(minutes=50)
