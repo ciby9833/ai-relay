@@ -9,6 +9,7 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import Future
 
 import httpx
 import lark_oapi as lark
