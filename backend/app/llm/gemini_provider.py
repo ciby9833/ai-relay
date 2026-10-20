@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import uuid
 from collections.abc import AsyncIterator
@@ -9,6 +10,7 @@ from app.llm.base import Completion, LLMError, StopReason, TextDelta
 
 
 SKIP_SIGNATURE = b"skip_thought_signature_validator"
+STREAM_TIMEOUT = 120  # 秒
 
 
 def to_gemini_contents(messages: list[dict]) -> list[types.Content]:
@@ -77,36 +79,40 @@ class GeminiProvider:
         finish = None
         usage: dict = {}
         try:
-            stream = await self.client.aio.models.generate_content_stream(
-                model=model, contents=to_gemini_contents(messages), config=config
-            )
-            async for chunk in stream:
-                if chunk.usage_metadata:
-                    usage = {
-                        "input_tokens": chunk.usage_metadata.prompt_token_count,
-                        "output_tokens": chunk.usage_metadata.candidates_token_count,
-                    }
-                if not chunk.candidates:
-                    continue
-                candidate = chunk.candidates[0]
-                if candidate.finish_reason:
-                    finish = candidate.finish_reason
-                for part in (candidate.content.parts or []) if candidate.content else []:
-                    raw_parts.append(part)
-                    if part.function_call:
-                        call = part.function_call
-                        blocks.append(
-                            {
-                                "type": "tool_use",
-                                "id": call.id or f"call_{uuid.uuid4().hex[:24]}",
-                                "name": call.name,
-                                "input": dict(call.args or {}),
-                                **({"signature": base64.b64encode(part.thought_signature).decode()} if part.thought_signature else {}),
-                            }
-                        )
-                    elif part.text and not part.thought:
-                        text_parts.append(part.text)
-                        yield TextDelta(part.text)
+            # 请求偶尔会卡住不返回（鉴权、网络）：设上限，超时按模型错误处理，调用方会重试或告诉用户
+            async with asyncio.timeout(STREAM_TIMEOUT):
+                stream = await self.client.aio.models.generate_content_stream(
+                    model=model, contents=to_gemini_contents(messages), config=config
+                )
+                async for chunk in stream:
+                    if chunk.usage_metadata:
+                        usage = {
+                            "input_tokens": chunk.usage_metadata.prompt_token_count,
+                            "output_tokens": chunk.usage_metadata.candidates_token_count,
+                        }
+                    if not chunk.candidates:
+                        continue
+                    candidate = chunk.candidates[0]
+                    if candidate.finish_reason:
+                        finish = candidate.finish_reason
+                    for part in (candidate.content.parts or []) if candidate.content else []:
+                        raw_parts.append(part)
+                        if part.function_call:
+                            call = part.function_call
+                            blocks.append(
+                                {
+                                    "type": "tool_use",
+                                    "id": call.id or f"call_{uuid.uuid4().hex[:24]}",
+                                    "name": call.name,
+                                    "input": dict(call.args or {}),
+                                    **({"signature": base64.b64encode(part.thought_signature).decode()} if part.thought_signature else {}),
+                                }
+                            )
+                        elif part.text and not part.thought:
+                            text_parts.append(part.text)
+                            yield TextDelta(part.text)
+        except TimeoutError as exc:
+            raise LLMError(f"Gemini 响应超时（{STREAM_TIMEOUT} 秒）") from exc
         except errors.APIError as exc:
             raise LLMError(f"Gemini 接口错误 ({exc.code}): {exc.message}") from exc
 
