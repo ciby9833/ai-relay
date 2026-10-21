@@ -395,6 +395,18 @@ class Mission(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class AssuranceEvent(Base):
+    """Append-only checks, handoffs, completions and human reviews; never inferred from prose."""
+    __tablename__ = "assurance_events"
+    __table_args__ = (Index("ix_assurance_events_kind_created", "kind", "created_at"),)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    mission_id: Mapped[int | None] = mapped_column(ForeignKey("missions.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    detail: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class MissionLog(Base):
     """长期任务的时间线：每次醒来做了什么、汇报了什么。"""
 

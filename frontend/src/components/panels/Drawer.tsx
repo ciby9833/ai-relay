@@ -14,7 +14,13 @@ function Shell({ title, onClose, children }: { title: string; onClose: () => voi
     const previous = document.activeElement as HTMLElement | null;
     const element = dialog.current!;
     element.showModal();
-    return () => { element.close(); previous?.focus(); };
+    // Loading content can replace the currently focused control. Keep keyboard
+    // focus in the modal when that happens, without moving an existing focus.
+    const observer = new MutationObserver(() => {
+      if (element.open && !element.contains(document.activeElement)) element.querySelector("button")?.focus();
+    });
+    observer.observe(element, { childList: true, subtree: true });
+    return () => { observer.disconnect(); element.close(); previous?.focus(); };
   }, []);
   return (
       <dialog ref={dialog} className="drawer" aria-labelledby="drawer-title"

@@ -5,6 +5,7 @@
 """
 
 import re
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -12,7 +13,21 @@ from sqlalchemy import select
 
 from app.agent.tools.base import ToolContext, ToolError, tool
 from app.missions import criteria, service
+from app.missions.outcomes import CriterionInput, capture_baselines
+from app import assurance
 from app.models import Message, Mission, PendingAction, Signal
+
+def _criterion_schema():
+    schema = CriterionInput.model_json_schema()
+    definitions = schema.pop("$defs", {})
+    def expand(value):
+        if isinstance(value, dict):
+            if "$ref" in value:
+                return expand(definitions[value["$ref"].split("/")[-1]])
+            return {k: expand(v) for k, v in value.items() if k != "title"}
+        return [expand(v) for v in value] if isinstance(value, list) else value
+    return {"anyOf": [{"type": "string"}, expand(schema)]}
+
 
 CHAT = {"home", "web", "feishu"}
 MISSION = {"mission"}
@@ -60,10 +75,10 @@ async def _user_words(ctx: ToolContext) -> str | None:
         "goal": {"type": "string", "description": "用户要的结果和约束，忠实于原话"},
         "due_at": {"type": "string", "description": "只有用户原话里提到了时间（“今天下班前”“周五”“月底”）才填，"
                    "换算成 ISO 8601 本地时间，例如 2026-10-23T18:00；没提就不填，不要自己定"},
-        "criteria": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": criteria.MAX_CRITERIA,
+        "criteria": {"type": "array", "items": _criterion_schema(), "minItems": 1, "maxItems": criteria.MAX_CRITERIA,
                      "description": "验收清单：做到这几条才算办成。每条是一个能用证据核实的结果（例如“Budi 给出了报价的结论”），"
                                     "只来自用户原话，不要加用户没要求的（用户只要“给个结果”，就不要写“给出详细清单”）。"
-                                    "一般 1~3 条。执行中你只能标记状态，不能改条目；只有用户能改。"},
+                                    "业务状态/数量变化必须使用对象条目 requirement=business，并绑定 rule（飞书表格指标回读）；来源不明则暂不填 rule，不能以催办/回复冒充结果。只要求发消息用 execution，只要求回复用 reply。decrease 的基线由系统读取，不能编造。一般 1~3 条。执行中你只能标记状态，不能改条目；只有用户能改。"},
     },
     ["title", "goal", "criteria"],
     channels=CHAT,
@@ -84,6 +99,7 @@ async def start_mission(ctx: ToolContext, args: dict) -> str:
     mission = await service.create(
         ctx.session, ctx.user, args["title"], args["goal"], instruction=await _user_words(ctx), due_at=due_at,
     )
+    await capture_baselines(ctx.feishu, ctx.user, checklist)
     mission.criteria = checklist
     ctx.cards.append(service.card(mission))
     return (
@@ -98,7 +114,7 @@ async def start_mission(ctx: ToolContext, args: dict) -> str:
     "edit_mission_criteria",
     "用户要改某个长期任务的验收清单（做到什么才算办成）时使用：传入改好后的完整清单。只有用户本人能改。",
     {"mission_id": {"type": "integer"},
-     "criteria": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": criteria.MAX_CRITERIA}},
+     "criteria": {"type": "array", "items": _criterion_schema(), "minItems": 1, "maxItems": criteria.MAX_CRITERIA}},
     ["mission_id", "criteria"],
     user_initiated_only=True,
     channels=CHAT,
@@ -109,6 +125,9 @@ async def edit_mission_criteria(ctx: ToolContext, args: dict) -> str:
         raise ToolError("这个任务已经结束了")
     try:
         criteria.replace_texts(mission, args["criteria"])
+        updated = deepcopy(mission.criteria)
+        await capture_baselines(ctx.feishu, ctx.user, updated)
+        mission.criteria = updated
     except criteria.CriteriaError as exc:
         raise ToolError(str(exc)) from exc
     await service.log(ctx.session, mission, "step", "你改了验收清单：" + "；".join(c["text"] for c in mission.criteria))
@@ -227,6 +246,8 @@ async def report_progress(ctx: ToolContext, args: dict) -> str:
 )
 async def ask_user(ctx: ToolContext, args: dict) -> str:
     mission = _current(ctx)
+    if mission.status != "asking":
+        assurance.record(ctx.session, ctx.user.id, "human_takeover", {"reason": "ask_user"}, mission.id)
     mission.status, mission.question = "asking", args["question"]
     ctx.stop_turn = True
     await service.log(ctx.session, mission, "ask", args["question"])
@@ -320,7 +341,7 @@ async def wait_for_reply(ctx: ToolContext, args: dict) -> str:
     "check_criterion",
     "对照验收清单标记一条：做到了（met=true）必须给出证据编号 ref——action:编号（本任务里执行成功的操作）、"
     "signal:编号（邮件/消息）或 log:编号（时间线里记下的对方回复）；确定做不到时 met=false 并说明原因。"
-    "只回了“收到”“在处理”、只答应了时间，都不算做到。清单条目不能改，只有用户能改。",
+    "只回了“收到”“在处理”、只答应了时间，都不算做到。business 标准会自动回读预先绑定的指标，无需 ref，无法回读不能通过。清单条目不能改，只有用户能改。",
     {
         "criterion_id": {"type": "integer"},
         "met": {"type": "boolean"},
@@ -333,10 +354,12 @@ async def wait_for_reply(ctx: ToolContext, args: dict) -> str:
 async def check_criterion(ctx: ToolContext, args: dict) -> str:
     mission = _current(ctx)
     try:
-        item = await criteria.mark(ctx.session, mission, args["criterion_id"], args["met"], args["evidence"], args.get("ref"))
+        item = await criteria.mark(ctx.session, mission, args["criterion_id"], args["met"], args["evidence"], args.get("ref"), ctx.feishu, ctx.user)
     except criteria.CriteriaError as exc:
         raise ToolError(str(exc)) from exc
-    await service.log(ctx.session, mission, "step", f"验收第 {item['id']} 条：{'做到' if args['met'] else '做不到'}——{item['evidence']}")
+    if item.get("outcome"):
+        assurance.record(ctx.session, ctx.user.id, "business_verification", {"criterion_id": item["id"], **item["outcome"]}, mission.id)
+    await service.log(ctx.session, mission, "step", f"验收第 {item['id']} 条：{'做到' if item['status'] == 'met' else '尚未核实'}——{item['evidence']}")
     left = [c for c in mission.criteria if c["status"] != "met"]
     return "已记下。" + (f"还有 {len(left)} 条没做到。" if left else "全部做到了，可以 complete_mission（结束前会有独立核对）。")
 
@@ -351,6 +374,10 @@ async def check_criterion(ctx: ToolContext, args: dict) -> str:
 )
 async def complete_mission(ctx: ToolContext, args: dict) -> str:
     mission = _current(ctx)
+    if mission.status not in service.OPEN:
+        raise ToolError("这个任务已经结束了")
+    if args["success"] and not mission.criteria:
+        raise ToolError("任务缺少验收清单，请 ask_user 请用户补充标准后再核验，不能跳过目标核验")
     if args["success"] and mission.criteria:
         missing = [c for c in mission.criteria if c["status"] != "met"]
         if missing:
@@ -358,20 +385,31 @@ async def complete_mission(ctx: ToolContext, args: dict) -> str:
                             + "。先用 check_criterion 逐条核实；确实办不成就 success=false 说明原因。")
         if mission.check_rounds >= criteria.MAX_CHECK_ROUNDS:
             raise ToolError("已经核对过两轮都没通过，不要再自己反复改：用 ask_user 把现状和拿不准的地方告诉用户，由他判断")
-        outcome = await criteria.check(ctx.session, mission, args["result"])
+        outcome = await criteria.check(ctx.session, mission, args["result"], ctx.feishu, ctx.user)
+        assurance.record(ctx.session, ctx.user.id, "completion_check", outcome, mission.id)
         await service.log(ctx.session, mission, "step", "结束前核对：" + ("通过" if outcome["passed"] else "未通过——" + "；".join(outcome["problems"])))
         if not outcome["passed"]:
             mission.check_rounds += 1
+            updated = [dict(c) for c in mission.criteria]
             for problem in outcome["problems"]:
                 match = re.match(r"第 (\d+) 条", problem)
                 if match:
-                    for c in mission.criteria:
+                    for c in updated:
                         if c["id"] == int(match.group(1)):
                             c["status"] = "open"
-                    mission.criteria = [dict(c) for c in mission.criteria]
+            mission.criteria = updated
+            if mission.check_rounds >= criteria.MAX_CHECK_ROUNDS:
+                mission.status = "asking"
+                mission.question = "两轮核验未通过，需要你判断下一步：" + "；".join(outcome["problems"])
+                mission.next_run_at, mission.wait_for = None, None
+                ctx.stop_turn = True
+                assurance.record(ctx.session, ctx.user.id, "human_takeover", {"reason": "check_limit"}, mission.id)
+                await service.log(ctx.session, mission, "ask", mission.question)
+                await service.notify(ctx.session, ctx.feishu, mission, mission.question, important=True)
             # 正常返回而不是报错：报错会回滚这一步，核对轮数和退回的状态就记不下来了
             return ("独立核对没通过，任务没有结束：\n" + "\n".join(f"- {p}" for p in outcome["problems"])
                     + "\n补上真正的证据再结束；做不到就如实说明（success=false），或问用户。")
+    assurance.record(ctx.session, ctx.user.id, "completion", {"success": args["success"]}, mission.id)
     mission.status = "done" if args["success"] else "failed"
     mission.result, mission.next_run_at, mission.wait_for = args["result"], None, None
     ctx.stop_turn = True

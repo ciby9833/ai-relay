@@ -189,6 +189,8 @@ test("auth failures offer retry and history is keyboard accessible", async ({ pa
   await page.keyboard.press("Enter");
   await expect(page.getByText("Original history")).toBeVisible();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest("dialog"))).toBe(true);
   await page.keyboard.press("Shift+Tab");
   expect(await page.evaluate(() => !!document.activeElement?.closest("dialog"))).toBe(true);
 });

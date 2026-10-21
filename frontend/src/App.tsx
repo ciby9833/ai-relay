@@ -6,6 +6,7 @@ import { useLocale } from "./useLocale";
 import Login from "./components/Login";
 import Drawer from "./components/panels/Drawer";
 import Sidebar, { type PanelKind, type View } from "./components/Sidebar";
+import Admin from "./components/Admin";
 import Missions from "./components/Missions";
 import Thread from "./components/Thread";
 
@@ -93,7 +94,9 @@ export default function App() {
             <a className="btn primary" href="/api/auth/feishu/login">{t("重新登录")}</a>
           </div>
         )}
-        {view.type === "missions" ? (
+        {view.type === "admin" && user.is_admin ? (
+          <Admin />
+        ) : view.type === "missions" ? (
           <Missions selected={view.id} onSelect={(id) => setView({ type: "missions", id })} />
         ) : (
           <Thread

@@ -228,7 +228,7 @@ async def briefing(session: AsyncSession, mission: Mission, reason: str, user: U
     )).scalars())[::-1]
     action_lines = "\n".join(
         f"action:{a.id} {a.summary}：{a.status}" + (f"，{a.result[:120]}" if a.result else "")
-        + (f"（写入后核对：{'一致' if a.payload['verified'].get('ok') else '不一致'}，{a.payload['verified'].get('detail')}）"
+        + (f"（写入后核对：{ {True: '一致', False: '不一致', None: '未核对'}.get(a.payload['verified'].get('ok'))}，{a.payload['verified'].get('detail')}）"
            if (a.payload or {}).get("verified") else "")
         for a in actions
     ) or "（无）"
@@ -256,6 +256,8 @@ async def run(session: AsyncSession, feishu: FeishuClient, mission: Mission, rea
     user = await session.get(User, mission.user_id)
     conversation = await session.get(Conversation, mission.conversation_id)
     started = datetime.now(UTC)
+    from app import assurance
+    assurance.record(session, mission.user_id, "mission_run", mission_id=mission.id)
     mission.runs += 1
     before = (mission.status, mission.next_run_at, mission.wait_for)
     # 先清掉“醒来”的条件；Relay 这一轮必须重新决定接下来等什么
@@ -378,6 +380,8 @@ async def run_due(session: AsyncSession, feishu: FeishuClient) -> None:
 
 async def answer(session: AsyncSession, mission: Mission, text: str) -> None:
     """用户回答了任务提出的问题：马上唤醒它。"""
+    if mission.status == "asking":
+        mission.check_rounds = 0  # 用户明确介入后可重新核验，不继承上一轮的重试额度
     mission.status, mission.question = "active", None
     mission.next_run_at = datetime.now(UTC)
     mission.wait_for = {"type": "answer", "text": text}

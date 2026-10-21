@@ -159,20 +159,23 @@ async def test_mission_lifecycle(monkeypatch):
         m = await mission_now()
         assert m.status == "asking" and "财务" in m.question
 
-        # 用户回答 → 任务带着回答醒来 → 完成
+        # 用户回答 → 旧任务没有验收清单，不能凭承诺关闭，转交用户补齐标准
         async with SessionLocal() as session:
             await service.answer(session, await session.get(Mission, mission_id), "不用")
             await session.commit()
-        provider.add(call("complete_mission", result="Andrew 答应明天上午交明细", success=True))  # 决定了接下来怎么办，这一轮就结束
+        provider.add(call("complete_mission", result="Andrew 答应明天上午交明细", success=True))
+        provider.add(call("ask_user", question="任务缺少验收标准，请补充明细交付的核验方式"))  # 决定了接下来怎么办，这一轮就结束
         async with SessionLocal() as session:
             await service.run_due(session, feishu)
-        assert "[用户回答了你的问题] 不用" in provider.prompts[-1]
+        assert "[用户回答了你的问题] 不用" in provider.prompts[-2]
+        assert "缺少验收清单" in provider.prompts[-1]
         assert provider.turns == []  # 剧本正好用完：每次决定等待后都没有多余的模型调用
         m = await mission_now()
-        assert m.status == "done" and "明天上午" in m.result
+        assert m.status == "asking" and m.result is None
         async with SessionLocal() as session:
             kinds = [log.kind for log in (await session.execute(select(MissionLog).where(MissionLog.mission_id == mission_id))).scalars()]
-        assert {"wake", "action", "ask", "done", "report"} <= set(kinds)
+        assert {"wake", "action", "ask", "report"} <= set(kinds)
+        assert "done" not in kinds
     finally:
         async with SessionLocal() as session:
             await session.delete(await session.get(User, user_id))

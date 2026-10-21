@@ -1,9 +1,10 @@
 import { t } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
-import { api, type MissionData } from "../api";
+import { api, type MissionData, type MissionCriterion, type SheetRule, type CriterionSpec } from "../api";
 import { dayLabel, relative, timeOf } from "../format";
 import { ActionCard, MissionCard } from "./cards";
 import Icon, { RelayMark } from "./Icon";
+import CriterionEvidence from "./CriterionEvidence";
 
 const LOG_ICON: Record<string, string> = {
   wake: "clock",
@@ -14,6 +15,41 @@ const LOG_ICON: Record<string, string> = {
   action: "check",
   done: "check",
 };
+
+function ProofEditor({ mission, item, onSaved }: { mission: MissionData; item: MissionCriterion; onSaved: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [requirement, setRequirement] = useState(item.requirement ?? "reply");
+  const [rule, setRule] = useState<SheetRule>(item.rule ?? { spreadsheet_token: "", sheet_id: "", cell: "", scope: "", operator: "decrease", target: null });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save() {
+    setBusy(true); setError("");
+    try {
+      const specs: CriterionSpec[] = (mission.criteria ?? []).map(c => c.id === item.id
+        ? { text: c.text, requirement, rule: requirement === "business" ? rule : null }
+        : { text: c.text, requirement: c.requirement ?? "reply", rule: c.rule ?? null });
+      await api.setCriteria(mission.id, specs); setEditing(false); await onSaved();
+    } catch (err) { setError(err instanceof Error ? err.message : t("操作失败")); }
+    finally { setBusy(false); }
+  }
+  if (!editing) return <button className="btn ghost small" onClick={() => { setRequirement(item.requirement ?? "reply"); setRule(item.rule ?? { spreadsheet_token: "", sheet_id: "", cell: "", scope: "", operator: "decrease", target: null }); setError(""); setEditing(true); }}>{t("proofConfigure")}</button>;
+  return <form className="proof-editor" onSubmit={e => { e.preventDefault(); void save(); }}>
+    <label>{t("proofMethod")}<select autoFocus disabled={busy} value={requirement} onChange={e => setRequirement(e.target.value as typeof requirement)}>
+      {(["execution", "reply", "business"] as const).map(r => <option key={r} value={r}>{t(`proof.${r}`)}</option>)}
+    </select></label>
+    {requirement === "business" && <>
+      <label>{t("proofScope")}<input required maxLength={300} value={rule.scope} onChange={e => setRule({ ...rule, scope: e.target.value })} /></label>
+      <div className="proof-grid">{(["spreadsheet_token", "sheet_id", "cell"] as const).map((key, index) => <label key={key}>{t(["proofToken", "proofSheet", "proofCell"][index])}
+        <input required value={rule[key]} onChange={e => setRule({ ...rule, [key]: e.target.value.trim() })} /></label>)}</div>
+      <div className="proof-grid"><label>{t("proofOperator")}<select value={rule.operator} onChange={e => setRule({ ...rule, operator: e.target.value as SheetRule["operator"] })}>
+        <option value="decrease">{t("op.decrease")}</option>
+        {(["lt", "lte", "eq", "gte", "gt"] as const).map((op, index) => <option key={op} value={op}>{["<", "≤", "=", "≥", ">"][index]}</option>)}
+      </select></label>{rule.operator !== "decrease" && <label>{t("proofTarget")}<input type="number" step="any" required value={rule.target ?? ""} onChange={e => setRule({ ...rule, target: e.target.value === "" ? null : Number(e.target.value) })} /></label>}</div>
+    </>}
+    {error && <p role="alert" className="error-text">{error}</p>}
+    <div className="inline-actions"><button className="btn primary small" disabled={busy}>{t("保存")}</button><button type="button" className="btn ghost small" disabled={busy} onClick={() => setEditing(false)}>{t("取消")}</button></div>
+  </form>;
+}
 
 /** 验收清单：做到这几条才算办成。Relay 只能标记状态和证据，条目只有你能改。 */
 function Criteria({ mission, open, onSaved }: { mission: MissionData; open: boolean; onSaved: () => Promise<void> }) {
@@ -35,7 +71,6 @@ function Criteria({ mission, open, onSaved }: { mission: MissionData; open: bool
   return (
     <section>
       <h3>{t("验收清单")}</h3>
-      <p className="muted small">{t("做到这几条才算办成。Relay 每标记一条都要附上证据，结束前还会独立核对一遍；条目只有你能改。")}</p>
       {editing ? (
         <>
           <textarea className="criteria-editor" rows={Math.max(3, items.length + 1)} value={draft} aria-label={t("验收清单，每行一条")}
@@ -52,10 +87,12 @@ function Criteria({ mission, open, onSaved }: { mission: MissionData; open: bool
             {items.map((item) => (
               <li key={item.id} className={`criterion ${item.status}`}>
                 <span className="criterion-mark">{item.status === "met" ? "✓" : item.status === "unmet" ? "!" : "○"}</span>
-                <span>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   {item.text}
-                  {item.evidence && <span className="muted small criterion-evidence">{t("依据：")}{item.evidence}</span>}
-                </span>
+                  <span className="muted small criterion-evidence">{t(`proof.${item.requirement ?? "reply"}`)}</span>
+                  <CriterionEvidence item={item} />
+                  {open && <ProofEditor key={`${item.id}-${item.text}`} mission={mission} item={item} onSaved={onSaved} />}
+                </div>
               </li>
             ))}
           </ul>

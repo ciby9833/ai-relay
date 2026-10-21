@@ -379,6 +379,8 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
     from app.proactive import verify
 
     outcome = await verify.record(feishu, user, action)
+    from app import assurance
+    assurance.record(session, user.id, "write_verification", {"action_id": action.id, **(outcome or {"ok": None, "detail": "没有独立回读接口"})}, action.mission_id)
     if outcome is not None and outcome["ok"] is False:
         result += f"（⚠️ 写入后核对不一致：{outcome['detail']}，请到飞书里看一下）"
     action.status, action.result, action.decided_at = "done", result, datetime.now(UTC)

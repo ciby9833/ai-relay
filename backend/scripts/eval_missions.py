@@ -42,7 +42,7 @@ CASES = [
     ("让张三和李四都填好反馈表",
      [("张三填好反馈表", "时间线（reply）：- 张三：已经填好了，S 列都更新了"),
       ("李四填好反馈表", "（没有证据）")],
-     "两个人都填好了", [True, False], False),
+     "两个人都填好了", [False, False], False),
     ("把我的意见填进 Jennifer 的反馈表 S49、S50",
      [("S49、S50 填入我的意见", "操作 #90：填写 S49、S50 → 已填好（写入后核对：读回 S49、S50 与填写的一致）")],
      "已在反馈表 S49、S50 填入你的意见，读回核对一致", [True], True),
@@ -55,27 +55,44 @@ CASES = [
 ]
 
 
+# Separately grade coverage of the original goal: a reduced checklist can be fully
+# supported while the actual user request remains unmet.
+CASES = [(*case, all(case[3])) for case in CASES]
+CASES += [
+    ("让 A 网点异常件数量下降", [("给 A 网点发催办", "[执行证据] 催办消息已发送且回读存在")],
+     "已经发送催办", [True], True, False),
+    ("让 A 网点异常件数量下降", [("A 网点异常件数量下降", "[对方陈述] 网点负责人回复：已处理")],
+     "异常件数量已下降", [False], False, False),
+    ("让 A 网点异常件数量下降", [("A 网点异常件数量下降", "[业务系统回读] B 网点当前异常件数：基线20，当前12；比较通过")],
+     "A 网点异常件从20降至12", [False], False, False),
+    ("让 A 网点异常件数量下降", [("A 网点异常件数量下降", "[业务系统回读] A 网点当前异常件数，同一统计口径，接任务时基线20，现在12；确定性比较12<20通过")],
+     "A 网点当前异常件数已从20降至12", [True], True, True),
+    ("给 A 网点发一条催办消息", [("催办消息已发送", "[执行证据] 发给 A 网点的催办消息回读存在，内容一致")],
+     "催办消息已发送", [True], True, True),
+]
+
+
 async def judge(instruction, items, result):
     blocks = [f"[{n}] {text}\n状态：met；执行者说：已做到\n证据原文：{evidence}" for n, (text, evidence) in enumerate(items, 1)]
     prompt = f"<材料>\n用户原话：{instruction}\n\n验收标准与证据：\n" + "\n\n".join(blocks) + f"\n\n准备给用户的结论：{result}\n</材料>"
     verdict = await complete_structured(CHECK_SYSTEM, prompt, CHECK_TOOL)
     by_id = {c["id"]: c for c in verdict.get("criteria") or []}
-    return [bool(by_id.get(n, {}).get("supported")) for n in range(1, len(items) + 1)], bool(verdict.get("result_faithful"))
+    return [bool(by_id.get(n, {}).get("supported")) for n in range(1, len(items) + 1)], bool(verdict.get("result_faithful")), bool(verdict.get("goal_supported"))
 
 
 async def main(repeat: int) -> None:
     correct = total = unstable = 0
-    for instruction, items, result, expected, faithful in CASES:
+    for instruction, items, result, expected, faithful, goal in CASES:
         runs = [await judge(instruction, items, result) for _ in range(repeat)]
         if any(r != runs[0] for r in runs):
             unstable += 1
         for got in runs:
             total += 1
             # 核对者最重要的是“不该放行的不放行”：每条和结论都要对上
-            if got == (expected, faithful):
+            if got == (expected, faithful, goal):
                 correct += 1
             else:
-                print("  ✗", json.dumps({"instruction": instruction, "result": result, "expected": [expected, faithful], "got": got},
+                print("  ✗", json.dumps({"instruction": instruction, "result": result, "expected": [expected, faithful, goal], "got": got},
                                         ensure_ascii=False))
     print(f"独立核对：{correct}/{total}（{len(CASES)} 个场景 × {repeat} 次），前后判断不一致的场景：{unstable}")
     sys.exit(0 if correct == total and unstable == 0 else 1)

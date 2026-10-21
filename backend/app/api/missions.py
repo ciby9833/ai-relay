@@ -1,5 +1,6 @@
 """长期任务：查看、授权、回答、立即推进、取消。"""
 
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
@@ -8,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.conversations import mission_json
-from app.deps import SessionDep, UserDep
+from app.deps import FeishuDep, SessionDep, UserDep
+from app.missions.outcomes import CriterionInput, capture_baselines
 from app.missions import service
 from app.models import Mission, User
 from app.proactive.actions import GRANTABLE
@@ -58,11 +60,11 @@ async def set_grants(mission_id: int, body: GrantsBody, session: SessionDep, use
 
 
 class CriteriaBody(BaseModel):
-    criteria: list[str] = Field(min_length=1, max_length=6)
+    criteria: list[str | CriterionInput] = Field(min_length=1, max_length=6)
 
 
 @router.put("/{mission_id}/criteria")
-async def set_criteria(mission_id: int, body: CriteriaBody, session: SessionDep, user: UserDep):
+async def set_criteria(mission_id: int, body: CriteriaBody, session: SessionDep, user: UserDep, feishu: FeishuDep):
     """用户改验收清单（做到什么才算办成）。只有用户能改，Relay 在任务里只能标记状态和证据。"""
     from app.missions import criteria
 
@@ -70,7 +72,10 @@ async def set_criteria(mission_id: int, body: CriteriaBody, session: SessionDep,
     if mission.status not in service.OPEN:
         raise HTTPException(status_code=400, detail="任务已经结束")
     try:
-        criteria.replace_texts(mission, body.criteria)
+        criteria.replace_texts(mission, [c if isinstance(c, str) else c.model_dump() for c in body.criteria])
+        updated = deepcopy(mission.criteria)
+        await capture_baselines(feishu, user, updated)
+        mission.criteria = updated
     except criteria.CriteriaError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await service.log(session, mission, "step", "你改了验收清单：" + "；".join(c["text"] for c in mission.criteria))

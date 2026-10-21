@@ -84,11 +84,17 @@ async def test_acceptance_flow(monkeypatch):
             text, error = await execute(mctx, "check_criterion", {"criterion_id": 1, "met": True, "evidence": "Nikki 回复了", "ref": f"log:{reply.id}"},
                                         user_initiated=False)
             assert not error
+            await session.flush()
+            await session.refresh(mission, ["criteria"])
+            assert mission.criteria[0]["status"] == "met"
             judge.verdicts.append({"criteria": [{"id": 1, "supported": False, "why": "只是答应月底前完成，还没有结果"}],
-                                   "result_faithful": False, "issues": ["把承诺说成了完成"]})
+                                   "goal_supported": False, "result_faithful": False, "issues": ["把承诺说成了完成"]})
             text, error = await execute(mctx, "complete_mission", {"result": "Nikki 已经给出结果", "success": True}, user_initiated=False)
             assert not error and "独立核对没通过" in text and "月底前" in text
             assert mission.status != "done" and mission.check_rounds == 1 and mission.criteria[0]["status"] == "open"
+            await session.flush()
+            await session.refresh(mission, ["criteria"])
+            assert mission.criteria[0]["status"] == "open"
             assert "预计月底前完成" in judge.seen[0] and "让 Nikki 给个结果" in judge.seen[0]  # 核对者看到原话和证据原文
 
             # 后来她真的同步了：有证据，核对通过才结束
@@ -97,9 +103,29 @@ async def test_acceptance_flow(monkeypatch):
             await session.flush()
             await execute(mctx, "check_criterion", {"criterion_id": 1, "met": True, "evidence": "Nikki 说已同步，结论是下周上线", "ref": f"log:{done.id}"},
                           user_initiated=False)
-            judge.verdicts.append({"criteria": [{"id": 1, "supported": True, "why": "她给出了结论"}], "result_faithful": True, "issues": []})
+            judge.verdicts.append({"criteria": [{"id": 1, "supported": True, "why": "她给出了结论"}], "goal_supported": True, "result_faithful": True, "issues": []})
             text, error = await execute(mctx, "complete_mission", {"result": "Nikki 已同步给需求人：下周上线", "success": True}, user_initiated=False)
             assert not error and mission.status == "done"
+
+            # 两次真正的核验失败自动转交用户，且事件和状态能从数据库回读。
+            twice = await service.create(session, user, "复核业务结果", "降低异常件")
+            twice.criteria = criteria.new_list(["异常件数量下降"])
+            tctx = ToolContext(session, user, await session.get(Conversation, twice.conversation_id), None, mission=twice)
+            for _ in range(2):
+                twice.criteria = [{**twice.criteria[0], "status": "met", "evidence": "完成", "ref": f"log:{done.id}"}]
+                text, error = await execute(tctx, "complete_mission", {"result": "完成", "success": True}, user_initiated=False)
+                assert not error  # 跨任务证据被确定性拒绝，拒绝记录仍提交
+            await session.flush()
+            await session.refresh(twice)
+            assert twice.status == "asking" and twice.check_rounds == 2 and tctx.stop_turn
+            assert twice.criteria[0]["status"] == "open"
+            from app.models import AssuranceEvent
+            recorded = (await session.scalars(select(AssuranceEvent).where(AssuranceEvent.mission_id == twice.id))).all()
+            assert [e.kind for e in recorded].count("completion_check") == 2
+            assert [e.kind for e in recorded].count("human_takeover") == 1
+            await service.answer(session, twice, "已补充业务来源，请重新核验")
+            assert twice.check_rounds == 0 and twice.status == "active"
+            assert twice.criteria[0]["status"] == "open"
 
             # 两轮核对不过：不再自己反复改，交给用户
             stuck = await service.create(session, user, "盯 Budi", "让 Budi 交报价", instruction="让 Budi 交报价")
@@ -168,6 +194,8 @@ async def test_writes_are_read_back():
     assert (await verify.check(Feishu({}, {"姓名": "Quillan", "套餐": [{"text": "A"}]}, None), user, record))["ok"] is True
     missing = await verify.check(Feishu({}, {"姓名": "Quillan"}, None), user, record)
     assert missing["ok"] is False and "套餐" in missing["detail"]
+    wrong = await verify.check(Feishu({}, {"姓名": "Quillan", "套餐": "B"}, None), user, record)
+    assert wrong["ok"] is False and "套餐" in wrong["detail"]  # 非空但错误也不能通过
 
     message = SimpleNamespace(id=3, kind="send_chat", payload={"message_id": "om_1", "as_user": True})
     assert (await verify.check(Feishu({}, {}, {"message_id": "om_1"}), user, message))["ok"] is True

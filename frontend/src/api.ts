@@ -83,7 +83,7 @@ export interface MissionData {
   due_at?: string | null;
   status: "active" | "waiting" | "asking" | "done" | "failed" | "cancelled";
   plan: { step: string; status: "todo" | "done" }[];
-  criteria?: { id: number; text: string; status: "open" | "met" | "unmet"; evidence: string | null; ref: string | null }[];
+  criteria?: MissionCriterion[];
   notes: string | null;
   grants: string[];
   question: string | null;
@@ -332,7 +332,38 @@ function json(method: string, body: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
+export interface SheetRule {
+  spreadsheet_token: string; sheet_id: string; cell: string; scope: string;
+  operator: "decrease" | "lt" | "lte" | "eq" | "gte" | "gt"; target: number | null;
+}
+export interface CriterionSpec { text: string; requirement?: "execution" | "reply" | "business"; rule?: SheetRule | null }
+export interface MissionCriterion extends CriterionSpec {
+  id: number; status: "open" | "met" | "unmet"; evidence: string | null; ref: string | null;
+  baseline?: { value: string; at: string } | null;
+  outcome?: { ok: boolean | null; detail: string; observation?: { value: string; at: string } };
+}
+export interface NotificationDay {
+  pushes: number; interrupt: number; digest: number; brief: number; meeting: number; mission: number; other: number; items: number; handled: number;
+}
+export interface NotificationStats {
+  user_id: string; user: string; timezone: string; days: Record<string, NotificationDay>; observed_days: number; pushes_per_day: number;
+}
+export interface QualityRate { numerator: number; denominator: number; rate: number | null }
+export type ReviewVerdict = "correct" | "false_close" | "unknown";
+export interface ClosureReview {
+  id: number; title: string; user: string; instruction: string; result: string | null; closed_at: string;
+  criteria: MissionCriterion[]; review: { verdict: ReviewVerdict; reason: string; at: string } | null;
+}
+export interface QualityStats {
+  start: string; end: string; coverage_start: string | null; false_closure: QualityRate; review_coverage: QualityRate;
+  completion_failure: QualityRate; verification_failure: QualityRate; verification_unknown: number; human_takeover: QualityRate;
+  closed_total: number; closures: ClosureReview[];
+}
+
 export const api = {
+  notificationStats: (days: number, offset = 0) => request<NotificationStats[]>(`/insights/notifications?days=${days}&offset=${offset}`),
+  qualityStats: (days: number, offset = 0) => request<QualityStats>(`/insights/quality?days=${days}&offset=${offset}`),
+  reviewClosure: (id: number, verdict: ReviewVerdict, reason: string) => request(`/insights/missions/${id}/review`, json("POST", { verdict, reason })),
   authConfig: () => request<{ dev_login: boolean }>("/auth/config"),
   me: () => request<User>("/auth/me"),
   devLogin: () => request<User>("/auth/dev-login", { method: "POST" }),
@@ -370,7 +401,7 @@ export const api = {
   integrationEvents: (id: number) => request<IntegrationEvent[]>(`/integrations/${id}/events`),
   missions: () => request<{ missions: MissionData[]; grantable: Record<string, string> }>("/missions"),
   mission: (id: number) => request<MissionData>(`/missions/${id}`),
-  setCriteria: (id: number, criteria: string[]) => request(`/missions/${id}/criteria`, json("PUT", { criteria })),
+  setCriteria: (id: number, criteria: (string | CriterionSpec)[]) => request(`/missions/${id}/criteria`, json("PUT", { criteria })),
   setGrants: (id: number, grants: string[]) => request(`/missions/${id}/grants`, json("PUT", { grants })),
   answerMission: (id: number, text: string) => request(`/missions/${id}/answer`, json("POST", { text })),
   wakeMission: (id: number) => request(`/missions/${id}/wake`, { method: "POST" }),

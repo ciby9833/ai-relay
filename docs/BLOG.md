@@ -1,5 +1,13 @@
 # Blog：数据库存储与发布
 
+第二篇、第三篇及后续文章都按以下顺序操作：[准备文章与素材](#准备文章与素材) → [本地预览](#本地预览) → [生产发布](#生产发布)。下文统一使用 `relay-follow-up` 作为新文章 slug 示例；每篇新文章换成自己的目录名。
+
+| 阶段 | 在哪里执行 | 结果 |
+| --- | --- | --- |
+| 准备内容 | 本地项目目录 | 创建 HTML、元数据和素材文件 |
+| 本地预览 | 本机开发容器和本地数据库 | 导入后在 localhost 查看，不会自动发布生产 |
+| 生产发布 | 生产服务器项目目录 | 构建已提交的文章版本并导入生产数据库 |
+
 ## 运行结构
 
 - `/blog/`：React 公开文章列表。沿用 Relay 品牌与设计令牌，参考提供的 Claude Articles 截图，使用大标题、带封面的文章卡片；语言选择器在页脚。
@@ -71,70 +79,172 @@ HTML 中本地媒体应使用相对路径，例如 `img/board.jpg`。导入前�
 - 不含 `<script>`、`on*=` 事件属性或 `javascript:` 链接；
 - 写了 `og:image` 时，相对路径必须指向文章目录里的文件。文章包是经作者审核的 HTML，不提供公开上传/编辑接口。
 
-## 发文章清单
+## 准备文章与素材
 
-动笔前：
+### 1. 从模板新建文章目录（本地）
 
-1. 复制 `backend/content/blog/_template/` 为新目录，目录名就是 slug（小写字母、数字、连字符），发布后不再改。
-2. 不要直接把 Artifact、宣传页或其他网页导出的 HTML 放进来。导出文件常带平台外壳、外部字体和与文章无关的标题；把内容搬进模板。
-
-写的时候：
-
-3. `post.json` 和 `index.html` 里的标题、摘要、语言保持一致；`draft` 先设为 `true`。
-4. 只用系统字体栈。外部字体在国内经常加载失败，会让正文迟迟不显示。
-5. 页面里不要再放 Relay 品牌行，顶部导航已经有了。
-6. 素材全部放进文章目录，用相对路径。截图导出 JPG，宽度不超过 1600px；封面单独做一张 1200×630，选有实际界面内容的画面，不用片头卡或空白页。
-7. 视频尽量压到 10MB 以内（目前视频存在 Git 和数据库里，体积会直接变成仓库和备份的负担）。正文写的时长与播放器显示一致。
-
-发布前检查：
-
-8. 截图、视频里没有内部模型名、调试信息、未翻译的界面 key、真实同事或客户数据；用演示数据时在文末注明是虚构的。
-9. 说法不超过产品实际能力：安全相关写“需要你确认”这类可验证的机制，不写“保证不会”；上手步骤写清需要哪些授权。
-10. 面向印尼同事的内容另建一篇（例如 `relay-day-id`，`language: "id"`），不要指望界面语言切换翻译正文。
-11. 运行 `docker compose exec api python -m app.blog_import --check`，再导入到本地，打开 `/blog/` 和 `/blog/<slug>/`，在桌面和手机宽度、明暗两种模式下各看一遍。
-12. 补上 `publishedAt`，把 `draft` 改为 `false`，与代码一起提交后按下面的生产流程发布。
-
-## 生产发布
-
-1. 将文章目录放入 `backend/content/blog/`，填写元数据，准备发布时设置 `"draft": false`。
-2. 提交源码时包含文章 HTML、图片、视频、`post.json` 以及本次新增的迁移与导入代码。
-3. 在服务器项目目录执行既有 Compose 发布流程：
-
-   ```bash
-   docker compose up -d --build api web
-   ```
-
-4. 生产镜像构建时先校验文章包，缺失图片等问题会直接阻止构建。API 容器启动命令先执行 `alembic upgrade head`（包含 `0013_blog`），随后应用启动时执行导入。启动导入失败只记录日志（`relay.blog`），API 照常启动并继续提供数据库里的上一版文章。后端生产镜像已包含 `content/`；`.dockerignore` 明确保留文章 `post.json`。
-5. 在实际网站域名检查 `/api/blog`、`/blog/`、`/blog/relay-day/`，并检查图片和视频能正常读取。
-
-无需在生产数据库手工执行 INSERT 或另外复制素材到 Nginx。导入以事务执行并使用 PostgreSQL advisory lock，支持 API 多副本；没有变化的文章不重复插入、不改变更新时间。内容变化时更新文章和素材，已移除的素材同步删除。
-
-首次上线会创建表并导入；后续部署更新同一 slug；设为草稿或移除目录后重新部署，该文章及其素材的公开访问都返回 404。移除目录会将数据库记录标记为草稿，保留数据用于备份；恢复目录可重新发布。导入是整个版本目录的同步，维护时不要使用只包含部分正式文章的目录覆盖完整文章包。
-
-## 本地开发
-
-启动项目：
+在本地项目根目录执行。先选择一个尚未使用的 slug；不要把模板复制到已有文章目录中。以下示例创建第二篇，第三篇及以后换一个新 slug，其他步骤相同：
 
 ```bash
+cd /Users/ellis/Documents/CargoPPT/relay
+cp -R backend/content/blog/_template backend/content/blog/relay-follow-up
+mkdir -p backend/content/blog/relay-follow-up/img
+mkdir -p backend/content/blog/relay-follow-up/video
+```
+
+完成后的目录结构：
+
+```text
+backend/content/blog/
+  _template/                     模板，不参与导入
+  relay-day/                     第一篇，继续保留
+  relay-follow-up/                新文章，目录名决定访问地址
+    post.json                    标题、摘要、语言、日期、封面、草稿状态
+    index.html                   正文及文章自身的 CSS
+    img/
+      cover.jpg                  首页卡片与分享封面
+      step-1.jpg                 正文截图
+      video-poster.jpg           视频播放前的封面
+    video/
+      demo.mp4                   视频
+```
+
+图片和视频放在各自文章目录中，不需要复制到前端 `public/` 或 Nginx。子目录名称可以自行组织，只要 HTML 中的相对路径与文件位置一致。
+
+### 2. 填写元数据与正文
+
+编辑新目录中的 `post.json`，按照上方示例填写标题、摘要、语言和封面，写作阶段保持 `draft: true`。模板日期只是占位值，发布前替换为实际发布日期。`publishedAt` 仅用于展示和排序；即使填写未来日期，`draft: false` 的文章导入后也会立即公开。
+
+编辑 `index.html`：`<title>` 必须与 JSON 标题一致，`<html lang>` 必须与 `language` 一致，填写非空的 `<meta name="description">`，建议与 JSON 摘要保持一致。公共顶部导航会自动加入，不需要在正文重复放 Relay 品牌行。
+
+在 `<head>` 中设置分享封面：
+
+```html
+<meta property="og:image" content="img/cover.jpg">
+```
+
+在正文中用相对路径插入图片和视频：
+
+```html
+<img src="img/step-1.jpg" alt="操作步骤说明">
+
+<video controls preload="metadata" poster="img/video-poster.jpg">
+  <source src="video/demo.mp4" type="video/mp4">
+</video>
+```
+
+写作与素材检查清单：
+
+- 不要直接把 Artifact、宣传页或其他网页导出的 HTML 放进来。导出文件常带平台外壳、外部字体和无关标题；把内容搬进模板。
+- 使用系统字体栈，不引用外部字体、样式或媒体，不加入脚本、事件属性或 `javascript:` 链接。普通正文外链可以保留。
+- 截图导出 JPG，建议宽度不超过 1600px；封面建议单独做一张 1200×630，选有实际界面内容的画面，不用片头卡或空白页。
+- 视频尽量压到 10MB 以内，正文写的时长与播放器显示一致。素材存在 Git 和数据库中，体积直接影响仓库、镜像和备份大小；尺寸与体积建议目前需人工检查。
+- 截图、视频里没有内部模型名、调试信息、未翻译的界面 key、真实同事或客户数据；用演示数据时在文末注明是虚构的。
+- 说法不超过产品实际能力：安全相关写“需要你确认”这类可验证的机制，不写“保证不会”；上手步骤写清需要哪些授权。
+- 面向印尼同事的内容另建一篇（例如 `relay-follow-up-id`，`language: "id"`）；界面语言切换不会翻译正文。
+
+## 本地预览
+
+本节命令只在本机项目根目录执行，使用本地开发配置和本地数据库，不在生产服务器执行。
+
+### 1. 启动开发服务
+
+```bash
+cd /Users/ellis/Documents/CargoPPT/relay
 docker compose -f compose.yml -f compose.dev.yml up -d --build api web
 ```
 
-文章/元数据修改后，运行：
+开发配置将本地 `backend/` 挂载到 API 容器，导入器可以直接读取刚编辑的文章文件。仅启动 Vite 不够，仍需要 API 和数据库运行；Vite 默认代理 `localhost:8098`，容器内开发配置代理 `api:8000`。
+
+### 2. 校验文章包
 
 ```bash
-docker compose exec api python -m app.blog_import --check
-docker compose exec api python -m app.blog_import
+docker compose -f compose.yml -f compose.dev.yml exec api python -m app.blog_import --check
 ```
 
-`--check` 只校验文件，不写数据库。导入成功后刷新网页即可，无需重新构建前端。仅启动 Vite 时，也需要 API 和数据库运行；Vite 默认代理 `localhost:8098`，容器开发配置代理 `api:8000`。
+`--check` 检查整个内容目录，包括草稿，但不写数据库。出现错误时按提示修复标题、语言、日期或资源路径，检查通过后再导入。
 
-前端配置发生变更时重启运行中的开发服务：
+### 3. 开启本地可见状态并导入
+
+目前没有独立的草稿预览入口。`draft: true` 的文章不会出现在首页，直接访问正文或素材也会返回 404。
+
+要从本地网站预览，将新文章的 `draft` 改为 `false`，填好有效的 `publishedAt`，然后依次执行：
 
 ```bash
-docker compose restart web
+docker compose -f compose.yml -f compose.dev.yml exec api python -m app.blog_import --check
+docker compose -f compose.yml -f compose.dev.yml exec api python -m app.blog_import
 ```
 
-本轮修复中实际观察到：旧的 5173 开发服务把 JPG 请求回退成了 HTML，造成图片损坏。重启并使用统一 API 代理后，实际入口返回 `image/jpeg`，视频 Range 请求返回 `206 video/mp4`。
+检查命令成功后再执行导入。导入会把 HTML、图片和视频一起写入本地数据库，不会自动同步生产数据库。
+
+### 4. 打开页面验收并迭代
+
+默认端口下打开：
+
+- [本地 Blog 首页](http://localhost:5173/blog/)：新文章卡片、标题、日期、摘要、封面正确。
+- [新文章正文](http://localhost:5173/blog/relay-follow-up/)：图片清晰、视频能播放和拖动进度、顶部导航吸顶及返回列表正常。
+- 桌面与手机宽度、浅色与深色模式都检查一遍；界面语言切换位于首页页脚，正文仍保留自身语言。
+
+如果本地配置了其他 `WEB_PORT`，使用对应端口；示例 URL 中的 `relay-follow-up` 换成实际 slug。
+
+每次修改正文、元数据、图片或视频后，重复步骤 3 的检查与导入，再刷新浏览器。网页读取的是数据库，单纯保存文件不会自动更新已导入内容；内容更新无需重新构建前端。
+
+如果预览后暂时不准备上线，提交前将 `draft` 改回 `true`，再导入一次可让本地也恢复为草稿。仅在本地设置 `draft: false` 不会触发生产发布，但它随代码部署后会公开。
+
+## 生产发布
+
+本节的构建命令在生产服务器项目根目录执行，使用 `compose.yml`，不叠加 `compose.dev.yml`。生产内容来自构建镜像中的已提交文件，不使用本地开发目录挂载。
+
+### 1. 本地完成发布准备
+
+1. 按本地预览流程验收文章。
+2. 确认该文章 `draft: false`，日期为实际发布日期，`cover` 和 HTML 中的图片、视频路径均有效；再运行一次 `--check`。
+3. 检查并提交新文章的完整目录，包括 `post.json`、`index.html`、图片和视频，然后推送至项目实际使用的发布分支。
+4. 保留第一篇及其他仍需发布的文章目录。导入是对整个内容目录的同步，不能用只包含第二篇的目录替换完整文章集合。
+
+日常新增第二篇、第三篇只需增加内容目录，不需要新增数据库迁移或修改业务代码。
+
+### 2. 在生产服务器构建与启动
+
+进入服务器的实际项目目录，按项目既有流程拉取或检出包含新文章的已提交版本。确认生产 `FRONTEND_URL` 是网站对外的 HTTPS 地址，再执行：
+
+```bash
+docker compose up -d --build api web
+```
+
+发布过程中自动执行：
+
+1. 后端镜像包含完整 `content/`，构建时先校验文章包；缺失图片等校验错误会阻止构建。
+2. API 容器启动命令执行 `alembic upgrade head`，首次部署包含 Blog 的 `0013_blog` 表结构迁移。
+3. API 启动导入文章及素材到生产数据库；已有文章按 slug 更新，无变化的文章跳过。
+4. Nginx 将首页交给前端，将文章正文与媒体请求转发给 API，从数据库读取。
+
+无需手工执行 INSERT，也无需额外把图片或视频复制到 Nginx。生产文章打包在镜像里，只重启旧容器或在旧容器里运行导入命令，不会得到尚未构建进去的新文章。
+
+### 3. 验证生产结果
+
+在实际网站域名下检查以下路径，替换为本篇实际 slug：
+
+- `/api/blog`：包含新文章的标题、日期、链接和封面。
+- `/blog/`：出现新文章卡片，点击可进入正文。
+- `/blog/relay-follow-up/`：正文排版、图片、视频、吸顶导航正常。
+- 用实际文章链接检查分享预览，确认封面地址使用生产域名；第三方平台可能缓存旧预览。
+
+如果未出现新文章，在生产服务器查看：
+
+```bash
+docker compose logs --tail=200 api
+```
+
+启动导入失败会记录 `relay.blog` 日志；API 继续启动并提供数据库上一版文章，因此网站能打开不代表新文章已成功发布。先确认部署版本、`draft` 状态和日志中的错误，修复后重新构建发布。
+
+## 已发布文章更新与下线
+
+- 更新：保持原 slug，修改同一目录，完成本地检查、导入预览、提交及生产发布。导入事务会一起更新文章元数据与素材；已移除的素材同步删除。
+- 下线：将 `draft` 改为 `true` 后重新发布，文章及其素材公开访问均返回 404。也可以移除该文章目录后发布；数据库会将其标记为草稿并保留素材用于备份。
+- 恢复：恢复完整文章目录并设置 `draft: false`，按同一流程重新发布。
+
+导入以事务执行并使用 PostgreSQL advisory lock，支持 API 多副本；没有变化的文章不重复插入、不改变更新时间。每次导入都以完整内容目录为准。
 
 ## 验证
 
@@ -144,7 +254,7 @@ npm run build
 npm test -- tests/blog.spec.ts
 ```
 
-前端专项测试使用模拟 API，覆盖卡片布局、页脚语言切换、空状态/失败重试、原文保留和桌面/手机明暗模式。文章截图比较统一使用字体回退并屏蔽原生视频控件，避免外部字体网络造成随机差异；线上字体链接保持原样。
+前端专项测试使用模拟 API，覆盖卡片布局、页脚语言切换、空状态/失败重试、原文保留和桌面/手机明暗模式。文章截图比较屏蔽原生视频控件，并阻止外部 Google Fonts 请求以避免网络差异。当前文章使用系统字体栈，首页使用随前端打包的 Source Serif 4，不依赖外部字体服务。
 
 从仓库根目录运行后端测试：
 

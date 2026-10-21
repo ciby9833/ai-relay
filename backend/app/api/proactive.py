@@ -441,39 +441,56 @@ def _push_kind(title: str) -> str:
 
 
 @router.get("/insights/notifications")
-async def notification_stats(session: SessionDep, user: UserDep, days: int = 7):
-    """（管理员）每个人每天收到几条飞书推送、各是什么类型，新建了几件事、他亲自处理了几件——用来看通知分级有没有起作用。"""
+async def notification_stats(session: SessionDep, user: UserDep, days: int = 7, offset: int = 0):
+    """Complete local calendar days, including zero-push days; today is intentionally excluded."""
     from app.models import FeishuCard, UserDecision
 
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以查看")
-    since = datetime.now(UTC) - timedelta(days=max(1, min(days, 30)))
+    days, offset = max(1, min(days, 30)), max(0, min(offset, 30))
+    now = datetime.now(UTC)
     users = {u.id: u for u in (await session.execute(select(User))).scalars()}
-    stats: dict = {}
+    stats, windows = {}, {}
+    keys = ("pushes", "interrupt", "digest", "brief", "meeting", "mission", "other", "items", "handled")
+    for uid, person in users.items():
+        tz = ZoneInfo(person.timezone)
+        end = now.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=offset)
+        start = end - timedelta(days=days)
+        # Exclude days before account creation from the per-person denominator.
+        start = max(start, person.created_at.astimezone(tz).replace(hour=0, minute=0, second=0, microsecond=0))
+        if start >= end:
+            continue
+        windows[uid] = (start, end)
+        stats[uid] = {(start + timedelta(days=i)).strftime("%Y-%m-%d"): dict.fromkeys(keys, 0)
+                      for i in range((end.date() - start.date()).days)}
 
     def day_of(uid, moment):
-        tz = ZoneInfo(users[uid].timezone) if uid in users else UTC
-        entry = stats.setdefault(uid, {}).setdefault(moment.astimezone(tz).strftime("%Y-%m-%d"),
-                                                     {"pushes": 0, "interrupt": 0, "digest": 0, "brief": 0, "meeting": 0,
-                                                      "mission": 0, "other": 0, "items": 0, "handled": 0})
-        return entry
+        if uid not in windows:
+            return None
+        start, end = windows[uid]
+        return stats[uid].get(moment.astimezone(start.tzinfo).strftime("%Y-%m-%d")) if start <= moment < end else None
 
+    since = now - timedelta(days=days + offset + 2)
     for card in (await session.execute(select(FeishuCard).where(FeishuCard.created_at >= since))).scalars():
         entry = day_of(card.user_id, card.created_at)
-        entry["pushes"] += 1
-        entry[_push_kind(card.title or "")] += 1
+        if entry is not None:
+            entry["pushes"] += 1
+            entry[_push_kind(card.title or "")] += 1
     for uid, created in (await session.execute(select(FollowUp.user_id, FollowUp.created_at).where(FollowUp.created_at >= since))).all():
-        day_of(uid, created)["items"] += 1
+        entry = day_of(uid, created)
+        if entry is not None:
+            entry["items"] += 1
     for uid, created in (await session.execute(
-        select(UserDecision.user_id, UserDecision.created_at).where(UserDecision.created_at >= since, UserDecision.decision != "open_original")
+        select(UserDecision.user_id, UserDecision.created_at).where(UserDecision.created_at >= since,
+            UserDecision.decision != "open_original", UserDecision.via != "auto")
     )).all():
-        day_of(uid, created)["handled"] += 1
-    rows = []
-    for uid, by_day in stats.items():
-        total = sum(d["pushes"] for d in by_day.values())
-        rows.append({"user": users[uid].name if uid in users else str(uid), "days": dict(sorted(by_day.items())),
-                     "pushes_per_day": round(total / len(by_day), 1)})
-    return sorted(rows, key=lambda r: -r["pushes_per_day"])
+        entry = day_of(uid, created)
+        if entry is not None:
+            entry["handled"] += 1
+    return sorted([{"user_id": str(uid), "user": users[uid].name, "timezone": users[uid].timezone,
+                    "days": by_day, "observed_days": len(by_day),
+                    "pushes_per_day": round(sum(d["pushes"] for d in by_day.values()) / len(by_day), 2)}
+                   for uid, by_day in stats.items()], key=lambda r: -r["pushes_per_day"])
 
 
 @router.get("/automations")

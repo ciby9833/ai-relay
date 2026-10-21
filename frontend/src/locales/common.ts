@@ -1,5 +1,7 @@
+import { admin } from "./admin";
 // Entries: Chinese, English, Indonesian.
 export const common: Record<string, readonly [string, string, string]> = {
+  ...admin,
   "blogTitle": ["博客", "Blog", "Blog"],
   "blogArticles": ["文章", "Articles", "Artikel"],
   "blogArticle": ["文章", "Article", "Artikel"],

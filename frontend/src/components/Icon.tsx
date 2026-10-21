@@ -1,5 +1,6 @@
 // 线性图标（24 网格，1.75 描边），风格参照 lucide
 const PATHS: Record<string, string> = {
+  chart: "M4 3v17h17 M8 16v-5 M13 16V7 M18 16V4",
   mail: "M4 6h16v12H4z M4 7l8 6 8-6",
   calendar: "M5 5h14v15H5z M5 10h14 M9 3v4 M15 3v4",
   approval: "M9 4h6v3H9z M7 5H5v16h14V5h-2 M9 13l2 2 4-4",

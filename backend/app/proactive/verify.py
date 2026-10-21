@@ -26,7 +26,10 @@ def _field_text(value) -> str:
     if isinstance(value, list):
         return "、".join(_field_text(v) for v in value)
     if isinstance(value, dict):
-        return _norm(value.get("text") or value.get("name") or value.get("value") or value.get("link") or "")
+        for key in ("text", "name", "value", "link"):
+            if key in value:
+                return _norm(value[key])
+        raise ValueError("暂不支持比较此字段类型")
     return _norm(value)
 
 
@@ -44,8 +47,9 @@ async def check(feishu: FeishuClient, user: User, action: PendingAction) -> dict
             return {"ok": False, "detail": "飞书没有返回记录编号"}
         data = await feishu.user_api(user, "GET", f"/bitable/v1/apps/{p['app_token']}/tables/{p['table_id']}/records/{p['record_id']}")
         fields = (data.get("record") or {}).get("fields") or {}
-        missing = [name for name, value in (p.get("fields") or {}).items() if value not in (None, "", []) and not _field_text(fields.get(name))]
-        return {"ok": not missing, "detail": f"读回记录 {p['record_id']}，字段齐全" if not missing else "读回记录缺少字段：" + "、".join(missing)}
+        wrong = [name for name, value in (p.get("fields") or {}).items()
+                 if _field_text(fields.get(name)) != _field_text(value)]
+        return {"ok": not wrong, "detail": f"读回记录 {p['record_id']}，字段值一致" if not wrong else "读回记录字段值不一致：" + "、".join(wrong)}
     if action.kind == "send_chat":
         message_id = p.get("message_id")
         if not message_id:
@@ -64,8 +68,7 @@ async def check(feishu: FeishuClient, user: User, action: PendingAction) -> dict
         return {"ok": ok, "detail": f"读回任务 {guid}" + ("，标题一致" if ok else f"，标题是“{task.get('summary')}”")}
     if action.kind == "create_event":
         event = p.get("event") or {}
-        ok = bool(event.get("event_id") or event.get("id"))
-        return {"ok": ok, "detail": "飞书返回了日程编号" if ok else "飞书没有返回日程编号"}
+        return {"ok": None, "detail": "飞书返回了日程编号，但尚未独立回读"} if event.get("event_id") or event.get("id") else {"ok": False, "detail": "飞书没有返回日程编号"}
     return None  # 发邮件、回复邀请、审批等：飞书接口返回成功即已生效，暂无单独的读回核对
 
 
