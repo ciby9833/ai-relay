@@ -206,31 +206,43 @@ async def _state(session: AsyncSession, user: User) -> SourceState:
     return state
 
 
+async def _person(feishu: FeishuClient, user: User, open_id: str) -> dict:
+    """先以他本人身份查通讯录；他看不到（no user authority）时改用应用身份查。"""
+    params = {"user_id_type": "open_id"}
+    try:
+        return (await feishu.user_api(user, "GET", f"/contact/v3/users/{open_id}", params=params)).get("user") or {}
+    except Exception:  # noqa: BLE001
+        return (await feishu.tenant_api("GET", f"/contact/v3/users/{open_id}", params=params)).get("user") or {}
+
+
 async def leaders(session: AsyncSession, feishu: FeishuClient | None, user: User) -> list[dict]:
-    """他的上级链（飞书通讯录里的 leader，往上最多 LEADER_DEPTH 级，直属上级在前），一周查一次；查不到就当没有。"""
+    """他的上级链（飞书通讯录里的 leader，往上最多 LEADER_DEPTH 级，直属上级在前）。
+
+    查到了一周更新一次；查不到（权限、网络）就当没有，一天后再试。
+    """
     state = await _state(session, user)
     cursor = dict(state.cursor or {})
-    checked = cursor.get("leaders_at")
-    if feishu is None or (checked and datetime.fromisoformat(checked) > datetime.now(UTC) - LEADER_TTL):
+    retry_at = cursor.get("leaders_retry_at")
+    if feishu is None or (retry_at and datetime.fromisoformat(retry_at) > datetime.now(UTC)):
         return cursor.get("leaders") or []
     found: list[dict] = []
+    ok = True
     try:
         current = user.feishu_open_id
         for depth in range(1, LEADER_DEPTH + 1):
-            person = (await feishu.user_api(user, "GET", f"/contact/v3/users/{current}",
-                                            params={"user_id_type": "open_id"})).get("user") or {}
-            boss_id = person.get("leader_user_id")
+            boss_id = (await _person(feishu, user, current)).get("leader_user_id")
             if not boss_id or boss_id in {b["open_id"] for b in found} or boss_id == user.feishu_open_id:
                 break
-            boss = (await feishu.user_api(user, "GET", f"/contact/v3/users/{boss_id}",
-                                          params={"user_id_type": "open_id"})).get("user") or {}
+            boss = await _person(feishu, user, boss_id)
             found.append({"open_id": boss_id, "name": boss.get("name"), "en_name": boss.get("en_name"),
                           "email": boss.get("enterprise_email") or boss.get("email"), "depth": depth})
             current = boss_id
     except Exception as exc:  # noqa: BLE001 - 查不到上级不能影响提醒
         logger.info("查不到 %s 的上级：%s", user.name, exc)
+        ok = False
         found = found or cursor.get("leaders") or []
-    state.cursor = {**cursor, "leaders": found, "leaders_at": datetime.now(UTC).isoformat()}
+    state.cursor = {**cursor, "leaders": found,
+                    "leaders_retry_at": (datetime.now(UTC) + (LEADER_TTL if ok else timedelta(days=1))).isoformat()}
     return found
 
 

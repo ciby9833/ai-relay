@@ -420,3 +420,45 @@ async def test_old_preferences_become_suggestions_not_rules(monkeypatch):
             await session.execute(delete(User).where(User.id == user_id))
             await session.commit()
             await engine.dispose()
+
+
+@db
+async def test_leader_lookup_falls_back_to_app_identity():
+    """他在通讯录里看不到自己上级（no user authority）：改用应用身份查；都查不到时一天后再试，不影响提醒。"""
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal, engine
+    from app.feishu.client import FeishuError
+
+    class Restricted(Feishu):
+        def __init__(self, tenant_ok=True):
+            super().__init__()
+            self.tenant_ok = tenant_ok
+
+        async def user_api(self, user, method, path, **kwargs):
+            raise FeishuError("no user authority error")
+
+        async def tenant_api(self, method, path, **kwargs):
+            if not self.tenant_ok:
+                raise FeishuError("no permission")
+            return await Feishu.user_api(self, self.me, method, path, **kwargs)
+
+    async with SessionLocal() as session:
+        user = await _fresh_user(session)
+        user_id = user.id
+        try:
+            down = Restricted(tenant_ok=False)
+            down.me = user
+            assert await attention.leaders(session, down, user) == []
+            assert await attention.leaders(session, Restricted(), user) == []  # 一天内不重复查
+            state = await attention._state(session, user)
+            state.cursor = {**state.cursor, "leaders_retry_at": None}
+            ok = Restricted()
+            ok.me = user
+            chain = await attention.leaders(session, ok, user)
+            assert [(b["name"], b["depth"]) for b in chain] == [("Hendra", 1), ("Wilson", 2)]
+        finally:
+            await session.rollback()
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+            await engine.dispose()
