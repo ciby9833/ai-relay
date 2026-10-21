@@ -18,7 +18,7 @@ from app.feishu.client import FeishuClient, FeishuError
 from app.home import ConversationBusy, post
 from app.llm.base import LLMError
 from app.models import FollowUp, PendingAction, Signal, User
-from app.proactive import actions, cards
+from app.proactive import actions, attention, cards
 from app.proactive.llm import complete_text
 from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM, PROGRESS_SYSTEM, REPLY_STATE_SYSTEM
 from app.proactive.push import push
@@ -647,45 +647,107 @@ def describe(item: FollowUp, action: PendingAction | None = None) -> str:
     return "——".join(parts)
 
 
+async def _refresh_last_card(session: AsyncSession, feishu: FeishuClient, user: User, item: FollowUp) -> None:
+    """同一件事刚发过卡片：按最新状态原地更新那张卡片，而不是再发一条。"""
+    from app.models import FeishuCard
+    from app.proactive.push import refresh
+
+    record = (await session.execute(
+        select(FeishuCard).where(FeishuCard.user_id == user.id,
+                                 FeishuCard.sections.contains([[[{"kind": "item", "item_id": item.id}]]]))
+        .order_by(FeishuCard.created_at.desc()).limit(1)
+    )).scalars().first()
+    if record is None:
+        return
+    try:
+        await refresh(session, feishu, user, record.message_id)
+    except FeishuError:
+        logger.warning("原地更新卡片失败 #%s", item.id)
+
+
 async def announce(
-    session: AsyncSession, feishu: FeishuClient, user: User, settings: dict, extra_facts: list[str]
+    session: AsyncSession, feishu: FeishuClient, user: User, settings: dict,
+    reminders: list[tuple[FollowUp, str]] | None = None,
 ) -> None:
-    """把新出现、需要用户知道的事用一条消息告诉他（实时，遵守免打扰）。"""
-    result = await session.execute(
+    """把还没告诉他的事按档位告诉他（见 attention）：
+
+    - critical（紧急、上级链、他说过随时告诉的）马上说，不受次数限制；紧急的在免打扰时段也说；
+    - 一般的“今天要处理”受每小时次数限制，名额用完就等空出来，有 critical 要说时顺带一起说；
+    - 打扰他的时候，手上攒着的不急的事附在后面；不急的事否则攒到汇总时间；只放简报的留给简报；静默的只在看板里；
+    - 同一件事刚发过（REPEAT_COOLDOWN 内）又有动静：原地更新那张卡片，不另发，升级成紧急的除外；
+    - “有结果了”这类消息跟着下一次说，不单独打扰。
+    """
+    now = datetime.now(UTC)
+    pending = list((await session.execute(
         select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status == OPEN, FollowUp.announced_at.is_(None))
         .order_by(FollowUp.id)
-    )
-    items = list(result.scalars())
-    if not items and not extra_facts:
+    )).scalars())
+    for item in [i for i in pending if attention.is_repeat(i, now)]:
+        item.announced_at = now
+        await _refresh_last_card(session, feishu, user, item)
+        pending.remove(item)
+    groups, critical_ids = await attention.apply(session, feishu, user, pending, now)
+    quiet = in_quiet_hours(settings, user.timezone)
+    critical = [i for i in groups["now"] if i.id in critical_ids and (not quiet or i.importance == "urgent")]
+    regular = [] if quiet else [i for i in groups["now"] if i.id not in critical_ids]
+    later = groups["batch"] + ([] if settings.get("brief_enabled", True) else groups["brief"])
+    if regular and not critical and await attention.interrupts_left(session, user, settings) <= 0:
+        for item in regular:  # 这一小时提醒得够多了：等名额空出来再说，不降到汇总
+            item.attention_note = f"{(item.attention_note or '今天要处理').split('（')[0]}（这一小时已经提醒过你几次，稍后就告诉你）"
+        held, regular = regular, []
+    else:
+        held = []
+    interrupt = critical + regular
+    digest = not interrupt and attention.digest_due(settings, user, await attention.last_digest(session, user), now)
+    if not interrupt and not digest:
         await session.commit()
         return
-    if in_quiet_hours(settings, user.timezone) and not any(i.importance == "urgent" for i in items):
-        await session.commit()  # 免打扰时段：留到结束后再说
+    riding = [] if quiet else later  # 打扰他的时候，手上攒着的不急的事一起给他，省得过会儿再打断一次
+    head = interrupt if interrupt else held + later  # 到了汇总时间：等名额的也一起说
+    shown = head + (riding if interrupt else [])
+    results = [] if quiet else await result_facts(session, user)
+    if not shown and not results:
+        if digest:
+            await attention.note_digest(session, user, now)
+        await session.commit()
         return
-    described = [describe(i, await session.get(PendingAction, i.action_id) if i.action_id else None) for i in items]
-    facts = extra_facts + described
-    if len(items) == 1 and not extra_facts:
+    by_item = {item.id: fact for item, fact in reminders or []}
+    facts = results + [by_item.get(i.id) or describe(i, await session.get(PendingAction, i.action_id) if i.action_id else None)
+                       for i in shown]
+    lang = i18n.user_language(settings)
+    if len(shown) == 1 and not results:
         text = ""  # 只有一件事：卡片已经说清楚了，不再加一句复述
     else:
         try:
             text = await complete_text(NARRATE_SYSTEM, f"用户：{user.name}\n\n发生的事：\n" + "\n".join(f"- {f}" for f in facts)
-                                       + "\n\n" + i18n.instruction(i18n.user_language(settings)))
+                                       + "\n\n" + i18n.instruction(lang))
         except LLMError:
-            text = "\n".join(f"- {f}" for f in extra_facts)
-    message_cards = [{"kind": "item", "item_id": i.id} for i in items[:8]]
+            text = "\n".join(f"- {f}" for f in results)
+    limit = 8 if interrupt else 12
+    sections = [["", [{"kind": "item", "item_id": i.id} for i in head[:limit]]]]
+    if interrupt and riding:
+        sections.append([i18n.t(lang, "also_pending"), [{"kind": "item", "item_id": i.id} for i in riding[:limit]]])
+    overflow = max(0, len(head) - limit) + (max(0, len(riding) - limit) if interrupt else 0)
+    if overflow:
+        sections.append(["", [{"kind": "note", "text": f"还有 {overflow} 件在网页看板里"}]])
+    flat = [card for _, group in sections for card in group]
     try:
-        await post(session, user, event="Relay 告诉用户：\n" + "\n".join(facts), text=text, cards=message_cards)
+        await post(session, user, event="Relay 告诉用户：\n" + "\n".join(facts), text=text, cards=flat)
     except ConversationBusy:
         await session.rollback()
         return
-    now = datetime.now(UTC)
-    for item in items:
-        item.announced_at = now
+    for item in shown:
+        item.announced_at = item.pushed_at = now
+        item.pushed_importance = item.importance
+    if interrupt:
+        await attention.note_interrupt(session, user, now)
+    else:
+        await attention.note_digest(session, user, now)
     await session.commit()
     try:
-        lang = i18n.user_language(settings)
-        title = i18n.t(lang, "things_to_know", n=len(items)) if items else i18n.t(lang, "update")
-        await push(session, feishu, user, title, text, message_cards)
+        title = (i18n.t(lang, "things_to_know", n=len(interrupt)) if interrupt
+                 else i18n.t(lang, "digest", n=len(head)) if head else i18n.t(lang, "update"))
+        await push(session, feishu, user, title, text, sections=sections)
     except FeishuError:
         logger.exception("推送到飞书失败")
     await session.commit()
@@ -713,6 +775,9 @@ async def context_line(session: AsyncSession, item: FollowUp, timezone: str) -> 
         parts.append(item.summary[:100])
     if item.action_id:
         parts.append(f"待确认操作 #{item.action_id}")
+    if item.attention == "mute" or (item.announced_at is None and item.attention in ("batch", "brief")):
+        when = {"batch": "攒到下次汇总再说", "brief": "留到早上简报", "mute": "不提醒，只在看板跟踪"}[item.attention]
+        parts.append(f"还没告诉他：{when}" + (f"（{item.attention_note}）" if item.attention_note else ""))
     return "；".join(parts)
 
 
@@ -725,6 +790,9 @@ async def item_json(session: AsyncSession, item: FollowUp) -> dict:
         "url": item.url, "open_url": insights.open_link(item), "importance": item.importance, "status": item.status, "resolution": item.resolution,
         "due_at": cards.iso(item.due_at), "remind_at": cards.iso(item.remind_at),
         "updated_at": cards.iso(item.updated_at), "count": len(item.signal_ids),
+        "attention": item.attention, "attention_note": item.attention_note, "announced": item.announced_at is not None,
+        # 能不能按“这一类”设规则（审批按类型、邮件按发件人、群里的按群）
+        "quieter": item.owner == "me" and item.attention not in ("brief", "mute") and attention.quieter_match(item, last) is not None,
         "action": actions_json(action) if action else None,
         "ask": ask(item, action),
         "ask_ui": cards.ask_ui(item, action),

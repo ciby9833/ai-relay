@@ -80,6 +80,19 @@ _STRINGS = {
     "undone": {"zh": "已撤销", "en": "Undone", "id": "Dibatalkan"},
     "auto_done": {"zh": "已按你的授权自动办理", "en": "Done automatically as you authorized", "id": "Dikerjakan otomatis sesuai izin Anda"},
     "update": {"zh": "Relay｜有新进展", "en": "Relay | Update", "id": "Relay | Ada perkembangan"},
+    "digest": {"zh": "Relay 汇总｜{n} 件不急的事", "en": "Relay digest | {n} things, nothing urgent", "id": "Ringkasan Relay | {n} hal, tidak mendesak"},
+    "also_pending": {"zh": "不急的，顺便看一眼", "en": "Not urgent, while you're here", "id": "Tidak mendesak, sekalian"},
+    "quieter": {"zh": "少提醒这类", "en": "Fewer like this", "id": "Kurangi yang seperti ini"},
+    "level_now": {"zh": "立刻告诉我", "en": "Tell me right away", "id": "Beri tahu segera"},
+    "level_batch": {"zh": "攒着一起说", "en": "Bundle into digests", "id": "Kumpulkan di ringkasan"},
+    "level_brief": {"zh": "只放进早上简报", "en": "Morning brief only", "id": "Hanya di ringkasan pagi"},
+    "level_mute": {"zh": "不提醒，只在看板里跟踪", "en": "Don't notify, just track on the board", "id": "Jangan beri tahu, cukup lacak di papan"},
+    "rule_accept": {"zh": "启用", "en": "Turn on", "id": "Aktifkan"},
+    "rule_reject": {"zh": "不用", "en": "No thanks", "id": "Tidak perlu"},
+    "rule_enabled": {"zh": "已启用", "en": "On", "id": "Aktif"},
+    "rule_ignored": {"zh": "不用了", "en": "Dismissed", "id": "Diabaikan"},
+    "rule_evidence": {"zh": "依据：以前你说过", "en": "Based on what you said before:", "id": "Berdasarkan yang pernah Anda katakan:"},
+    "rule_set": {"zh": "好的，以后{what}：{level}。可以在网页“提醒设置”里随时改。", "en": "Got it — from now on {what}: {level}. You can change this anytime in Settings on the web.", "id": "Baik — mulai sekarang {what}: {level}. Bisa diubah kapan saja di Pengaturan web."},
 }
 
 

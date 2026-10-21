@@ -13,14 +13,14 @@ from app.home import ConversationBusy, post
 from app.llm.base import LLMError
 from app.memory import service as memory_service
 from app.models import FollowUp, Signal, SourceState, User
-from app.proactive import cards, items
+from app.proactive import attention, cards, items
 from app.proactive.llm import complete_structured, complete_text
 from app.proactive.push import push
 from app.proactive.prompts import BRIEF_SYSTEM, TEAM_DIGEST_SYSTEM, TRIAGE_SYSTEM
 from app import i18n
 from app.sources import approval as approval_source
 from app.i18n import user_language
-from app.proactive.settings import language_of, in_quiet_hours, get_settings_row, is_workday, merged
+from app.proactive.settings import language_of, get_settings_row, is_workday, merged
 from app.sources import SYNCERS, calendar, docs
 from app.sources import unavailable as source_unavailable
 
@@ -270,6 +270,8 @@ async def morning_brief(session: AsyncSession, feishu: FeishuClient, user: User,
         select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status == "open")
         .order_by(FollowUp.importance.desc(), FollowUp.due_at.asc().nulls_last(), FollowUp.id)
     )).scalars().all()
+    unannounced = [i for i in open_items if i.announced_at is None]
+    open_items = [i for i in open_items if i.attention != "mute"]  # 他说过不用提醒的，简报里也不提
     decide = [i for i in open_items if i.owner == "me" and i.kind in ("approval", "invitation")]
     handle = [i for i in open_items if i.owner == "me" and i not in decide]
     waiting = [i for i in open_items if i.owner == "others"]
@@ -298,6 +300,8 @@ async def morning_brief(session: AsyncSession, feishu: FeishuClient, user: User,
         ["风险与逾期", risk_notes],
         ["在等别人", ids(waiting)],
         ["团队动态", [{"kind": "note", "text": team_digest}] if team_digest else []],
+        # 从他以前的偏好整理出的候选规则：他点“启用”才生效
+        ["要你确认的提醒偏好", [{"kind": "rule", "rule_id": r.id} for r in await attention.proposals_to_show(session, user)]],
     ]
     material = (
         f"今天是 {today} 周{WEEKDAYS[local_now.weekday()]}，用户：{user.name}\n"
@@ -321,6 +325,9 @@ async def morning_brief(session: AsyncSession, feishu: FeishuClient, user: User,
         await session.rollback()
         return False
     row.last_brief_date = today
+    for item in unannounced:
+        item.announced_at = now  # 攒着的、只放简报的事：简报里说过了，不再单独说
+    await attention.note_digest(session, user, now)
     await session.commit()
     title = f"Relay 简报｜拍板 {len(decide)} · 处理 {len(handle)} · 会议 {len(meetings)}"
     try:
@@ -360,15 +367,16 @@ async def run_for_user(session: AsyncSession, feishu: FeishuClient, user: User) 
     if not settings["proactive"]:
         return
     await sync_sources(session, feishu, user, settings)
+    if await attention.propose_from_memories(session, user):
+        logger.info("%s：从以前的偏好整理出候选提醒规则，等他确认", user.name)
+    await session.commit()
     await triage(session, user)
     await watch_mentions(session, user)
     await items.track(session, feishu, user)
     await items.refresh_approvals(session, user)
     await items.advance(session, user)
     reminders = await items.due_reminders(session, feishu, user)
-    # 免打扰时段先不取，留到结束后再告诉他
-    results = [] if in_quiet_hours(settings, user.timezone) else await items.result_facts(session, user)
-    await items.announce(session, feishu, user, settings, [fact for _, fact in reminders] + results)
+    await items.announce(session, feishu, user, settings, reminders)
     await meeting_briefs(session, feishu, user, settings)
     if settings["brief_enabled"]:
         await morning_brief(session, feishu, user, settings)

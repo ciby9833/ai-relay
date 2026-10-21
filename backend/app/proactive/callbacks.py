@@ -16,7 +16,7 @@ from app.llm.base import LLMError
 from app.models import FeishuCard, FollowUp, User, ScheduledTask
 from app import automation, i18n, insights
 from app.proactive.settings import language_of
-from app.proactive import actions, items
+from app.proactive import actions, attention, items
 from app.proactive.push import render
 
 logger = logging.getLogger("relay.callbacks")
@@ -81,6 +81,23 @@ async def handle_card_action(
                     raise actions.ActionError("找不到这件事")
                 items.close(item, "done", "你标记为已处理")
                 await insights.record(session, user, "done", item=item)
+            elif kind == "quieter":
+                # “少提醒这类”：按这件事的类别（审批类型 / 发件人 / 群）记成规则，以后只放进早上的简报
+                item = await session.get(FollowUp, int(value["item_id"]))
+                if item is None or item.user_id != user.id:
+                    raise actions.ActionError("找不到这件事")
+                try:
+                    message = await attention.quieter(session, user, item)
+                except ValueError as exc:
+                    raise actions.ActionError(str(exc)) from exc
+                await insights.record(session, user, "mute", item=item)
+            elif kind in ("rule_accept", "rule_reject"):
+                # 候选提醒规则：他确认了才生效
+                try:
+                    rule = await attention.decide_proposal(session, user, int(value["rule_id"]), kind == "rule_accept")
+                except ValueError as exc:
+                    raise actions.ActionError(str(exc)) from exc
+                message = i18n.ui("rule_enabled") if rule.status == "active" else i18n.ui("rule_ignored")
             elif kind == "mute":
                 message = await actions.mute(session, user, int(value["signal_id"]))
                 await insights.record(session, user, "mute", detail={"signal_id": int(value["signal_id"])})

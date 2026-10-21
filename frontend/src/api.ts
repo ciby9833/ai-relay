@@ -164,6 +164,23 @@ export interface FollowUp {
   source: Card | null;
   detail: { name: string; value: string }[];
   quick_approve: boolean;
+  attention?: AttentionLevel | null;
+  announced?: boolean;
+  quieter?: boolean;
+}
+
+export type AttentionLevel = "now" | "batch" | "brief" | "mute";
+
+export interface NotifyRule {
+  id: number;
+  match: { group?: string; person?: string; approval?: string; chat?: string; system?: string };
+  level: AttentionLevel;
+  label: string;
+  source: "chat" | "card" | "web" | "memory";
+  status: "active" | "proposed";
+  evidence: string | null;
+  hits: number;
+  last_hit_at: string | null;
 }
 
 export interface RelayTask {
@@ -245,6 +262,7 @@ export interface Settings {
   brief_time: string;
   meeting_brief_minutes: number;
   max_interrupts_per_hour: number;
+  digest_times: string[];
   language: "auto" | "zh" | "en" | "id";
 }
 
@@ -341,6 +359,11 @@ export const api = {
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),
   saveSettings: (settings: Settings) => request("/settings", json("PUT", settings)),
+  notifyRules: () => request<NotifyRule[]>("/notify-rules"),
+  updateRule: (id: number, level: AttentionLevel) => request(`/notify-rules/${id}`, json("PUT", { level })),
+  decideRule: (id: number, decision: "accept" | "reject") => request(`/notify-rules/${id}/${decision}`, { method: "POST" }),
+  deleteRule: (id: number) => request(`/notify-rules/${id}`, { method: "DELETE" }),
+  quieter: (itemId: number, level: AttentionLevel = "brief") => request<{ message: string }>(`/items/${itemId}/quieter`, json("POST", { level })),
   syncNow: () => request("/sync", { method: "POST" }),
   briefNow: () => request("/brief", { method: "POST" }),
 };

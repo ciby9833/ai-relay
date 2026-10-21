@@ -1,23 +1,23 @@
 """主动助手相关接口：动态（信号）、待确认操作、设置、数据源状态。"""
 
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app import automation, insights
+from app import automation, i18n, insights
 from app.db import SessionLocal
 from fastapi.responses import RedirectResponse
 from app.deps import FeishuDep, SessionDep, UserDep
 from app.home import post
 from app.llm.base import LLMError
-from app.models import FollowUp, PendingAction, ScheduledTask, Signal, SourceState, User
-from app.proactive import actions, cards, items
+from app.models import AttentionRule, FollowUp, PendingAction, ScheduledTask, Signal, SourceState, User
+from app.proactive import actions, attention, cards, items
 from app.proactive.engine import morning_brief, sync_sources
-from app.proactive.settings import get_settings_row, merged
+from app.proactive.settings import get_settings_row, language_of, merged
 
 router = APIRouter(prefix="/api", tags=["proactive"])
 
@@ -250,6 +250,7 @@ class SettingsBody(BaseModel):
     brief_time: str = Field(pattern=r"^\d{2}:\d{2}$")
     meeting_brief_minutes: int = Field(ge=0, le=120)
     max_interrupts_per_hour: int = Field(ge=0, le=60)
+    digest_times: list[Annotated[str, Field(pattern=r"^\d{2}:\d{2}$")]] = Field(default=["11:30", "16:30"], max_length=6)
     language: str = Field(default="auto", pattern="^(auto|zh|en|id)$")
 
 
@@ -275,6 +276,75 @@ async def put_settings(body: SettingsBody, session: SessionDep, user: UserDep):
     row.data = {**(row.data or {}), **body.model_dump()}
     await session.commit()
     return {"settings": merged(row.data)}
+
+
+# ---------- 提醒规则：哪类事立刻说 / 攒着说 / 只放简报 / 不提醒 ----------
+
+
+def _rule_json(rule: AttentionRule) -> dict:
+    return {"id": rule.id, "match": rule.match, "level": rule.level, "label": rule.label, "source": rule.source,
+            "status": rule.status, "evidence": rule.evidence,
+            "hits": rule.hits, "last_hit_at": rule.last_hit_at.isoformat() if rule.last_hit_at else None,
+            "created_at": rule.created_at.isoformat() if rule.created_at else None}
+
+
+class RuleBody(BaseModel):
+    level: Literal["now", "batch", "brief", "mute"]
+
+
+async def _own_rule(session, user: User, rule_id: int) -> AttentionRule:
+    rule = await session.get(AttentionRule, rule_id)
+    if rule is None or rule.user_id != user.id:
+        raise HTTPException(status_code=404, detail="规则不存在")
+    return rule
+
+
+@router.get("/notify-rules")
+async def list_rules(session: SessionDep, user: UserDep):
+    """生效的规则和等他确认的候选（他拒绝过的不列）。"""
+    return [_rule_json(r) for r in await attention.rules_for(session, user, status=None) if r.status != "rejected"]
+
+
+@router.post("/notify-rules/{rule_id}/{decision}")
+async def decide_rule(rule_id: int, decision: Literal["accept", "reject"], session: SessionDep, user: UserDep):
+    """候选规则：启用 / 不用。"""
+    try:
+        rule = await attention.decide_proposal(session, user, rule_id, decision == "accept")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await session.commit()
+    return _rule_json(rule)
+
+
+@router.put("/notify-rules/{rule_id}")
+async def update_rule(rule_id: int, body: RuleBody, session: SessionDep, user: UserDep):
+    rule = await _own_rule(session, user, rule_id)
+    rule = await attention.set_rule(session, user, rule.match, body.level, "web")
+    await session.commit()
+    return _rule_json(rule)
+
+
+@router.delete("/notify-rules/{rule_id}")
+async def delete_rule(rule_id: int, session: SessionDep, user: UserDep):
+    await session.delete(await _own_rule(session, user, rule_id))
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/items/{item_id}/quieter")
+async def quieter(item_id: int, body: RuleBody, session: SessionDep, user: UserDep):
+    """看板上“这类以后……”：按这件事的类别设一条规则。"""
+    item = await session.get(FollowUp, item_id)
+    if item is None or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="事项不存在")
+    i18n.current.set(await language_of(session, user))
+    try:
+        message = await attention.quieter(session, user, item, body.level, "web")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await insights.record(session, user, "mute" if body.level in ("brief", "mute") else "louder", item=item)
+    await session.commit()
+    return {"message": message}
 
 
 @router.post("/sync")

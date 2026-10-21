@@ -411,6 +411,16 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
               <Icon name="external" /> {t("在飞书查看")}
             </a>
           )}
+          {item.quieter && (
+            <button
+              className="btn ghost small"
+              disabled={busy}
+              title={t("以后这一类（同一种审批 / 同一个发件人 / 同一个群）只放进早上的简报，可在提醒设置里改")}
+              onClick={() => run(async () => { await api.quieter(item.id, "brief"); onChanged(); })}
+            >
+              <Icon name="bell" size={14} /> {t("少提醒这类")}
+            </button>
+          )}
           <span className="spacer" />
           <button className="btn ghost small" disabled={busy} onClick={() => run(async () => { await api.closeItem(item.id, "done"); onChanged(); })}>
             <Icon name="check" size={14} /> {t("我已处理")}
@@ -450,12 +460,24 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
         </p>
       )}
 
+      {attentionHint(item) && <p className="muted small attention-hint">{attentionHint(item)}</p>}
+
       {!compact && action?.kind === "send_mail" && <DraftEditor action={action} onChanged={onChanged} />}
       {compact && action?.kind === "send_mail" && action.status === "pending" && (
         <p className="next-step">{t("Relay 已起草回复，展开确认")}</p>
       )}
     </AppCard>
   );
+}
+
+/** 这件事为什么还没（或不会）主动告诉他。 */
+function attentionHint(item: FollowUp): string | null {
+  if (item.status !== "open") return null;
+  if (item.attention === "mute") return t("按你的设置，这类不提醒，只在这里跟踪");
+  if (item.announced) return null;
+  if (item.attention === "brief") return t("按你的设置，这类放进早上的简报再告诉你");
+  if (item.attention === "batch") return t("不急，Relay 会在下次汇总时告诉你");
+  return null;
 }
 
 const ACTION_ICON: Record<Action["kind"], string> = {

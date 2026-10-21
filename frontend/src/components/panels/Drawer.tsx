@@ -1,6 +1,6 @@
 import { t } from "../../i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type Memory, type Settings, type SourceStatus, type Task } from "../../api";
+import { api, type AttentionLevel, type Memory, type NotifyRule, type Settings, type SourceStatus, type Task } from "../../api";
 import { dayLabel, relative, timeOf } from "../../format";
 import Icon from "../Icon";
 import type { PanelKind } from "../Sidebar";
@@ -74,6 +74,77 @@ function Memories() {
         ) : null,
       )}
     </>
+  );
+}
+
+const LEVELS: [AttentionLevel, string][] = [
+  ["now", "立刻告诉我"],
+  ["batch", "攒着一起说"],
+  ["brief", "只放进早上简报"],
+  ["mute", "不提醒，只在看板里跟踪"],
+];
+const GROUPS: Record<string, string> = {
+  approval: "审批", mail: "邮件", chat: "聊天里的事", invitation: "会议邀请",
+  waiting: "在等别人的事", biz: "业务系统通知", attendance: "考勤",
+};
+
+/** 规则说的是哪一类事：类别 + 人 / 审批类型 / 群 / 系统（人名、群名等是业务数据，不翻译）。 */
+function ruleTarget(rule: NotifyRule): string {
+  const m = rule.match;
+  const parts = [m.approval ? `${m.approval} · ${t("审批")}` : m.group ? t(GROUPS[m.group] ?? m.group) : t("所有事")];
+  if (m.person) parts.push(t("相关的人：{name}", { name: m.person }));
+  if (m.chat) parts.push(t("群：{name}", { name: m.chat }));
+  if (m.system) parts.push(m.system);
+  return parts.join(" · ");
+}
+
+function NotifyRules() {
+  const [rules, setRules] = useState<NotifyRule[] | null>(null);
+  const [error, setError] = useState(false);
+  const load = useCallback(() => api.notifyRules().then(setRules).catch(() => setError(true)), []);
+  useEffect(() => void load(), [load]);
+  const act = (task: Promise<unknown>) => task.then(load).catch(() => setError(true));
+  const active = (rules ?? []).filter((rule) => rule.status !== "proposed");
+  const proposed = (rules ?? []).filter((rule) => rule.status === "proposed");
+  return (
+    <section>
+      <h3>{t("提醒规则")}</h3>
+      <p className="muted small">
+        {t("你说过的提醒偏好，Relay 每次通知前都会照做。在对话里说“请假审批不用提醒我”“Budi 的事随时告诉我”，或在事项上点“少提醒这类”，都会出现在这里。")}
+      </p>
+      {proposed.length > 0 && (
+        <>
+          <p className="small"><strong>{t("等你确认的候选")}</strong> <span className="muted">{t("从你以前说过的话整理出来，确认前不会生效。")}</span></p>
+          {proposed.map((rule) => (
+            <div key={rule.id} className="row-card rule-row">
+              <span>
+                <strong>{ruleTarget(rule)}</strong> → {t(LEVELS.find(([level]) => level === rule.level)?.[1] ?? rule.level)}
+                {rule.evidence && <span className="muted small"><br />{t("依据：")}「{rule.evidence}」</span>}
+              </span>
+              <button className="btn primary small" onClick={() => act(api.decideRule(rule.id, "accept"))}>{t("启用")}</button>
+              <button className="btn ghost small" onClick={() => act(api.decideRule(rule.id, "reject"))}>{t("不用")}</button>
+            </div>
+          ))}
+        </>
+      )}
+      {active.length === 0 && <p className="empty-note">{t("还没有规则。")}</p>}
+      {active.map((rule) => (
+        <div key={rule.id} className="row-card rule-row">
+          <span>
+            <strong>{ruleTarget(rule)}</strong>
+            {rule.hits > 0 && <span className="muted small"> · {t("已用在 {n} 件事上", { n: rule.hits })}</span>}
+          </span>
+          <select value={rule.level} aria-label={t("提醒方式")} onChange={(e) => act(api.updateRule(rule.id, e.target.value as AttentionLevel))}>
+            {LEVELS.map(([level, label]) => <option key={level} value={level}>{t(label)}</option>)}
+          </select>
+          <button className="icon-button" title={t("删除")} onClick={() => act(api.deleteRule(rule.id))}>
+            <Icon name="trash" size={14} />
+          </button>
+        </div>
+      ))}
+      <p className="muted small">{t("紧急的事（例如运营事故、客户或上级催办）即使命中“少提醒”的规则，也会照样马上告诉你。")}</p>
+      {error && <p role="alert" className="error-text">{t("操作失败")}</p>}
+    </section>
   );
 }
 
@@ -221,12 +292,38 @@ function SettingsForm() {
           <span>{t("会前准备提前（分钟）")}</span>
           <input type="number" min={0} max={120} value={settings.meeting_brief_minutes} onChange={(e) => update({ meeting_brief_minutes: Number(e.target.value) })} />
         </label>
+        <div className="field">
+          <span>{t("不急的事汇总时间")}</span>
+          <span className="field-pair">
+            {(settings.digest_times ?? []).map((time, index) => (
+              <span key={index} className="field-pair">
+                <input type="time" value={time} onChange={(e) => {
+                  const next = [...settings.digest_times];
+                  next[index] = e.target.value;
+                  update({ digest_times: next });
+                }} />
+                <button className="icon-button" title={t("删除")} onClick={() => update({ digest_times: settings.digest_times.filter((_, i) => i !== index) })}>
+                  <Icon name="x" size={12} />
+                </button>
+              </span>
+            ))}
+            {(settings.digest_times ?? []).length < 4 && (
+              <button className="btn ghost small" onClick={() => update({ digest_times: [...(settings.digest_times ?? []), "14:00"] })}>
+                + {t("加一个时间")}
+              </button>
+            )}
+          </span>
+        </div>
         <label className="field">
           <span>{t("每小时最多打扰")}</span>
           <input type="number" min={0} max={60} value={settings.max_interrupts_per_hour} onChange={(e) => update({ max_interrupts_per_hour: Number(e.target.value) })} />
         </label>
-        <p className="muted small">{t("新的事会实时告诉你；免打扰时段先记下，结束后再说，紧急的事不受限制。")}</p>
+        <p className="muted small">
+          {t("紧急的事和你上级找你的事随时告诉你，不受次数限制；今天要你处理的事马上告诉你，但每小时有上限，超出的稍后再说；其余的攒到汇总时间一起说，早上的简报也算一次。免打扰时段只说紧急的。")}
+        </p>
       </section>
+
+      <NotifyRules />
 
       {error && <p role="alert" className="error-text">{t("操作失败")}</p>}
       <button className="btn primary" disabled={saving} onClick={async () => {

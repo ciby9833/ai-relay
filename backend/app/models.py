@@ -167,9 +167,34 @@ DEFAULT_SETTINGS = {
     "brief_enabled": True,  # 每个工作日自动发早间简报
     "brief_time": "08:30",  # 每日简报时间
     "meeting_brief_minutes": 15,  # 会前多久发会议准备
-    "max_interrupts_per_hour": 6,
+    "max_interrupts_per_hour": 3,  # 立刻打扰的上限，超出的并到下一次汇总
+    "digest_times": ["11:30", "16:30"],  # 不急的事攒到这几个时间一起说（工作日；早上的简报也算一次）
     "language": "auto",  # auto = 按他发给 Relay 的消息自动识别；也可指定 zh / en / id
 }
+
+
+class AttentionRule(Base):
+    """他明确说过的提醒偏好：“请假审批只放简报”“Budi 的事随时告诉我”“这个群的@不用提醒”。
+
+    由代码在推送前逐条匹配，模型不能绕过；只有他本人（对话里说、卡片上点、网页里改）能新增和修改。
+    """
+
+    __tablename__ = "attention_rules"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # 匹配条件，全部满足才算命中：group（approval|mail|chat|invitation|waiting|biz|attendance）、
+    # person（人名或邮箱，包含即可）、approval（审批类型）、chat（群名）、system（业务系统名）
+    match: Mapped[dict] = mapped_column(JSONB)
+    level: Mapped[str] = mapped_column(String(16))  # now | batch | brief | mute
+    label: Mapped[str] = mapped_column(Text)  # 给人看的一句话：“请假审批 → 只放简报”
+    source: Mapped[str] = mapped_column(String(16))  # chat | card | web | memory（从以前的记忆整理出的候选）
+    # active 生效 | proposed 候选（从历史偏好整理出来，等他确认后才生效）| rejected 他说不要（不再提议）
+    status: Mapped[str] = mapped_column(String(16), server_default="active")
+    evidence: Mapped[str | None] = mapped_column(Text)  # 候选规则的依据：以前他说过的原话
+    hits: Mapped[int] = mapped_column(Integer, server_default="0")  # 命中过多少件事（让他知道这条规则在起作用）
+    last_hit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class UserSettings(Base):
@@ -281,6 +306,15 @@ class FollowUp(Base):
     nudges: Mapped[int] = mapped_column(Integer, server_default="0")
     # 已经在主线里告诉过用户的时间；免打扰时段新建的事项先不说，之后补上
     announced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 这件事值不值得打扰他：now 立刻说 | batch 攒到固定时间一起说 | brief 只进早上简报 | mute 只在看板里静默跟踪
+    attention: Mapped[str | None] = mapped_column(String(16))
+    attention_note: Mapped[str | None] = mapped_column(Text)  # 为什么这样分（给他看：“你说过请假审批只放简报”）
+    # 判断“同一类事”的依据（拿不到来源信号的事项在创建时写进来，例如群聊待办的提出人、群名）
+    facets: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    # 上一次为这件事单独发飞书消息的时间和当时的紧急程度：同一件事短时间内再有动静时原地更新那张卡片，
+    # 只有升级成紧急才另发一条
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pushed_importance: Mapped[str | None] = mapped_column(String(16))
     resolution: Mapped[str | None] = mapped_column(Text)  # 怎么结束的
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

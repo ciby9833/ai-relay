@@ -4,7 +4,7 @@ import { messages } from "../src/locales/messages";
 import { common } from "../src/locales/common";
 import { dayLabel, relative, stepActive, stepDone } from "../src/format";
 
-const settings = { proactive: true, brief_enabled: false, sources: { mail: true, calendar: true }, quiet_start: "22:00", quiet_end: "08:00", brief_time: "09:00", meeting_brief_minutes: 15, max_interrupts_per_hour: 3, language: "auto" };
+const settings = { proactive: true, brief_enabled: false, sources: { mail: true, calendar: true }, quiet_start: "22:00", quiet_end: "08:00", brief_time: "09:00", meeting_brief_minutes: 15, max_interrupts_per_hour: 3, digest_times: ["11:30", "16:30"], language: "auto" };
 const action = { id: 1, kind: "send_mail", status: "pending", summary: "Original summary", result: null, to: "person@example.com", subject: "Original subject", body: "邮件原文 — original email", reply_all: true, others: ["a@example.com", "b@example.com"], references: ["Reference"], rsvp: null };
 const mission = { id: 1, title: "Original mission", goal: "Original goal", status: "asking", plan: [{ step: "Original step", status: "todo" }], notes: "Original notes", grants: [], question: "Original question", result: null, runs: 2, waiting_for: null, next_run_at: null, updated_at: new Date().toISOString(), pending_actions: [], logs: [] };
 const cards = [
@@ -29,6 +29,7 @@ async function mockApi(page: Page, signedIn = true, withCards = false) {
     if (path === "/api/conversations/chat/messages") return route.fulfill({ json: [{ id: 2, role: "user", text: "Original history" }] });
     if (path === "/api/missions") return route.fulfill({ json: { missions: [mission], grantable: { send_mail: "发送邮件" } } });
     if (path === "/api/missions/1") return route.fulfill({ json: mission });
+    if (path === "/api/notify-rules") return route.fulfill({ json: [{ id: 1, match: { group: "approval", approval: "Cuti" }, level: "brief", label: "x", source: "card", hits: 4, last_hit_at: null }] });
     if (["/api/integrations", "/api/tasks", "/api/memories"].includes(path)) return route.fulfill({ json: [] });
     return route.fulfill({ status: 500, json: { detail: `Unexpected test request: ${path}` } });
   });

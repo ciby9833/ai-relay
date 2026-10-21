@@ -792,10 +792,6 @@ export const messages: Record<string, readonly [string, string]> = {
     "Maximum reminders per hour",
     "Maksimum pengingat per jam"
   ],
-  "新的事会实时告诉你；免打扰时段先记下，结束后再说，紧急的事不受限制。": [
-    "New items are shared as they arrive. During quiet hours, updates wait until afterward; urgent items are always delivered.",
-    "Hal baru langsung diberitahukan. Saat waktu tenang, kabar ditunda hingga selesai; hal mendesak tetap disampaikan."
-  ],
   "已保存": [
     "Saved",
     "Tersimpan"
@@ -1231,5 +1227,121 @@ export const messages: Record<string, readonly [string, string]> = {
   "正在准备加参会人": [
     "Preparing attendee additions",
     "Menyiapkan penambahan peserta"
+  ],
+  "以后这一类（同一种审批 / 同一个发件人 / 同一个群）只放进早上的简报，可在提醒设置里改": [
+    "From now on, items like this (same approval type / sender / group) only go into the morning brief. You can change this in Settings.",
+    "Mulai sekarang, hal seperti ini (jenis persetujuan / pengirim / grup yang sama) hanya masuk ringkasan pagi. Bisa diubah di Pengaturan."
+  ],
+  "少提醒这类": [
+    "Fewer like this",
+    "Kurangi yang seperti ini"
+  ],
+  "按你的设置，这类不提醒，只在这里跟踪": [
+    "Per your settings, items like this aren't notified — only tracked here",
+    "Sesuai pengaturan Anda, hal seperti ini tidak diberitahukan — hanya dilacak di sini"
+  ],
+  "按你的设置，这类放进早上的简报再告诉你": [
+    "Per your settings, this will be in your morning brief",
+    "Sesuai pengaturan Anda, ini akan ada di ringkasan pagi"
+  ],
+  "不急，Relay 会在下次汇总时告诉你": [
+    "Not urgent — Relay will include it in the next digest",
+    "Tidak mendesak — Relay akan menyertakannya di ringkasan berikutnya"
+  ],
+  "立刻告诉我": [
+    "Tell me right away",
+    "Beri tahu segera"
+  ],
+  "攒着一起说": [
+    "Bundle into digests",
+    "Kumpulkan di ringkasan"
+  ],
+  "只放进早上简报": [
+    "Morning brief only",
+    "Hanya di ringkasan pagi"
+  ],
+  "不提醒，只在看板里跟踪": [
+    "Don't notify, just track on the board",
+    "Jangan beri tahu, cukup lacak di papan"
+  ],
+  "聊天里的事": [
+    "Chat requests",
+    "Permintaan di chat"
+  ],
+  "在等别人的事": [
+    "Things you're waiting on",
+    "Hal yang Anda tunggu"
+  ],
+  "业务系统通知": [
+    "System notifications",
+    "Notifikasi sistem"
+  ],
+  "所有事": [
+    "Everything",
+    "Semua hal"
+  ],
+  "相关的人：{name}": [
+    "Person: {name}",
+    "Orang: {name}"
+  ],
+  "群：{name}": [
+    "Group: {name}",
+    "Grup: {name}"
+  ],
+  "提醒规则": [
+    "Notification rules",
+    "Aturan pemberitahuan"
+  ],
+  "你说过的提醒偏好，Relay 每次通知前都会照做。在对话里说“请假审批不用提醒我”“Budi 的事随时告诉我”，或在事项上点“少提醒这类”，都会出现在这里。": [
+    "Your notification preferences — Relay applies them before every notification. Say things like “Don't notify me about leave approvals” or “Always tell me about Budi's requests” in chat, or tap “Fewer like this” on an item, and they show up here.",
+    "Preferensi pemberitahuan Anda — Relay menerapkannya sebelum setiap pemberitahuan. Katakan di chat misalnya “Persetujuan cuti tidak perlu diberitahukan” atau “Selalu beri tahu soal Budi”, atau ketuk “Kurangi yang seperti ini” pada suatu hal; aturannya muncul di sini."
+  ],
+  "还没有规则。": [
+    "No rules yet.",
+    "Belum ada aturan."
+  ],
+  "已用在 {n} 件事上": [
+    "applied to {n} items",
+    "diterapkan pada {n} hal"
+  ],
+  "提醒方式": [
+    "How to notify",
+    "Cara memberi tahu"
+  ],
+  "不急的事汇总时间": [
+    "Digest times for non-urgent items",
+    "Waktu ringkasan untuk hal tidak mendesak"
+  ],
+  "加一个时间": [
+    "Add a time",
+    "Tambah waktu"
+  ],
+  "紧急的事和你上级找你的事随时告诉你，不受次数限制；今天要你处理的事马上告诉你，但每小时有上限，超出的稍后再说；其余的攒到汇总时间一起说，早上的简报也算一次。免打扰时段只说紧急的。": [
+    "Urgent items and anything from your managers come through right away, with no limit. Things due today are sent right away too, up to the hourly limit — any beyond that follow shortly. Everything else is bundled into the digests (the morning brief counts as one). During quiet hours, only urgent items come through.",
+    "Hal mendesak dan apa pun dari atasan Anda langsung disampaikan, tanpa batas. Hal yang harus diselesaikan hari ini juga langsung disampaikan, sampai batas per jam — sisanya menyusul sebentar lagi. Sisanya dikumpulkan di waktu ringkasan (ringkasan pagi juga termasuk). Saat waktu tenang, hanya hal mendesak yang disampaikan."
+  ],
+  "等你确认的候选": [
+    "Suggestions to confirm",
+    "Saran untuk dikonfirmasi"
+  ],
+  "从你以前说过的话整理出来，确认前不会生效。": [
+    "Drawn from what you've said before. They don't take effect until you confirm.",
+    "Disusun dari yang pernah Anda katakan. Tidak berlaku sebelum Anda konfirmasi."
+  ],
+  "依据：": [
+    "Based on: ",
+    "Berdasarkan: "
+  ],
+  "启用": [
+    "Turn on",
+    "Aktifkan"
+  ],
+  "不用": [
+    "No thanks",
+    "Tidak perlu"
+  ],
+  "紧急的事（例如运营事故、客户或上级催办）即使命中“少提醒”的规则，也会照样马上告诉你。": [
+    "Urgent items (such as an operational incident, or a customer or manager chasing you) still come through right away, even if a “fewer reminders” rule matches.",
+    "Hal mendesak (misalnya insiden operasional, atau pelanggan/atasan yang menagih) tetap langsung disampaikan meskipun cocok dengan aturan “kurangi pemberitahuan”."
   ]
 };

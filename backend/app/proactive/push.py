@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.feishu import cards as fc
 from app.feishu.client import FeishuClient
-from app.models import FeishuCard, FollowUp, Mission, PendingAction, Signal, User
+from app.models import AttentionRule, FeishuCard, FollowUp, Mission, PendingAction, Signal, User
 from app import i18n, insights
 from app.proactive.settings import language_of
+from app.proactive import attention
 from app.proactive.cards import ask
 from app.proactive.render import RSVP_LABEL
 from app.sources import approval
@@ -104,6 +105,8 @@ async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expande
             else fc.link("在飞书查看", insights.open_link(item, "feishu"))
         )
     buttons.append(fc.callback(i18n.ui("done"), "item_done", item_id=item.id))
+    if item.owner == "me" and attention.quieter_match(item, signal) is not None and item.attention not in ("brief", "mute"):
+        buttons.append(fc.callback(i18n.ui("quieter"), "quieter", item_id=item.id))
     elements = [fc.markdown("\n\n".join(body))] if body else []
     elements.append(fc.button_row(buttons))
     return panel(header, elements, expanded), f"{header}\n" + "\n".join(body)
@@ -144,6 +147,24 @@ def _action_panel(action: PendingAction, expanded: bool, timezone: str) -> tuple
     buttons += [fc.link("去网页修改", get_settings().frontend_url), fc.callback(i18n.ui("not_needed"), "cancel", action_id=action.id)]
     elements.append(fc.button_row(buttons))
     return panel(header, elements, expanded), f"{action.summary}\n" + "\n".join(body)
+
+
+async def _rule_panel(session: AsyncSession, user: User, rule_id: int) -> tuple[dict | None, str]:
+    """候选提醒规则：依据是他以前说过的话，点“启用”才生效。"""
+    rule = await session.get(AttentionRule, rule_id)
+    if rule is None or rule.user_id != user.id:
+        return None, ""
+    if rule.status != "proposed":
+        state = i18n.ui("rule_enabled") if rule.status == "active" else i18n.ui("rule_ignored")
+        line = f"🔔 ~~{rule.label}~~　<font color='grey'>{state}</font>" if rule.status == "rejected" else f"🔔 {rule.label}　<font color='grey'>{state}</font>"
+        return fc.markdown(line), line
+    header = f"🔔 **{rule.label}**"
+    body = f"<font color='grey'>{i18n.ui('rule_evidence')}「{(rule.evidence or '')[:120]}」</font>"
+    buttons = fc.button_row([
+        fc.callback(i18n.ui("rule_accept"), "rule_accept", "primary", rule_id=rule.id),
+        fc.callback(i18n.ui("rule_reject"), "rule_reject", rule_id=rule.id),
+    ])
+    return panel(header, [fc.markdown(body), buttons], True), f"{header}\n{body}"
 
 
 async def render(
@@ -189,6 +210,10 @@ async def render(
                 line = f"🧭 **长期任务：{mission.title}**　<font color='grey'>{state}"
                 line += f" · 计划 {done}/{len(mission.plan)}</font>" if mission.plan else "</font>"
                 element = fc.markdown(line)
+            elif card["kind"] == "rule":
+                element, line = await _rule_panel(session, user, card["rule_id"])
+                if element is None:
+                    continue
             elif card["kind"] == "note":
                 line = card["text"]
                 element = fc.markdown(line)

@@ -151,12 +151,14 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
             assignee = owner if assignee == owner else None
             requester = owner if requester == owner else None
         due = items._due(task["due"], assignee or requester) if (assignee or requester) else None
+        chat_name = next((m.chat_name for m in new + earlier if m.chat_name), None) if owner is None else None
         if assignee and assignee != requester:
             await items.upsert(
                 session, assignee, f"chat:{source.message_id}:{assignee.id}", None, silent=False,
                 kind="request", owner="me", title=f"{task['requester']} 让你：{task['task']}",
                 summary=f"「{source.text[:200]}」", next_step=f"完成后在{where}回复对方",
                 url=chat_link(chat_id), due_at=due,
+                facets={"people": [task["requester"]], "open_ids": [source.sender_open_id], "chat": chat_name},
             )
             # 同一条消息已经建成待办，不再单独提醒“@你没回”
             await session.execute(
@@ -170,6 +172,7 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
                 summary=f"「{source.text[:200]}」", waiting_on=task["assignee"],
                 next_step="Relay 会在到期时提醒你跟进", url=chat_link(chat_id),
                 due_at=due, remind_at=due or datetime.now(UTC) + WAITING_DEFAULT,
+                facets={"people": [task["assignee"]], "chat": chat_name},
             )
 
 

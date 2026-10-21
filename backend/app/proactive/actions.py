@@ -430,11 +430,13 @@ def cloud_result(summary: str, operation: str, data: dict) -> str:
 
 
 async def mute(session: AsyncSession, user: User, signal_id: int) -> str:
-    """用户说“这类不用提醒”：记成长期偏好，之后分拣时会参考。"""
+    """用户说“这类邮件不用提醒”：按发件人记成规则（只放进早上的简报），推送前由代码直接执行。"""
+    from app.proactive import attention
+
     signal = await own_signal(session, user, signal_id)
-    sender = (signal.payload or {}).get("from") or "这个来源"
-    await memory_service.add_memory(
-        session, user.id, "profile", f"来自 {sender} 的「{signal.title[:40]}」这类邮件不需要即时提醒"
-    )
+    sender = (signal.payload or {}).get("from_address") or (signal.payload or {}).get("from")
+    if not sender:
+        raise ActionError("这封邮件没有发件人，没法归类")
+    await attention.set_rule(session, user, {"group": "mail", "person": sender}, "brief", "web")
     signal.status = "ignored"
-    return "好的，之后这类邮件只放进每日简报"
+    return f"好的，之后 {sender} 的邮件只放进每日简报"

@@ -234,7 +234,8 @@ async def _watch_group_message(
                 await add_signal(
                     session, user, "message", message["message_id"],
                     kind="mention", title=f"{chat_name or '群聊'}里有人@你",
-                    body=(extract_text(message) or "")[:1000], payload={"chat_id": chat_id, "chat_name": chat_name},
+                    body=(extract_text(message) or "")[:1000], payload={"chat_id": chat_id, "chat_name": chat_name,
+                             "sender_open_id": sender_open_id, "sender_name": sender_name},
                     occurred_at=datetime.now(UTC), status="watching",
                 )
         await session.commit()

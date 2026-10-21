@@ -105,6 +105,8 @@ class FakeFeishu:
             return {"res_units": []}
         if path == "/mail/v1/user_mailboxes/me/profile":
             return {"primary_email_address": "me@co.com"}
+        if path.startswith("/contact/v3/users/"):
+            return {"user": {"name": "上级", "leader_user_id": None}}
         raise AssertionError(path)
 
 
@@ -148,6 +150,9 @@ async def test_follow_up_lifecycle(monkeypatch):
     for module in (proactive, actions, items):
         monkeypatch.setattr(module, "complete_text", fake_text)
     monkeypatch.setattr(items, "in_quiet_hours", lambda settings, tz: False)
+    # 这里验证事项的完整生命周期，不验证提醒节奏：每一轮都当作到了汇总时间（节奏见 test_attention）
+    from app.proactive import attention
+    monkeypatch.setattr(attention, "digest_due", lambda *args, **kwargs: True)
 
     feishu = FakeFeishu()
     async with SessionLocal() as session:

@@ -1856,3 +1856,22 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   color: var(--warn);
   font-size: 13px;
 }
+
+/* 提醒规则：上面一行是哪类事，下面是提醒方式和删除 */
+.rule-row {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.rule-row > span {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rule-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 260px;
+}
+.attention-hint {
+  margin: 6px 0 0;
+}
