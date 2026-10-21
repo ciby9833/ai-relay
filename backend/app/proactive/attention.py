@@ -170,7 +170,7 @@ def decide(
     boss = _leader_of(f, leaders)
     if boss is not None:
         title = "你的直属上级" if boss.get("depth", 1) == 1 else "你的上级"
-        return Decision("now", f"来自{title} {boss.get('name')}", critical=True)
+        return Decision("now", f"来自{title}" + (f" {boss['name']}" if boss.get("name") else ""), critical=True)
     if item.kind == "attendance":
         return Decision("now", "今天要补卡")
     if item.due_at and now - timedelta(hours=12) <= item.due_at <= _end_of_today(user, now):
@@ -222,27 +222,30 @@ async def leaders(session: AsyncSession, feishu: FeishuClient | None, user: User
     """
     state = await _state(session, user)
     cursor = dict(state.cursor or {})
-    retry_at = cursor.get("leaders_retry_at")
+    retry_at = cursor.get("leaders_next_check")
     if feishu is None or (retry_at and datetime.fromisoformat(retry_at) > datetime.now(UTC)):
         return cursor.get("leaders") or []
     found: list[dict] = []
     ok = True
     try:
-        current = user.feishu_open_id
-        for depth in range(1, LEADER_DEPTH + 1):
-            boss_id = (await _person(feishu, user, current)).get("leader_user_id")
-            if not boss_id or boss_id in {b["open_id"] for b in found} or boss_id == user.feishu_open_id:
-                break
-            boss = await _person(feishu, user, boss_id)
-            found.append({"open_id": boss_id, "name": boss.get("name"), "en_name": boss.get("en_name"),
-                          "email": boss.get("enterprise_email") or boss.get("email"), "depth": depth})
-            current = boss_id
+        record = await _person(feishu, user, user.feishu_open_id)
     except Exception as exc:  # noqa: BLE001 - 查不到上级不能影响提醒
-        logger.info("查不到 %s 的上级：%s", user.name, exc)
-        ok = False
-        found = found or cursor.get("leaders") or []
+        logger.info("查不到 %s 的上级（读不到本人的通讯录资料）：%s", user.name, exc)
+        record, ok = {}, False
+    for depth in range(1, LEADER_DEPTH + 1):
+        boss_id = record.get("leader_user_id")
+        if not boss_id or boss_id in {b["open_id"] for b in found} or boss_id == user.feishu_open_id:
+            break
+        try:
+            record = await _person(feishu, user, boss_id)
+        except Exception:  # noqa: BLE001 - 看不到上级的资料：认人靠 open_id，名字只用来显示；再往上就查不到了
+            record = {}
+        found.append({"open_id": boss_id, "name": record.get("name"), "en_name": record.get("en_name"),
+                      "email": record.get("enterprise_email") or record.get("email"), "depth": depth})
+    if not ok:
+        found = cursor.get("leaders") or []
     state.cursor = {**cursor, "leaders": found,
-                    "leaders_retry_at": (datetime.now(UTC) + (LEADER_TTL if ok else timedelta(days=1))).isoformat()}
+                    "leaders_next_check": (datetime.now(UTC) + (LEADER_TTL if ok else timedelta(days=1))).isoformat()}
     return found
 
 
