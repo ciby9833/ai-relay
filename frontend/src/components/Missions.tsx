@@ -10,9 +10,66 @@ const LOG_ICON: Record<string, string> = {
   step: "chevron",
   report: "bell",
   ask: "alert",
+  reply: "mail",
   action: "check",
   done: "check",
 };
+
+/** 验收清单：做到这几条才算办成。Relay 只能标记状态和证据，条目只有你能改。 */
+function Criteria({ mission, open, onSaved }: { mission: MissionData; open: boolean; onSaved: () => Promise<void> }) {
+  const items = mission.criteria ?? [];
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  if (!items.length && !open) return null;
+  const save = async () => {
+    setError(null);
+    try {
+      await api.setCriteria(mission.id, draft.split("\n").map((line) => line.trim()).filter(Boolean));
+      setEditing(false);
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("操作失败"));
+    }
+  };
+  return (
+    <section>
+      <h3>{t("验收清单")}</h3>
+      <p className="muted small">{t("做到这几条才算办成。Relay 每标记一条都要附上证据，结束前还会独立核对一遍；条目只有你能改。")}</p>
+      {editing ? (
+        <>
+          <textarea className="criteria-editor" rows={Math.max(3, items.length + 1)} value={draft} aria-label={t("验收清单，每行一条")}
+            onChange={(e) => setDraft(e.target.value)} />
+          <div className="inline-actions">
+            <button className="btn primary small" onClick={save}>{t("保存")}</button>
+            <button className="btn ghost small" onClick={() => setEditing(false)}>{t("取消")}</button>
+          </div>
+          {error && <p role="alert" className="error-text">{error}</p>}
+        </>
+      ) : (
+        <>
+          <ul className="criteria">
+            {items.map((item) => (
+              <li key={item.id} className={`criterion ${item.status}`}>
+                <span className="criterion-mark">{item.status === "met" ? "✓" : item.status === "unmet" ? "!" : "○"}</span>
+                <span>
+                  {item.text}
+                  {item.evidence && <span className="muted small criterion-evidence">{t("依据：")}{item.evidence}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!items.length && <p className="empty-note">{t("这个任务还没有验收清单，以你交代的原话为准。")}</p>}
+          {open && (
+            <button className="btn ghost small" onClick={() => { setDraft(items.map((item) => item.text).join("\n")); setEditing(true); }}>
+              {t("修改")}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<string, string>; onChanged: () => void }) {
   const [mission, setMission] = useState<MissionData | null>(null);
@@ -77,6 +134,8 @@ function Detail({ id, grantable, onChanged }: { id: number; grantable: Record<st
           </div>
         </section>
       )}
+
+      <Criteria mission={mission} open={open} onSaved={refresh} />
 
       {mission.plan.length > 0 && (
         <section>

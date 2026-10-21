@@ -1944,3 +1944,43 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .material-weak-note {
   margin: 8px 0 0;
 }
+
+/* 长期任务的验收清单 */
+.criteria {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+}
+.criteria li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+.criteria.compact li {
+  font-size: 13px;
+  padding: 1px 0;
+}
+.criterion-mark {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--muted);
+}
+.criterion.met .criterion-mark {
+  color: #2e7d32;
+  font-weight: 600;
+}
+.criterion.unmet .criterion-mark {
+  color: #c62828;
+  font-weight: 600;
+}
+.criterion-evidence {
+  display: block;
+}
+.criteria-editor {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+}

@@ -376,6 +376,11 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
         action.status, action.result = "failed", str(exc)
         action.decided_at = datetime.now(UTC)
         return f"执行失败：{exc}"
+    from app.proactive import verify
+
+    outcome = await verify.record(feishu, user, action)
+    if outcome is not None and outcome["ok"] is False:
+        result += f"（⚠️ 写入后核对不一致：{outcome['detail']}，请到飞书里看一下）"
     action.status, action.result, action.decided_at = "done", result, datetime.now(UTC)
     await insights.record(session, user, insights.action_decision(action), action=action)
     if action.signal_id:

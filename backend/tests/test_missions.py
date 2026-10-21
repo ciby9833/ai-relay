@@ -343,7 +343,7 @@ async def test_reply_rules_polling_timing_and_auto_send_limits(monkeypatch):
             user = await session.get(User, user_id)
             home = (await session.execute(select(Conversation).where(Conversation.user_id == user_id))).scalars().first()
             ctx = ToolContext(session, user, home, feishu)
-            await execute(ctx, "start_mission", {"title": "盯 Nikki", "goal": "让 Nikki 给个结果"})
+            await execute(ctx, "start_mission", {"title": "盯 Nikki", "goal": "让 Nikki 给个结果", "criteria": ["Nikki 给出结果"]})
             mission = (await session.execute(select(Mission).where(Mission.user_id == user_id))).scalars().one()
             assert mission.instruction == "提醒下 Nikki 把需求进度同步给需求人，让他给个结果，帮我盯着"
             assert mission.due_at is None
@@ -378,7 +378,7 @@ async def test_reply_rules_polling_timing_and_auto_send_limits(monkeypatch):
             ]
             reason = await service.wake_reason(session, mission, feishu)
             assert reason.startswith(service.REPLY_MARK) and "预计月底前完成" in reason and "记得同步" not in reason
-            assert "承诺了时间" in service.briefing(mission, reason, user)
+            assert "承诺了时间" in await service.briefing(session, mission, reason, user)
 
             # 模型没汇报：对方回复了也要告诉用户
             provider.add(call("wait_until", hours=24))

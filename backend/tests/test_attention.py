@@ -472,3 +472,13 @@ async def test_leader_lookup_falls_back_to_app_identity():
             await session.execute(delete(User).where(User.id == user_id))
             await session.commit()
             await engine.dispose()
+
+
+def test_push_kinds_for_notification_stats():
+    from app.api.proactive import _push_kind
+
+    assert _push_kind("Relay｜3 件事需要你知道") == "interrupt"
+    assert _push_kind("Relay digest | 5 things, nothing urgent") == "digest"
+    assert _push_kind("Ringkasan Relay | 2 hal, tidak mendesak") == "digest"
+    assert _push_kind("Relay 简报｜拍板 1 · 处理 2 · 会议 3") == "brief"
+    assert _push_kind("🗓 10:00 周会") == "meeting"

@@ -379,6 +379,11 @@ class Mission(Base):
     # active（等时间）| waiting（等事件）| asking（等用户回答）| done | failed | cancelled
     status: Mapped[str] = mapped_column(String(16), server_default="active")
     plan: Mapped[list] = mapped_column(JSONB, server_default="[]")  # [{"step", "status": todo|doing|done}]
+    # 验收清单：接任务时按用户原话定下“做到这几条才算办成”。Relay 只能改每条的状态和证据，不能改条目本身
+    # （条目只有用户能改）。[{"id", "text", "status": open|met|unmet, "evidence", "ref", "checked_at"}]
+    criteria: Mapped[list] = mapped_column(JSONB, server_default="[]")
+    # 结束前的独立核对没通过的次数：超过上限就不再自己反复改，交给用户判断
+    check_rounds: Mapped[int] = mapped_column(Integer, server_default="0")
     notes: Mapped[str | None] = mapped_column(Text)  # 跨轮次的工作笔记
     grants: Mapped[list] = mapped_column(JSONB, server_default="[]")  # 用户预先授权自动执行的操作类型
     wait_for: Mapped[dict | None] = mapped_column(JSONB)  # 等待的事件
@@ -397,7 +402,7 @@ class MissionLog(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     mission_id: Mapped[int] = mapped_column(ForeignKey("missions.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(16))  # wake | step | report | ask | action | done
+    kind: Mapped[str] = mapped_column(String(16))  # wake | reply（对方回复原文）| step | report | ask | action | done
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

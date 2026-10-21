@@ -231,7 +231,8 @@ async def run_turn(
     tools = tool_specs(user_initiated, conversation.channel)
     ctx = ToolContext(session=session, user=user, conversation=conversation, feishu=feishu, mission=mission, task=task)
 
-    messages = await load_history(session, conversation.id)
+    # 长期任务每次醒来从干净的上下文开始：briefing 里已有原话、验收清单、笔记、时间线和操作记录
+    messages = [] if conversation.channel == "mission" else await load_history(session, conversation.id)
     if user_initiated:
         # 记住他习惯用什么语言（主动提醒、简报、卡片按钮都用这个语言）
         row = await get_settings_row(session, user)

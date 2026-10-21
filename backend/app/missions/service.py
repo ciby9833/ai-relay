@@ -206,9 +206,32 @@ REPLY_GUIDE = """对方回复了。先对照“用户原话”判断这条回复
 不要向对方提出用户原话里没有的要求（例如用户只要“给个结果”，就不要再追问清单、细节）。"""
 
 
-def briefing(mission: Mission, reason: str, user: User) -> str:
-    """每次醒来交给 Relay 的消息：为什么醒、任务现状。"""
+TIMELINE = 12
+
+
+async def briefing(session: AsyncSession, mission: Mission, reason: str, user: User) -> str:
+    """每次醒来交给 Relay 的全部上下文：为什么醒、用户原话、验收清单、计划、笔记、最近的时间线和操作。
+
+    每次醒来都从这里开始（不带之前几轮的对话历史）：长任务靠清单和笔记接续，而不是靠越来越长的对话，
+    这样不会被早先的大段工具结果冲淡注意力，也不会沿着旧的思路越走越偏。
+    """
+    from app.missions import criteria
+
+    tz = ZoneInfo(user.timezone)
     plan = "\n".join(f"- [{'x' if s.get('status') == 'done' else ' '}] {s.get('step')}" for s in mission.plan) or "（还没有计划）"
+    logs = list((await session.execute(
+        select(MissionLog).where(MissionLog.mission_id == mission.id).order_by(MissionLog.id.desc()).limit(TIMELINE)
+    )).scalars())[::-1]
+    timeline = "\n".join(f"log:{x.id} {x.created_at.astimezone(tz):%m-%d %H:%M} [{x.kind}] {x.text[:300]}" for x in logs) or "（无）"
+    actions = list((await session.execute(
+        select(PendingAction).where(PendingAction.mission_id == mission.id).order_by(PendingAction.id.desc()).limit(10)
+    )).scalars())[::-1]
+    action_lines = "\n".join(
+        f"action:{a.id} {a.summary}：{a.status}" + (f"，{a.result[:120]}" if a.result else "")
+        + (f"（写入后核对：{'一致' if a.payload['verified'].get('ok') else '不一致'}，{a.payload['verified'].get('detail')}）"
+           if (a.payload or {}).get("verified") else "")
+        for a in actions
+    ) or "（无）"
     grants = "、".join(GRANTABLE.get(g, g) for g in mission.grants) or "无（所有对外操作都要等用户确认）"
     guide = f"\n\n{REPLY_GUIDE}" if reason.startswith(REPLY_MARK) else ""
     return (
@@ -219,7 +242,10 @@ def briefing(mission: Mission, reason: str, user: User) -> str:
         + (f"截止/复查时间：{mission.due_at.astimezone(ZoneInfo(user.timezone)):%Y-%m-%d %H:%M}\n" if mission.due_at
            else "截止/复查时间：用户没提（催人按默认节奏：下一个工作日上午，最多再催 2 次，之后问用户）\n")
         + f"现在：{datetime.now(UTC).astimezone(ZoneInfo(user.timezone)):%Y-%m-%d %H:%M}\n"
+        f"验收清单（做到这几条才算办成；你只能用 check_criterion 标记状态和证据，条目只有用户能改）：\n{criteria.describe(mission)}\n"
         f"计划：\n{plan}\n笔记：{mission.notes or '（无）'}\n"
+        f"最近的时间线（log:编号 可以作为证据）：\n{timeline}\n"
+        f"这个任务的操作（action:编号）：\n{action_lines}\n"
         f"用户已授权自动执行：{grants}\n已醒来 {mission.runs} 次\n</mission>"
     )
 
@@ -236,12 +262,17 @@ async def run(session: AsyncSession, feishu: FeishuClient, mission: Mission, rea
     mission.status, mission.wait_for, mission.next_run_at = "active", None, None
     mission.updated_at = datetime.now(UTC)
     await log(session, mission, "wake", reason.splitlines()[0])
+    if reason.startswith(REPLY_MARK):
+        # 对方的回复原文记进时间线：之后可以作为验收证据（log:编号）
+        session.add(entry := MissionLog(mission_id=mission.id, kind="reply", text=reason[:4000]))
+        await session.flush()
+        reason = f"{reason}\n（这条回复已记入时间线 log:{entry.id}，可以作为验收证据）"
     await session.commit()
 
     async with conversation_lock(conversation.id):
         try:
             text = await run_turn_text(
-                session, user=user, conversation=conversation, text=briefing(mission, reason, user),
+                session, user=user, conversation=conversation, text=await briefing(session, mission, reason, user),
                 feishu=feishu, mission=mission,
             )
         except LLMError as exc:

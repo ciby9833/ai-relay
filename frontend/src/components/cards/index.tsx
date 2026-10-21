@@ -630,6 +630,16 @@ export function MissionCard({ mission, onChanged, onOpen }: { mission: MissionDa
       }
     >
       <div className="card-title">{mission.title}</div>
+      {onOpen && (mission.criteria ?? []).length > 0 && (
+        <ul className="criteria compact" aria-label={t("验收清单")}>
+          {(mission.criteria ?? []).map((item) => (
+            <li key={item.id} className={`criterion ${item.status}`}>
+              <span className="criterion-mark">{item.status === "met" ? "✓" : item.status === "unmet" ? "!" : "○"}</span>
+              {item.text}
+            </li>
+          ))}
+        </ul>
+      )}
       {mission.plan.length > 0 && (
         <div className="progress">
           <div className="progress-bar" style={{ width: `${(done / mission.plan.length) * 100}%` }} />

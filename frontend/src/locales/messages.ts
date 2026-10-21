@@ -1411,5 +1411,25 @@ export const messages: Record<string, readonly [string, string]> = {
   "飞书任务里派给我的事": [
     "Feishu tasks assigned to me",
     "Tugas Feishu yang ditugaskan ke saya"
+  ],
+  "验收清单": [
+    "Acceptance checklist",
+    "Daftar penerimaan"
+  ],
+  "做到这几条才算办成。Relay 每标记一条都要附上证据，结束前还会独立核对一遍；条目只有你能改。": [
+    "Done only when every item is met. Relay must attach evidence for each one, and an independent check runs before it closes the task. Only you can change the items.",
+    "Selesai hanya jika semua butir terpenuhi. Relay wajib melampirkan bukti untuk tiap butir, dan ada pemeriksaan independen sebelum tugas ditutup. Hanya Anda yang bisa mengubah butirnya."
+  ],
+  "验收清单，每行一条": [
+    "Acceptance checklist, one item per line",
+    "Daftar penerimaan, satu butir per baris"
+  ],
+  "这个任务还没有验收清单，以你交代的原话为准。": [
+    "This task has no checklist yet; your original request is the standard.",
+    "Tugas ini belum punya daftar penerimaan; permintaan asli Anda yang jadi acuan."
+  ],
+  "修改": [
+    "Edit",
+    "Ubah"
   ]
 };

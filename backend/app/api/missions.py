@@ -57,6 +57,27 @@ async def set_grants(mission_id: int, body: GrantsBody, session: SessionDep, use
     return {"grants": mission.grants}
 
 
+class CriteriaBody(BaseModel):
+    criteria: list[str] = Field(min_length=1, max_length=6)
+
+
+@router.put("/{mission_id}/criteria")
+async def set_criteria(mission_id: int, body: CriteriaBody, session: SessionDep, user: UserDep):
+    """用户改验收清单（做到什么才算办成）。只有用户能改，Relay 在任务里只能标记状态和证据。"""
+    from app.missions import criteria
+
+    mission = await _own(session, user, mission_id)
+    if mission.status not in service.OPEN:
+        raise HTTPException(status_code=400, detail="任务已经结束")
+    try:
+        criteria.replace_texts(mission, body.criteria)
+    except criteria.CriteriaError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await service.log(session, mission, "step", "你改了验收清单：" + "；".join(c["text"] for c in mission.criteria))
+    await session.commit()
+    return {"criteria": mission.criteria}
+
+
 class AnswerBody(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 

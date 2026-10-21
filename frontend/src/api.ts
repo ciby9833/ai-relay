@@ -83,6 +83,7 @@ export interface MissionData {
   due_at?: string | null;
   status: "active" | "waiting" | "asking" | "done" | "failed" | "cancelled";
   plan: { step: string; status: "todo" | "done" }[];
+  criteria?: { id: number; text: string; status: "open" | "met" | "unmet"; evidence: string | null; ref: string | null }[];
   notes: string | null;
   grants: string[];
   question: string | null;
@@ -369,6 +370,7 @@ export const api = {
   integrationEvents: (id: number) => request<IntegrationEvent[]>(`/integrations/${id}/events`),
   missions: () => request<{ missions: MissionData[]; grantable: Record<string, string> }>("/missions"),
   mission: (id: number) => request<MissionData>(`/missions/${id}`),
+  setCriteria: (id: number, criteria: string[]) => request(`/missions/${id}/criteria`, json("PUT", { criteria })),
   setGrants: (id: number, grants: string[]) => request(`/missions/${id}/grants`, json("PUT", { grants })),
   answerMission: (id: number, text: string) => request(`/missions/${id}/answer`, json("POST", { text })),
   wakeMission: (id: number) => request(`/missions/${id}/wake`, { method: "POST" }),

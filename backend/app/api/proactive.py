@@ -424,6 +424,58 @@ async def get_insights(session: SessionDep, user: UserDep, days: int = 7):
     return await insights.summary(session, user, max(1, min(days, 90)))
 
 
+def _push_kind(title: str) -> str:
+    """按卡片标题归类（三种语言的标题前缀）：立刻打扰 / 汇总 / 简报 / 会前准备 / 任务 / 其他。"""
+    prefixes = {key: [v.split("{")[0] for v in i18n._STRINGS[key].values()] for key in ("things_to_know", "digest")}
+    if any(title.startswith(p) for p in prefixes["things_to_know"]):
+        return "interrupt"
+    if any(title.startswith(p) for p in prefixes["digest"]):
+        return "digest"
+    if title.startswith("Relay 简报"):
+        return "brief"
+    if title.startswith("🗓"):
+        return "meeting"
+    if title.startswith("Relay 任务"):
+        return "mission"
+    return "other"
+
+
+@router.get("/insights/notifications")
+async def notification_stats(session: SessionDep, user: UserDep, days: int = 7):
+    """（管理员）每个人每天收到几条飞书推送、各是什么类型，新建了几件事、他亲自处理了几件——用来看通知分级有没有起作用。"""
+    from app.models import FeishuCard, UserDecision
+
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="只有管理员可以查看")
+    since = datetime.now(UTC) - timedelta(days=max(1, min(days, 30)))
+    users = {u.id: u for u in (await session.execute(select(User))).scalars()}
+    stats: dict = {}
+
+    def day_of(uid, moment):
+        tz = ZoneInfo(users[uid].timezone) if uid in users else UTC
+        entry = stats.setdefault(uid, {}).setdefault(moment.astimezone(tz).strftime("%Y-%m-%d"),
+                                                     {"pushes": 0, "interrupt": 0, "digest": 0, "brief": 0, "meeting": 0,
+                                                      "mission": 0, "other": 0, "items": 0, "handled": 0})
+        return entry
+
+    for card in (await session.execute(select(FeishuCard).where(FeishuCard.created_at >= since))).scalars():
+        entry = day_of(card.user_id, card.created_at)
+        entry["pushes"] += 1
+        entry[_push_kind(card.title or "")] += 1
+    for uid, created in (await session.execute(select(FollowUp.user_id, FollowUp.created_at).where(FollowUp.created_at >= since))).all():
+        day_of(uid, created)["items"] += 1
+    for uid, created in (await session.execute(
+        select(UserDecision.user_id, UserDecision.created_at).where(UserDecision.created_at >= since, UserDecision.decision != "open_original")
+    )).all():
+        day_of(uid, created)["handled"] += 1
+    rows = []
+    for uid, by_day in stats.items():
+        total = sum(d["pushes"] for d in by_day.values())
+        rows.append({"user": users[uid].name if uid in users else str(uid), "days": dict(sorted(by_day.items())),
+                     "pushes_per_day": round(total / len(by_day), 1)})
+    return sorted(rows, key=lambda r: -r["pushes_per_day"])
+
+
 @router.get("/automations")
 async def list_automations(session: SessionDep, user: UserDep):
     """自动办的事：当前有哪些授权（可收回），最近按授权办了什么（能撤销的可撤销）。"""
