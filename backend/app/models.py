@@ -160,11 +160,11 @@ DEFAULT_SETTINGS = {
         "approval": True,
         "attendance": True,
         "message": True,
-        "private_chat": False,  # 私聊感知：读他和常联系同事的私聊来识别待办，必须他自己开启
+        "private_chat": True,  # 私聊感知：读他和常联系同事的私聊来识别待办（缺私聊读取授权时会提示重新登录）
     },
     "quiet_start": "21:00",  # 免打扰开始（用户时区）
     "quiet_end": "08:00",
-    "brief_enabled": False,  # 是否每个工作日自动发早间简报（默认实时为主，简报按需）
+    "brief_enabled": True,  # 每个工作日自动发早间简报
     "brief_time": "08:30",  # 每日简报时间
     "meeting_brief_minutes": 15,  # 会前多久发会议准备
     "max_interrupts_per_hour": 6,

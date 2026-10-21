@@ -243,7 +243,7 @@ async def decide_approval(item_id: int, data: ApprovalBody, session: SessionDep,
 
 class SettingsBody(BaseModel):
     proactive: bool
-    brief_enabled: bool = False
+    brief_enabled: bool = True
     sources: dict[str, bool]
     quiet_start: str = Field(pattern=r"^\d{2}:\d{2}$")
     quiet_end: str = Field(pattern=r"^\d{2}:\d{2}$")

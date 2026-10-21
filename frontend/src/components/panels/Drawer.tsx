@@ -171,7 +171,7 @@ function SettingsForm() {
         <label className="toggle">
           <input
             type="checkbox"
-            checked={settings.sources.private_chat ?? false}
+            checked={settings.sources.private_chat ?? true}
             onChange={(e) => update({ sources: { ...settings.sources, private_chat: e.target.checked } })}
           />
           <span>
