@@ -169,6 +169,25 @@ export interface FollowUp {
   quieter?: boolean;
 }
 
+export interface CaseRef {
+  ref: string;
+  kind: "mail" | "sent" | "attachment" | "doc" | "approval" | "chat" | "meeting" | "history";
+  title: string;
+  why: string;
+  why_ui?: LocalizedText | null;
+  who: string | null;
+  at: string | null;
+  note: string | null;
+  weak: boolean;
+}
+
+export interface CaseContent {
+  ref: CaseRef;
+  content: string;
+  truncated: boolean;
+  url: string | null;
+}
+
 export type AttentionLevel = "now" | "batch" | "brief" | "mute";
 
 export interface NotifyRule {
@@ -356,6 +375,8 @@ export const api = {
   cancelMission: (id: number) => request(`/missions/${id}/cancel`, { method: "POST" }),
   decideApproval: (id: number, approve: boolean) =>
     request<{ message: string }>(`/items/${id}/approval`, json("POST", { approve })),
+  itemCase: (id: number) => request<{ refs: CaseRef[] }>(`/items/${id}/case`),
+  openCaseRef: (id: number, ref: string) => request<CaseContent>(`/items/${id}/case/open`, json("POST", { ref })),
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),
   saveSettings: (settings: Settings) => request("/settings", json("PUT", settings)),

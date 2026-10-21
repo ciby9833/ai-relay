@@ -4,6 +4,7 @@ import { api, type Action, type Card, type FollowUp, type MissionData } from "..
 import { dayLabel, timeOf, monthOf, listOf } from "../../format";
 import Icon, { RelayMark } from "../Icon";
 import AppCard, { Badge } from "./AppCard";
+import Materials from "./Materials";
 
 type Props<K extends Card["kind"]> = { card: Extract<Card, { kind: K }>; onChanged: () => void; hasDraft?: boolean };
 
@@ -461,6 +462,7 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
       )}
 
       {attentionHint(item) && <p className="muted small attention-hint">{attentionHint(item)}</p>}
+      {!compact && <Materials itemId={item.id} />}
 
       {!compact && action?.kind === "send_mail" && <DraftEditor action={action} onChanged={onChanged} />}
       {compact && action?.kind === "send_mail" && action.status === "pending" && (

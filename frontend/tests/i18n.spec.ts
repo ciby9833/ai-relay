@@ -142,6 +142,7 @@ test("changing UI language preserves drafts and does not save assistant language
   await expect(page.getByRole("textbox", { name: "Balas Relay atau minta bantuan…" })).toHaveValue("My unsent question");
   await expect(page.getByText("Diterima", { exact: true })).toBeVisible();
   await expect(page.getByText("Menunggu jawaban Anda", { exact: true })).toBeVisible();
+  await page.locator(".steps-toggle").first().click();  // 过程默认收起，展开后看步骤名称
   await expect(page.getByText("Membaca email", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("home-id.png"), fullPage: true });
 });
@@ -153,14 +154,14 @@ for (const locale of ["en-US", "zh-CN", "id-ID"]) {
     await mockApi(page);
     await page.goto("/");
     await page.locator(".mobile-bar button").click();
-    await page.locator(".sidebar-foot button").filter({ has: page.locator('svg') }).nth(2).click();
+    await page.locator(".sidebar-foot > button").nth(3).click();  // 记忆、定时任务、自动办的事、提醒设置……
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.locator(".language-select select")).toHaveValue("auto");
     await noOverflow(page);
     expect(await page.locator(".drawer-body").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`settings-${locale}.png`), fullPage: true });
     await page.keyboard.press("Escape");
-    for (const index of [0, 1, 3]) {
+    for (const index of [0, 1, 2, 4]) {
       await page.locator(".mobile-bar button").click();
       await page.locator(".sidebar-foot > button").nth(index).click();
       await expect(page.getByRole("dialog")).toBeVisible();

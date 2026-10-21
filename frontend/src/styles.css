@@ -1875,3 +1875,72 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .attention-hint {
   margin: 6px 0 0;
 }
+
+/* 事项详情：相关材料 */
+.materials {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.materials > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+.material-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.material {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.material.weak {
+  border-style: dashed;
+}
+.material-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.material-head > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.material-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.material-title {
+  overflow-wrap: anywhere;
+}
+.material-meta,
+.material-why {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.material-body {
+  margin-top: 8px;
+}
+.material-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+  font: inherit;
+  font-size: 13px;
+  margin: 0 0 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+}
+.material-weak-note {
+  margin: 8px 0 0;
+}

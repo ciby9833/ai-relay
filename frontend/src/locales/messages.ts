@@ -1343,5 +1343,65 @@ export const messages: Record<string, readonly [string, string]> = {
   "紧急的事（例如运营事故、客户或上级催办）即使命中“少提醒”的规则，也会照样马上告诉你。": [
     "Urgent items (such as an operational incident, or a customer or manager chasing you) still come through right away, even if a “fewer reminders” rule matches.",
     "Hal mendesak (misalnya insiden operasional, atau pelanggan/atasan yang menagih) tetap langsung disampaikan meskipun cocok dengan aturan “kurangi pemberitahuan”."
+  ],
+  "你发的邮件": [
+    "Your email",
+    "Email Anda"
+  ],
+  "附件": [
+    "Attachment",
+    "Lampiran"
+  ],
+  "审批单": [
+    "Approval form",
+    "Formulir persetujuan"
+  ],
+  "聊天": [
+    "Chat",
+    "Chat"
+  ],
+  "会议": [
+    "Meeting",
+    "Rapat"
+  ],
+  "之前的事": [
+    "Earlier item",
+    "Hal sebelumnya"
+  ],
+  "关联依据：": [
+    "Why it's linked: ",
+    "Alasan terkait: "
+  ],
+  "查看原文": [
+    "View original",
+    "Lihat asli"
+  ],
+  "正在读取…": [
+    "Loading…",
+    "Memuat…"
+  ],
+  "内容较长，只显示了前面一部分。": [
+    "This is long; only the beginning is shown.",
+    "Isinya panjang; hanya bagian awal yang ditampilkan."
+  ],
+  "相关材料": [
+    "Related materials",
+    "Materi terkait"
+  ],
+  "正在查找…": [
+    "Looking…",
+    "Mencari…"
+  ],
+  "没有找到相关材料。": [
+    "No related materials found.",
+    "Tidak ada materi terkait."
+  ],
+  "只是同一个人，未必和这件事有关：": [
+    "Same person only — may not be about this item:",
+    "Hanya orang yang sama — belum tentu terkait hal ini:"
+  ],
+  "这些材料是按规则关联的（同一邮件线程、链接、提到同样的内容……），是否真的相关请以原文为准。": [
+    "These materials are linked by rules (same email thread, links, mentions of the same things…). Check the original to confirm they're really relevant.",
+    "Materi ini dikaitkan berdasarkan aturan (utas email yang sama, tautan, menyebut hal yang sama…). Periksa aslinya untuk memastikan benar-benar terkait."
   ]
 };

@@ -72,12 +72,16 @@ async def write_reply(
     for doc in found:
         references.append(f"文档《{doc['title']}》")
         background.append(f"文档《{doc['title']}》：{doc['summary']}")
+    from app.proactive import casefile
+
+    earlier = await casefile.thread_history(session, user, signal)
     for message in await chats.related(session, words, limit=5):
         references.append(f"群聊里 {message.sender_name or '某人'} 的消息")
         background.append(f"群聊 {message.sender_name or '某人'}（{message.created_at:%m-%d}）：{message.text[:300]}")
     prompt = (
         f"关于我（{user.name}）：\n{await _profile(session, user)}\n\n"
-        f"<mail>\n发件人：{original.get('from')}\n主题：{original.get('subject')}\n\n{original.get('body')}\n</mail>\n\n"
+        + (f"<thread>\n这封之前同一线程里的往来（我之前说过的话不能自相矛盾，已经回答过的不要再问）：\n" + "\n".join(earlier) + "\n</thread>\n\n" if earlier else "")
+        + f"<mail>\n发件人：{original.get('from')}\n主题：{original.get('subject')}\n\n{original.get('body')}\n</mail>\n\n"
         + (f"<background>\n可能相关的公司资料和群聊（只在确实相关时使用）：\n" + "\n".join(background) + "\n</background>\n\n" if background else "")
         + f"我的要求：{instructions or '按常理回复'}"
     )

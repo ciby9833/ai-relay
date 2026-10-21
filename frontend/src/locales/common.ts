@@ -307,5 +307,23 @@ export const common: Record<string, readonly [string, string, string]> = {
     "没回的话会提醒你并起草跟进",
     "Remind you and draft a follow-up if there’s no reply",
     "Ingatkan dan buat draf tindak lanjut jika belum dibalas"
-  ]
+  ],
+  "case.sourceMail": ["这件事的来源邮件", "The email this item came from", "Email asal hal ini"],
+  "case.thread": ["同一邮件线程", "Same email thread", "Utas email yang sama"],
+  "case.threadSent": ["同一邮件线程里你发的", "Your message in the same thread", "Pesan Anda di utas yang sama"],
+  "case.attachment": ["{who} 的邮件《{title}》的附件", "Attachment on {who}'s email “{title}”", "Lampiran di email {who} “{title}”"],
+  "case.approval": ["这件事的审批单", "The approval form for this item", "Formulir persetujuan hal ini"],
+  "case.ownChat": ["这件事所在的会话", "The chat this item came from", "Chat asal hal ini"],
+  "case.privateTerm": ["私聊里提到「{term}」", "Mentioned “{term}” in a private chat", "Menyebut “{term}” di chat pribadi"],
+  "case.groupTerm": ["群消息里提到「{term}」", "Mentioned “{term}” in a group chat", "Menyebut “{term}” di chat grup"],
+  "case.privateRecent": ["对方最近和你的私聊（没有提到这件事）", "Their recent private chat with you (doesn't mention this item)", "Chat pribadi terbaru dengan Anda (tidak menyebut hal ini)"],
+  "case.linkMail": ["链接出现在 {who} 的邮件里", "Link found in {who}'s email", "Tautan ada di email {who}"],
+  "case.linkApproval": ["链接出现在审批单里", "Link found in the approval form", "Tautan ada di formulir persetujuan"],
+  "case.linkSummary": ["链接出现在这件事的摘要里", "Link found in this item's summary", "Tautan ada di ringkasan hal ini"],
+  "case.linkChat": ["链接出现在 {who} 在「{chat}」说的话里", "Link shared by {who} in “{chat}”", "Tautan dibagikan {who} di “{chat}”"],
+  "case.linkOther": ["链接出现在《{title}》里", "Link found in “{title}”", "Tautan ada di “{title}”"],
+  "case.meetingTerm": ["会议标题/议程提到「{term}」", "Meeting title or agenda mentions “{term}”", "Judul atau agenda rapat menyebut “{term}”"],
+  "case.meetingPerson": ["对方组织或参加的会（没有提到这件事）", "A meeting they organise or attend (doesn't mention this item)", "Rapat yang mereka adakan atau ikuti (tidak menyebut hal ini)"],
+  "case.historyTerm": ["之前和同一个人的事，也提到「{term}」", "An earlier item with the same person, also mentioning “{term}”", "Hal sebelumnya dengan orang yang sama, juga menyebut “{term}”"],
+  "case.historyPerson": ["之前和同一个人的事（不一定相关）", "An earlier item with the same person (may be unrelated)", "Hal sebelumnya dengan orang yang sama (belum tentu terkait)"]
 };

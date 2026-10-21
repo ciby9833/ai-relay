@@ -10,7 +10,7 @@ from app import insights
 from app.agent.tools.base import ToolContext, ToolError, tool
 from app.feishu.client import FeishuError
 from app.models import FollowUp, Signal, SourceState
-from app.proactive import actions, cards, items
+from app.proactive import actions, cards, casefile, items
 from app.sources import approval, attendance, calendar, docs, mail
 
 
@@ -403,6 +403,22 @@ async def list_followups(ctx: ToolContext, args: dict) -> str:
         return "目前没有在跟进的事"
     ctx.cards.extend({"kind": "item", "item_id": i.id} for i in found[:8])
     return "\n".join(f"#{i.id} [{'等他' if i.owner == 'me' else '等别人'}] {items.describe(i)}" for i in found)
+
+
+@tool(
+    "open_case",
+    "打开一件事的档案：同一邮件线程里双方的往来和附件、审批单、相关的私聊/群聊、文档链接、相关的会、之前和同一个人的事。"
+    "每份材料写了关联依据和用哪个工具读原文。处理、回答或起草某件事之前先看档案，按档案去读原件，不要靠 search_docs 的摘要拼凑。"
+    "关联上不代表内容相关：引用任何一份之前先读原文核实；标了“弱关联”的只是同一个人，未必是这件事。",
+    {"followup_id": {"type": "integer", "description": "事项编号"}},
+    ["followup_id"],
+)
+async def open_case(ctx: ToolContext, args: dict) -> str:
+    item = await ctx.session.get(FollowUp, args["followup_id"])
+    if item is None or item.user_id != ctx.user.id:
+        raise ToolError(f"没有找到事项 #{args['followup_id']}")
+    refs = await casefile.build(ctx.session, ctx.user, item, ctx.feishu)
+    return f"#{item.id}《{item.title}》的档案：\n" + casefile.render(refs, ctx.user.timezone)
 
 
 @tool(

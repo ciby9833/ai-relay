@@ -452,7 +452,7 @@ async def test_leader_lookup_falls_back_to_app_identity():
             assert await attention.leaders(session, down, user) == []
             assert await attention.leaders(session, Restricted(), user) == []  # 一天内不重复查
             state = await attention._state(session, user)
-            state.cursor = {**state.cursor, "leaders_retry_at": None}
+            state.cursor = {**state.cursor, "leaders_next_check": None}
             ok = Restricted()
             ok.me = user
             chain = await attention.leaders(session, ok, user)

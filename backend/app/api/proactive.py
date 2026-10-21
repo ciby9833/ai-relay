@@ -15,7 +15,7 @@ from app.deps import FeishuDep, SessionDep, UserDep
 from app.home import post
 from app.llm.base import LLMError
 from app.models import AttentionRule, FollowUp, PendingAction, ScheduledTask, Signal, SourceState, User
-from app.proactive import actions, attention, cards, items
+from app.proactive import actions, attention, cards, casefile, items
 from app.proactive.engine import morning_brief, sync_sources
 from app.proactive.settings import get_settings_row, language_of, merged
 
@@ -276,6 +276,41 @@ async def put_settings(body: SettingsBody, session: SessionDep, user: UserDep):
     row.data = {**(row.data or {}), **body.model_dump()}
     await session.commit()
     return {"settings": merged(row.data)}
+
+
+# ---------- 事项档案：相关材料 ----------
+
+
+async def _own_item(session, user: User, item_id: int) -> FollowUp:
+    item = await session.get(FollowUp, item_id)
+    if item is None or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="事项不存在")
+    return item
+
+
+@router.get("/items/{item_id}/case")
+async def item_case(item_id: int, session: SessionDep, user: UserDep, feishu: FeishuDep):
+    """这件事的相关材料：来源、时间、关联依据；弱关联（只是同一个人）单独标出。"""
+    item = await _own_item(session, user, item_id)
+    refs = await casefile.build(session, user, item, feishu)
+    await session.commit()
+    return {"refs": [r.json() for r in refs]}
+
+
+class OpenRefBody(BaseModel):
+    ref: str = Field(min_length=3, max_length=2000)
+
+
+@router.post("/items/{item_id}/case/open")
+async def open_case_ref(item_id: int, body: OpenRefBody, session: SessionDep, user: UserDep, feishu: FeishuDep):
+    """看一份材料的原文：每次都按当前用户重新校验（见 casefile.open_ref）。"""
+    item = await _own_item(session, user, item_id)
+    try:
+        result = await casefile.open_ref(session, feishu, user, item, body.ref)
+    except casefile.RefError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    await session.commit()
+    return result
 
 
 # ---------- 提醒规则：哪类事立刻说 / 攒着说 / 只放简报 / 不提醒 ----------

@@ -141,7 +141,7 @@ def _with_card_notes(rows: list[Message], actions: dict[int, PendingAction], fol
 
 
 async def build_context(
-    session: AsyncSession, user: User, conversation: Conversation, text: str
+    session: AsyncSession, user: User, conversation: Conversation, text: str, feishu: FeishuClient | None = None,
 ) -> str:
     now = datetime.now(UTC).astimezone(ZoneInfo(user.timezone))
     lines = [
@@ -166,6 +166,16 @@ async def build_context(
 
         lines.append("正在跟进的事（含最近一次往来）：")
         lines += [f"- {await follow_ups.context_line(session, i, user.timezone)}" for i in open_items]
+    # 他这句话说的是哪件事：把那件事的档案（材料清单）放进来，需要原文时按清单里写的工具去读，不用到处搜
+    from app.proactive import casefile
+
+    focus_pool = list((await session.execute(
+        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status == "open")
+        .order_by(FollowUp.updated_at.desc()).limit(60)
+    )).scalars())
+    for item in await casefile.focus(session, user, text, focus_pool):
+        lines.append(f"#{item.id}《{item.title}》的档案（材料清单，需要时按箭头后的工具读原文）：")
+        lines.append(casefile.render(await casefile.build(session, user, item, feishu), user.timezone))
     closed = (await session.execute(
         select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status != "open",
                                FollowUp.closed_at > datetime.now(UTC) - timedelta(days=1))
@@ -231,7 +241,7 @@ async def run_turn(
         # meta 只是存储标记：前端据此隐藏这一块，发给模型前不需要处理（适配器只读 type/text）
         {
             "type": "text",
-            "text": await build_context(session, user, conversation, text),
+            "text": await build_context(session, user, conversation, text, feishu),
             "meta": "context",
         },
         {"type": "text", "text": text},
