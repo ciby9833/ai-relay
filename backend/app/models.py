@@ -160,7 +160,8 @@ DEFAULT_SETTINGS = {
         "approval": True,
         "attendance": True,
         "message": True,
-        "private_chat": True,  # 私聊感知：读他和常联系同事的私聊来识别待办（缺私聊读取授权时会提示重新登录）
+        "private_chat": True,
+        "task": True,  # 别人在飞书任务里派给他的事（需要 task:task:read 授权）  # 私聊感知：读他和常联系同事的私聊来识别待办（缺私聊读取授权时会提示重新登录）
     },
     "quiet_start": "21:00",  # 免打扰开始（用户时区）
     "quiet_end": "08:00",

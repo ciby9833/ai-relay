@@ -85,7 +85,7 @@ const LEVELS: [AttentionLevel, string][] = [
 ];
 const GROUPS: Record<string, string> = {
   approval: "审批", mail: "邮件", chat: "聊天里的事", invitation: "会议邀请",
-  waiting: "在等别人的事", biz: "业务系统通知", attendance: "考勤",
+  waiting: "在等别人的事", biz: "业务系统通知", attendance: "考勤", task: "飞书任务",
 };
 
 /** 规则说的是哪一类事：类别 + 人 / 审批类型 / 群 / 系统（人名、群名等是业务数据，不翻译）。 */
@@ -182,6 +182,7 @@ const SOURCES: Record<string, string> = {
   approval: "审批",
   attendance: "考勤",
   message: "群消息里@我",
+  task: "飞书任务里派给我的事",
 };
 
 function SettingsForm() {

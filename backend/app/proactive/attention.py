@@ -38,7 +38,7 @@ from app.proactive.settings import in_quiet_hours, is_workday
 logger = logging.getLogger("relay.attention")
 
 LEVELS = ("now", "batch", "brief", "mute")
-GROUPS = ("approval", "mail", "chat", "invitation", "waiting", "biz", "attendance")
+GROUPS = ("approval", "mail", "chat", "invitation", "waiting", "biz", "attendance", "task")
 MATCH_KEYS = ("group", "person", "approval", "chat", "system")
 LEADER_TTL = timedelta(days=7)
 LEADER_DEPTH = 4  # 往上找几级上级（直属上级 → … → CEO）
@@ -47,11 +47,11 @@ STATE = "attention"  # SourceState.source：存上级是谁、最近几次打扰
 
 GROUP_OF_KIND = {
     "approval": "approval", "reply": "mail", "review": "mail", "invitation": "invitation",
-    "mention": "chat", "request": "chat", "attendance": "attendance", "biz": "biz",
+    "mention": "chat", "request": "chat", "attendance": "attendance", "biz": "biz", "task": "task",
 }
 GROUP_LABEL = {
     "approval": "审批", "mail": "邮件", "chat": "聊天里的事", "invitation": "会议邀请",
-    "waiting": "在等别人的事", "biz": "业务系统通知", "attendance": "考勤",
+    "waiting": "在等别人的事", "biz": "业务系统通知", "attendance": "考勤", "task": "飞书任务",
 }
 
 
@@ -159,8 +159,10 @@ def decide(
     rule = best_rule(rules, f)
     urgent = item.owner == "me" and item.importance == "urgent"
     if rule is not None:
-        if urgent and rule.level != "now":
-            # 他说过这类少提醒，但这一件是紧急的：照样说，并告诉他为什么，免得规则误伤事故、催办
+        system_label = item.kind == "biz" and bool(rule.match.get("system"))
+        if urgent and rule.level != "now" and not system_label:
+            # 他说过这类少提醒，但这一件是紧急的：照样说，并告诉他为什么，免得规则误伤事故、催办。
+            # 例外：他专门对某个业务系统设的规则——系统自己标的“紧急”只是它的标签，他已经明确说过这个系统的通知怎么处理
             return Decision("now", f"紧急（虽然你设了“{rule.label}”）", rule, critical=True)
         return Decision(rule.level, f"你设的规则：{rule.label}", rule, critical=rule.level == "now")
     if item.owner != "me":
@@ -299,11 +301,11 @@ async def last_digest(session: AsyncSession, user: User) -> str | None:
 
 GROUP_LABEL_EN = {
     "approval": "approvals", "mail": "emails", "chat": "chat requests", "invitation": "meeting invites",
-    "waiting": "things you're waiting on", "biz": "system notifications", "attendance": "attendance",
+    "waiting": "things you're waiting on", "biz": "system notifications", "attendance": "attendance", "task": "Feishu tasks",
 }
 GROUP_LABEL_ID = {
     "approval": "persetujuan", "mail": "email", "chat": "permintaan di chat", "invitation": "undangan rapat",
-    "waiting": "hal yang Anda tunggu", "biz": "notifikasi sistem", "attendance": "absensi",
+    "waiting": "hal yang Anda tunggu", "biz": "notifikasi sistem", "attendance": "absensi", "task": "tugas Feishu",
 }
 
 
@@ -378,7 +380,7 @@ def quieter_match(item: FollowUp, signal: Signal | None) -> dict | None:
         return {"group": "chat", "chat": f["chat"]}
     if group == "biz" and f.get("system"):
         return {"group": "biz", "system": f["system"]}
-    if group in ("mail", "invitation", "chat") and f.get("people"):
+    if group in ("mail", "invitation", "chat", "task") and f.get("people"):
         person = next((p for p in f["people"] if "@" in str(p)), None) if group == "mail" else None
         return {"group": group, "person": person or f["people"][0]}
     return None

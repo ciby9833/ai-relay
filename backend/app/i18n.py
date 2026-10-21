@@ -87,6 +87,7 @@ _STRINGS = {
     "level_batch": {"zh": "攒着一起说", "en": "Bundle into digests", "id": "Kumpulkan di ringkasan"},
     "level_brief": {"zh": "只放进早上简报", "en": "Morning brief only", "id": "Hanya di ringkasan pagi"},
     "level_mute": {"zh": "不提醒，只在看板里跟踪", "en": "Don't notify, just track on the board", "id": "Jangan beri tahu, cukup lacak di papan"},
+    "more_on_web": {"zh": "内容太多，还有 {n} 项在网页看板里", "en": "Too much to show here — {n} more on the web board", "id": "Terlalu banyak — {n} lagi di papan web"},
     "rule_accept": {"zh": "启用", "en": "Turn on", "id": "Aktifkan"},
     "rule_reject": {"zh": "不用", "en": "No thanks", "id": "Tidak perlu"},
     "rule_enabled": {"zh": "已启用", "en": "On", "id": "Aktif"},

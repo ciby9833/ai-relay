@@ -328,6 +328,7 @@ const ITEM_KIND: Record<FollowUp["kind"], [string, string]> = {
   request: ["bell", "有人找你办事"],
   biz: ["external", "业务系统"],
   waiting: ["clock", "等对方回复"],
+  task: ["check", "飞书任务"],
 };
 
 const RSVP_LABEL: Record<string, string> = { accept: "接受", tentative: "待定", decline: "拒绝" };

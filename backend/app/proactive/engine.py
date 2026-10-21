@@ -13,6 +13,7 @@ from app.home import ConversationBusy, post
 from app.llm.base import LLMError
 from app.memory import service as memory_service
 from app.models import FollowUp, Signal, SourceState, User
+from app.feishu.cards import esc
 from app.proactive import attention, cards, items
 from app.proactive.llm import complete_structured, complete_text
 from app.proactive.push import push
@@ -21,14 +22,13 @@ from app import i18n
 from app.sources import approval as approval_source
 from app.i18n import user_language
 from app.proactive.settings import language_of, get_settings_row, is_workday, merged
-from app.sources import SYNCERS, calendar, docs
+from app.sources import REQUIRED_SCOPES, SYNCERS, calendar, docs
 from app.sources import unavailable as source_unavailable
 
 logger = logging.getLogger("relay.proactive")
 
 MENTION_WAIT = timedelta(hours=2)
 UNAVAILABLE_RETRY = timedelta(days=1)
-P2P_SCOPE = "im:message.p2p_msg:get_as_user"
 WEEKDAYS = "一二三四五六日"
 
 TRIAGE_TOOL = {
@@ -90,8 +90,10 @@ async def sync_sources(session: AsyncSession, feishu: FeishuClient, user: User, 
         cursor = state.cursor or {}
         if cursor.get("unavailable_until") and datetime.fromisoformat(cursor["unavailable_until"]) > now:
             continue  # 他没有开通这项服务（例如没有邮箱）：先跳过，到时间再试一次
-        if source == "private_chat" and P2P_SCOPE not in (user.feishu_scopes or "").split():
-            state.last_error = "需要重新登录一次，授权 Relay 读取你的私聊（im:message.p2p_msg:get_as_user）"
+        needed = REQUIRED_SCOPES.get(source)
+        if needed and not set(needed) & set((user.feishu_scopes or "").split()):
+            # 没授权这一项：设置页里说明，不当作故障、不反复提醒重新登录（应用开通后会按“新增能力”提醒一次）
+            state.last_error = f"需要重新登录一次，授权 Relay 读取这一项（{' 或 '.join(needed)}）"
             state.last_synced_at = now
             await session.commit()
             continue
@@ -290,7 +292,7 @@ async def morning_brief(session: AsyncSession, feishu: FeishuClient, user: User,
         return [{"kind": "item", "item_id": i.id} for i in group[:8]]
 
     risk_notes = [
-        {"kind": "note", "text": f"⚠️ {i.title}：" + ("已过截止时间" if i.due_at and i.due_at < now else f"已经等了 {(now - i.created_at).days} 天")}
+        {"kind": "note", "text": f"⚠️ {esc(i.title)}：" + ("已过截止时间" if i.due_at and i.due_at < now else f"已经等了 {(now - i.created_at).days} 天")}
         for i in risks[:5]
     ]
     sections = [

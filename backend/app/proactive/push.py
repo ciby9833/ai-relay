@@ -6,12 +6,14 @@
 
 import json
 from datetime import datetime
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.feishu import cards as fc
+from app.feishu.cards import esc
 from app.feishu.client import FeishuClient
 from app.models import AttentionRule, FeishuCard, FollowUp, Mission, PendingAction, Signal, User
 from app import i18n, insights
@@ -23,7 +25,7 @@ from app.sources import approval
 
 KIND_ICON = {
     "approval": "📝", "reply": "📧", "review": "📄", "invitation": "📅",
-    "attendance": "⏰", "mention": "💬", "waiting": "⏳", "request": "🙋", "biz": "🏢",
+    "attendance": "⏰", "mention": "💬", "waiting": "⏳", "request": "🙋", "biz": "🏢", "task": "☑️",
 }
 DETAIL_FIELDS = 6
 
@@ -50,10 +52,11 @@ def panel(header: str, elements: list[dict], expanded: bool = False) -> dict:
     }
 
 
-async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expanded: bool) -> tuple[dict, str]:
+async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expanded: bool, compact: bool = False) -> tuple[dict, str]:
+    """compact：卡片超过 30 KB 时用，只留标题、要他做什么和按钮（明细去网页或飞书看）。"""
     icon = KIND_ICON.get(item.kind, "•")
     if item.status != "open":
-        line = f"✅ ~~{item.title}~~　<font color='grey'>{item.resolution or ''}</font>"
+        line = f"✅ ~~{esc(item.title)}~~　<font color='grey'>{esc(item.resolution)}</font>"
         return fc.markdown(line), line
     due = ""
     if item.due_at:
@@ -61,25 +64,26 @@ async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expande
     action = await session.get(PendingAction, item.action_id) if item.action_id else None
     color = "grey" if item.owner == "others" else "blue"
     # 折叠时也能一眼看到要你做什么
-    header = f"{icon} **{item.title}**{due}\n<font color='{color}'>→ {ask(item, action)}</font>"
+    header = f"{icon} **{esc(item.title)}**{due}\n<font color='{color}'>→ {esc(ask(item, action))}</font>"
     body: list[str] = []
     if item.summary:
-        body.append(item.summary)
+        body.append(esc(item.summary[:300] if compact else item.summary))
     signal = await session.get(Signal, item.signal_ids[-1]) if item.signal_ids else None
-    if item.kind == "approval" and signal:
+    if item.kind == "approval" and signal and not compact:
         fields = ((signal.payload.get("detail") or {}).get("fields") or [])[:DETAIL_FIELDS]
         if fields:
-            body.append("\n".join(f"**{f['name']}**：{f['value'][:120]}" for f in fields))
+            body.append("\n".join(f"**{esc(f['name'])}**：{esc(str(f['value'])[:120])}" for f in fields))
     if item.recommendation:
-        body.append(f"💡 {item.recommendation}")
+        body.append(f"💡 {esc(item.recommendation)}")
     buttons: list[dict] = []
     if action and action.status == "pending":
         if action.kind == "send_mail":
-            quoted = action.payload["body"].replace("\n", "\n> ")
+            draft = action.payload["body"] if not compact else action.payload["body"][:200] + ("……" if len(action.payload["body"]) > 200 else "")
+            quoted = esc(draft).replace("\n", "\n> ")
             others = action.payload.get("others") or []
             scope = (f"，抄送 {len(others)} 人" if action.payload.get("reply_all")
                      else f"，只回复发件人（原邮件另有 {len(others)} 人，可在网页改成回复全部）" if others else "")
-            body.append(f"✍️ Relay 已起草（给 {action.payload.get('to')}{scope}）：\n> {quoted}")
+            body.append(f"✍️ Relay 已起草（给 {esc(action.payload.get('to'))}{scope}）：\n> {quoted}")
             label = "发送跟进邮件" if action.summary.startswith("跟进") else "发送这封回复"
             buttons += [
                 fc.callback(label, "confirm", "primary", action_id=action.id),
@@ -112,33 +116,34 @@ async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expande
     return panel(header, elements, expanded), f"{header}\n" + "\n".join(body)
 
 
-def _action_panel(action: PendingAction, expanded: bool, timezone: str) -> tuple[dict, str]:
+def _action_panel(action: PendingAction, expanded: bool, timezone: str, compact: bool = False) -> tuple[dict, str]:
     from app import automation
 
     if action.status != "pending":
         if action.auto and action.status == "done":
             # 按授权自动办的：告诉他办了什么，能撤销的给撤销按钮
-            line = f"🤖 **{i18n.ui('auto_done')}**：{action.result or action.summary}"
+            line = f"🤖 **{i18n.ui('auto_done')}**：{esc(action.result or action.summary)}"
             if action.undone_at:
                 return fc.markdown(f"~~{line}~~　<font color='grey'>{i18n.ui('undone')}</font>"), line
             if automation.undoable(action):
                 return panel(line, [fc.button_row([fc.callback(i18n.ui("undo"), "undo", action_id=action.id)])], True), line
             return fc.markdown(line), line
-        line = f"✅ ~~{action.summary}~~　<font color='grey'>{action.result or action.status}</font>"
+        line = f"✅ ~~{esc(action.summary)}~~　<font color='grey'>{esc(action.result or action.status)}</font>"
         return fc.markdown(line), line
     p = action.payload
-    body = [f"**对象**：{p.get('to')}"] if p.get("to") else []
+    body = [f"**对象**：{esc(p.get('to'))}"] if p.get("to") else []
     if action.kind == "base_record":
-        body += [f"**{k}**：{v}" for k, v in (p.get("shown") or {}).items()]
+        body += [f"**{esc(k)}**：{esc(v)}" for k, v in (p.get("shown") or {}).items()]
         if p.get("previous"):
-            body.append(f"<font color='grey'>{p['previous']}</font>")
+            body.append(f"<font color='grey'>{esc(p['previous'])}</font>")
     if action.kind == "create_event" and p.get("start"):
         body.append(f"**时间**：{_time(p['start'], timezone)}")
     if action.kind == "create_task" and p.get("due"):
         body.append(f"**截止**：{_time(p['due'], timezone)}")
     if p.get("body"):
-        body.append("> " + p["body"].replace("\n", "\n> "))
-    header = f"✍️ **{action.summary}**\n<font color='blue'>→ 确认后执行</font>"
+        text = p["body"] if not compact else p["body"][:200] + ("……" if len(p["body"]) > 200 else "")
+        body.append("> " + esc(text).replace("\n", "\n> "))
+    header = f"✍️ **{esc(action.summary)}**\n<font color='blue'>→ 确认后执行</font>"
     elements = [fc.markdown("\n".join(body))] if body else []
     buttons = [fc.callback(i18n.ui("confirm_run"), "confirm", "primary", action_id=action.id)]
     if action.scheduled_task_id:
@@ -156,10 +161,10 @@ async def _rule_panel(session: AsyncSession, user: User, rule_id: int) -> tuple[
         return None, ""
     if rule.status != "proposed":
         state = i18n.ui("rule_enabled") if rule.status == "active" else i18n.ui("rule_ignored")
-        line = f"🔔 ~~{rule.label}~~　<font color='grey'>{state}</font>" if rule.status == "rejected" else f"🔔 {rule.label}　<font color='grey'>{state}</font>"
+        line = f"🔔 ~~{esc(rule.label)}~~　<font color='grey'>{state}</font>" if rule.status == "rejected" else f"🔔 {esc(rule.label)}　<font color='grey'>{state}</font>"
         return fc.markdown(line), line
-    header = f"🔔 **{rule.label}**"
-    body = f"<font color='grey'>{i18n.ui('rule_evidence')}「{(rule.evidence or '')[:120]}」</font>"
+    header = f"🔔 **{esc(rule.label)}**"
+    body = f"<font color='grey'>{i18n.ui('rule_evidence')}「{esc((rule.evidence or '')[:120])}」</font>"
     buttons = fc.button_row([
         fc.callback(i18n.ui("rule_accept"), "rule_accept", "primary", rule_id=rule.id),
         fc.callback(i18n.ui("rule_reject"), "rule_reject", rule_id=rule.id),
@@ -170,36 +175,60 @@ async def _rule_panel(session: AsyncSession, user: User, rule_id: int) -> tuple[
 async def render(
     session: AsyncSession, user: User, title: str, text: str, sections: list
 ) -> tuple[dict, str]:
-    """sections: [[分组标题, [卡片数据...]], ...]；卡片数据与主线消息里的卡片相同。"""
+    """sections: [[分组标题, [卡片数据...]], ...]；卡片数据与主线消息里的卡片相同。
+
+    卡片 JSON 上限 30 KB：超了先换成精简版（只留标题、要做什么、按钮），还超就截掉后面的，提示去网页看。
+    超限时飞书会拒收，只能退回纯文本——按钮就没了，之后也无法原地更新。
+    """
+    card, fallback = await _render(session, user, title, text, sections, compact=False)
+    if fc.size(card) <= fc.CARD_LIMIT:
+        return card, fallback
+    card, fallback = await _render(session, user, title, text, sections, compact=True)
+    elements = card["body"]["elements"]
+    dropped = 0
+    while fc.size(card) > fc.CARD_LIMIT and len(elements) > 1:
+        elements.pop()
+        dropped += 1
+    if dropped:
+        elements.append(fc.markdown(f"<font color='grey'>{i18n.ui('more_on_web', n=dropped)}</font>"))
+    return card, fallback
+
+
+async def _render(
+    session: AsyncSession, user: User, title: str, text: str, sections: list, compact: bool
+) -> tuple[dict, str]:
     i18n.current.set(await language_of(session, user))
+    hosts = (urlparse(get_settings().frontend_url).hostname or "",)
     total_items = sum(1 for _, group in sections for c in group if c["kind"] == "item")
+    text = fc.safe_md(text, hosts)
     elements = [fc.markdown(text)] if text.strip() else []
     fallback = [text] if text.strip() else []
     for label, group in sections:
         if not group:
             continue
         if label:
-            elements.append(fc.markdown(f"**{label}**"))
+            elements.append(fc.markdown(f"**{esc(label)}**"))
             fallback.append(f"【{label}】")
         for card in group:
             if card["kind"] == "item":
                 item = await session.get(FollowUp, card["item_id"])
                 if item is None:
                     continue
-                element, line = await _item_panel(session, item, user, expanded=total_items == 1)
+                element, line = await _item_panel(session, item, user, expanded=total_items == 1 and not compact, compact=compact)
             elif card["kind"] == "event":
-                join = f"　[加入会议]({card['meeting_url']})" if card.get("meeting_url") else ""
+                url = card.get("meeting_url")
+                join = f"　[加入会议]({url})" if url and fc._safe_host(url, hosts) else ""
                 pending = "　<font color='orange'>未回复邀请</font>" if card.get("rsvp") == "needs_action" else ""
-                line = f"📅 {_time(card['start'], user.timezone)}　**{card['title']}**{pending}{join}"
+                line = f"📅 {_time(card['start'], user.timezone)}　**{esc(card['title'])}**{pending}{join}"
                 element = fc.markdown(line)
             elif card["kind"] == "mail":
-                line = f"📧 **{card['from']}**《{card['subject']}》{card.get('summary') or ''}"
+                line = f"📧 **{esc(card['from'])}**《{esc(card['subject'])}》{esc(card.get('summary'))}"
                 element = fc.markdown(line)
             elif card["kind"] == "action":
                 action = await session.get(PendingAction, card["action_id"])
                 if action is None:
                     continue
-                element, line = _action_panel(action, len(group) <= 2, user.timezone)
+                element, line = _action_panel(action, len(group) <= 2 and not compact, user.timezone, compact)
             elif card["kind"] == "mission":
                 mission = await session.get(Mission, card["mission_id"])
                 if mission is None:
@@ -207,7 +236,7 @@ async def render(
                 done = sum(1 for s in mission.plan if s.get("status") == "done")
                 state = {"active": "推进中", "waiting": "在等对方", "asking": "在等你回答", "done": "已完成",
                          "failed": "没办成", "cancelled": "已取消"}.get(mission.status, mission.status)
-                line = f"🧭 **长期任务：{mission.title}**　<font color='grey'>{state}"
+                line = f"🧭 **长期任务：{esc(mission.title)}**　<font color='grey'>{state}"
                 line += f" · 计划 {done}/{len(mission.plan)}</font>" if mission.plan else "</font>"
                 element = fc.markdown(line)
             elif card["kind"] == "rule":
@@ -215,13 +244,13 @@ async def render(
                 if element is None:
                     continue
             elif card["kind"] == "note":
-                line = card["text"]
+                line = fc.safe_md(card["text"], hosts)  # 系统写的说明（里面的业务内容由生成方转义）
                 element = fc.markdown(line)
             else:
                 continue
             elements.append(element)
             fallback.append(line)
-    return fc.card(title, text, elements=elements), "\n\n".join(fallback)
+    return fc.card(title, text, elements=elements), fc.plain("\n\n".join(fallback))
 
 
 async def push(

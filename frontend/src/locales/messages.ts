@@ -1403,5 +1403,13 @@ export const messages: Record<string, readonly [string, string]> = {
   "这些材料是按规则关联的（同一邮件线程、链接、提到同样的内容……），是否真的相关请以原文为准。": [
     "These materials are linked by rules (same email thread, links, mentions of the same things…). Check the original to confirm they're really relevant.",
     "Materi ini dikaitkan berdasarkan aturan (utas email yang sama, tautan, menyebut hal yang sama…). Periksa aslinya untuk memastikan benar-benar terkait."
+  ],
+  "飞书任务": [
+    "Feishu tasks",
+    "Tugas Feishu"
+  ],
+  "飞书任务里派给我的事": [
+    "Feishu tasks assigned to me",
+    "Tugas Feishu yang ditugaskan ke saya"
   ]
 };

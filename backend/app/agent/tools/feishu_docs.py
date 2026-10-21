@@ -6,10 +6,11 @@ import json
 
 @tool(
     "read_feishu_doc",
-    "读取飞书链接的内容：新版文档正文、知识库节点、云空间上传的原始文件（/file/ 链接，Excel、Word、PDF），"
+    "读取飞书链接的内容：新版文档正文、知识库节点、云空间上传的原始文件（/file/ 链接，Excel、Word、PDF）、"
+    "妙记（/minutes/ 链接，会议录制的文字记录，带说话人），"
     "以及电子表格、多维表格的结构（表格再用 read_sheet_range 读数据）。以当前用户自己的权限读取。"
     "内容长时分段返回，按提示传 offset 继续。",
-    {"url": {"type": "string", "description": "飞书 docx/wiki/sheets/base/board/file 链接"},
+    {"url": {"type": "string", "description": "飞书 docx/wiki/sheets/base/board/file/minutes 链接"},
      "offset": {"type": "integer", "minimum": 0}},
     ["url"],
 )

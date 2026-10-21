@@ -204,14 +204,41 @@ async def read_drive_file(feishu: FeishuClient, user: User, token: str, host: st
     return result
 
 
+MINUTES_ERRORS = {
+    2091003: "这份妙记还没转写完，过一会儿再读",
+    2091005: "没有导出这份妙记文字的权限（请妙记所有者在妙记设置里允许查看者导出，或把你加为协作者）",
+}
+
+
+async def read_minutes(feishu: FeishuClient, user: User, token: str) -> dict:
+    """飞书妙记（会议录制/上传音视频的转写）：以他本人身份导出文字记录，带说话人。
+    官方接口 GET /minutes/v1/minutes/:minute_token/transcript，需要权限 minutes:minutes.transcript:export。"""
+    if len(token) != 24:
+        raise FeishuError("妙记链接不完整（minute_token 应为 24 位）")
+    title = None
+    try:
+        info = await feishu.user_api(user, "GET", f"/minutes/v1/minutes/{token}")
+        title = (info.get("minute") or {}).get("title")
+    except FeishuError:
+        pass  # 基本信息读不到不影响读文字记录
+    try:
+        data, _ = await feishu.download(f"/minutes/v1/minutes/{token}/transcript?need_speaker=true&need_timestamp=false&file_format=txt",
+                                        user=user, max_bytes=8 * 1024 * 1024)
+    except FeishuError as exc:
+        raise FeishuError(MINUTES_ERRORS.get(exc.code, f"读取妙记失败：{exc}"), exc.code) from exc
+    return {"title": title, "content": data.decode("utf-8", errors="replace")}
+
+
 async def read_url(feishu: FeishuClient, user: User, url: str) -> dict:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname or not any(parsed.hostname.endswith('.' + h) or parsed.hostname == h for h in ('feishu.cn', 'larksuite.com', 'larkoffice.com')):
         raise FeishuError("请提供飞书官方域名的 HTTPS 文档链接")
-    match = re.fullmatch(r"/(docx|wiki|sheets|base|board|file)/([A-Za-z0-9_-]+)/?", parsed.path)
+    match = re.fullmatch(r"/(docx|wiki|sheets|base|board|file|minutes)/([A-Za-z0-9_-]+)/?", parsed.path)
     if not match:
-        raise FeishuError("暂支持 docx/wiki/sheets/base/board/file 链接；旧版 doc 请转为新版文档")
+        raise FeishuError("暂支持 docx/wiki/sheets/base/board/file/minutes 链接；旧版 doc 请转为新版文档")
     kind, token = match.groups()
+    if kind == "minutes":
+        return await read_minutes(feishu, user, token)
     if kind == "file":
         return await read_drive_file(feishu, user, token, parsed.hostname)
     if kind == "wiki":

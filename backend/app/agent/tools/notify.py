@@ -17,7 +17,7 @@ LEVEL_HELP = "now=立刻告诉他；batch=攒到汇总时间一起说；brief=�
     {
         "group": {"type": "string", "enum": list(attention.GROUPS),
                   "description": "哪类事：approval 审批 | mail 邮件 | chat 群聊/私聊里让他做的事和@他 | invitation 会议邀请 | "
-                                 "waiting 他在等别人的事 | biz 业务系统通知 | attendance 考勤"},
+                                 "waiting 他在等别人的事 | biz 业务系统通知 | attendance 考勤 | task 飞书任务"},
         "person": {"type": "string", "description": "相关的人（发起人、发件人、提出要求的人、组织者），人名或邮箱"},
         "approval": {"type": "string", "description": "审批类型，例如 请假、报销、采购"},
         "chat": {"type": "string", "description": "群名"},

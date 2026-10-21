@@ -142,7 +142,7 @@ export type Card =
 
 export interface FollowUp {
   id: number;
-  kind: "reply" | "review" | "invitation" | "approval" | "attendance" | "mention" | "request" | "waiting" | "biz";
+  kind: "reply" | "review" | "invitation" | "approval" | "attendance" | "mention" | "request" | "waiting" | "biz" | "task";
   owner: "me" | "others";
   title: string;
   summary: string | null;

@@ -109,6 +109,16 @@ def test_urgent_breaks_through_quiet_rules():
     assert _level(routine, signal, rules).level == "mute"
 
 
+def test_a_system_the_user_silenced_cannot_shout_its_way_through():
+    """WMS 把每条通知都标成紧急：他专门设了“WMS 的通知只放简报”就按他说的办；没设规则时紧急照样马上说。"""
+    flood = FollowUp(kind="biz", owner="me", title="WMS：库存同步完成", importance="urgent", facets={"system": "WMS"})
+    assert _level(flood, None, [_rule(1, {"group": "biz", "system": "WMS"}, "brief")]).level == "brief"
+    assert _level(flood, None).critical
+    # 按发件人设的邮件规则不受影响：事故邮件照样突破
+    mail, signal = _mail(sender="WMS", address="alert@wms.co", importance="urgent")
+    assert _level(mail, signal, [_rule(2, {"group": "mail", "person": "alert@wms.co"}, "brief")]).critical
+
+
 def test_repeat_within_cooldown():
     item = FollowUp(kind="biz", owner="me", title="Medan 网点停运", importance="normal", facets={},
                     pushed_at=datetime.now(UTC) - timedelta(minutes=10), pushed_importance="normal")

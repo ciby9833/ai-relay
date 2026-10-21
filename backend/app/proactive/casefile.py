@@ -32,9 +32,9 @@ MAX_STRONG = 15
 MAX_WEAK = 4
 MAX_CHATS = 3
 PRIVATE_RECENT = timedelta(days=3)
-LINK = re.compile(r"https?://[\w.-]*(?:feishu\.cn|larksuite\.com|larkoffice\.com)/(?:docx|docs|wiki|sheets|base|file|board|mindnotes)/[\w-]+[^\s)>\]\"'<，。]*")
+LINK = re.compile(r"https?://[\w.-]*(?:feishu\.cn|larksuite\.com|larkoffice\.com)/(?:docx|docs|wiki|sheets|base|file|board|mindnotes|minutes)/[\w-]+[^\s)>\]\"'<，。]*")
 LINK_KIND = {"docx": "文档", "docs": "文档", "wiki": "知识库", "sheets": "表格", "base": "多维表格", "file": "文件",
-             "board": "画板", "mindnotes": "思维导图"}
+             "board": "画板", "mindnotes": "思维导图", "minutes": "妙记"}
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9&.-]{2,}|[\u4e00-\u9fff]{2,}")
 _STOP = {
     "re", "fw", "fwd", "the", "and", "for", "with", "from", "your", "you", "please", "regarding", "about", "this", "that",

@@ -356,6 +356,16 @@ async def _from_simple(session: AsyncSession, user: User, signal: Signal, fresh:
             summary=(signal.body or "")[:300] or None, next_step=p.get("action_hint") or f"去{p['integration']}处理",
             url=signal.url, due_at=due, importance="urgent" if signal.importance == "urgent" else "normal",
         )
+    elif signal.kind == "task":
+        p = signal.payload or {}
+        creator = p.get("creator_name") or "同事"
+        await upsert(
+            session, user, f"task:{signal.external_id}", signal, silent=not fresh,
+            kind="task", owner="me", title=f"{creator} 派给你的任务：{signal.title}", summary=(signal.body or "")[:300] or None,
+            next_step="完成后在飞书任务里勾选完成", url=signal.url,
+            due_at=datetime.fromisoformat(p["due"]) if p.get("due") else None,
+            facets={"people": [creator], "open_ids": [p.get("creator_open_id")]},
+        )
     elif signal.kind == "mention":
         await upsert(
             session, user, f"mention:{signal.external_id}", signal, silent=not fresh,
@@ -419,7 +429,7 @@ async def track(session: AsyncSession, feishu: FeishuClient, user: User) -> None
         select(Signal).where(
             Signal.user_id == user.id,
             Signal.status.in_(["notify", "digest", "notified", "digested"]),
-            Signal.kind.in_(["mail", "invitation", "approval_pending", "approval_update", "attendance_missing", "mention", "biz_event"]),
+            Signal.kind.in_(["mail", "invitation", "approval_pending", "approval_update", "attendance_missing", "mention", "biz_event", "task"]),
         ).order_by(Signal.id)
     )
     for signal in result.scalars():
@@ -575,6 +585,8 @@ async def advance(session: AsyncSession, user: User) -> None:
                 close(item, "dismissed", "会议已经开始，不再跟进")
         elif item.kind == "approval" and last and last.status == "done":
             close(item, "done", "审批已处理")
+        elif item.kind == "task" and last and last.status == "done":
+            close(item, "done", "你在飞书任务里完成了（或任务已取消）")
         elif item.kind == "mention" and last and last.status == "done":
             close(item, "done", "你已经在群里回复了")
         elif item.kind == "attendance" and item.created_at < datetime.now(UTC) - timedelta(hours=12):

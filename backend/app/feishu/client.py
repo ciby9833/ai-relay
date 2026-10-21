@@ -259,7 +259,14 @@ class FeishuClient:
     def _message_payloads(text: str) -> list[dict]:
         """Relay 自己的回复：优先用 JSON 2.0 卡片渲染 Markdown（支持行内代码、代码块、表格），
         卡片被拒时退回富文本，最后才是纯文本。"""
-        card = {"schema": "2.0", "config": {"width_mode": "fill"}, "body": {"elements": [{"tag": "markdown", "content": text}]}}
+        from urllib.parse import urlparse
+
+        from app.config import get_settings
+        from app.feishu.cards import safe_md
+
+        # 回复里常引用邮件、群消息原文：只有飞书和 Relay 自己的链接能点，杂散的 < > 原样显示
+        content = safe_md(text, (urlparse(get_settings().frontend_url).hostname or "",))
+        card = {"schema": "2.0", "config": {"width_mode": "fill"}, "body": {"elements": [{"tag": "markdown", "content": content}]}}
         return [
             {"msg_type": "interactive", "content": json.dumps(card, ensure_ascii=False)},
             rich_text(text),
