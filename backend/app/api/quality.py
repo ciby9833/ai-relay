@@ -50,8 +50,17 @@ async def quality(session: SessionDep, user: UserDep, days: int = 7, offset: int
                          AssuranceEvent.mission_id.in_(ids)).order_by(AssuranceEvent.id))).all():
             reviews[e.mission_id] = {**e.detail, "at": e.created_at.isoformat()}
     assessed = [r for r in reviews.values() if r["verdict"] != "unknown"]
+    turns = [e for e in events if e.kind == "turn" and e.detail.get("channel") != "mission"]
+    tool_counts = sorted(e.detail.get("tool_calls", 0) for e in turns)
     return {
         "start": start.isoformat(), "end": end.isoformat(), "coverage_start": coverage.isoformat() if coverage else None,
+        # 对话质量：问了却没拿到回答（出错 / 什么都没说）、查到上限才勉强作答、一轮里查了很多次
+        "turn_no_answer": rate(sum(e.detail.get("outcome") in ("error", "no_answer") for e in turns), len(turns)),
+        "turn_forced_final": rate(sum(e.detail.get("outcome") == "forced_final" for e in turns), len(turns)),
+        "turn_heavy_search": rate(sum(e.detail.get("tool_calls", 0) >= 15 for e in turns), len(turns)),
+        "turn_median_tools": tool_counts[len(tool_counts) // 2] if tool_counts else None,
+        "turn_errors": [{"at": e.created_at.isoformat(), "errors": e.detail.get("errors")} for e in turns
+                        if e.detail.get("outcome") == "error"][-20:],
         "false_closure": rate(sum(r["verdict"] == "false_close" for r in assessed), len(assessed)),
         "review_coverage": rate(len(assessed), len(closed)),
         "completion_failure": rate(sum(e.detail.get("passed") is not True for e in checks), len(checks)),

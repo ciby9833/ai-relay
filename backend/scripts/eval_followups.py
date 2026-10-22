@@ -35,6 +35,23 @@ CHAT_PROGRESS = [
     ("Jennifer 让你：10 月 20 日前在反馈表里填 IT 部门意见", ["Xavier：好的我看下"], "none"),
     ("Jennifer 让你：10 月 20 日前在反馈表里填 IT 部门意见", ["Xavier：已经填好了，S 列和 T 列都更新了"], "done"),
     ("等 Amber：确认新版本是否可以发布", ["Amber：测试还有两个 bug，修完再说"], "none"),
+    # 2026-10-22 生产复盘：对方说早就发过了 / 本人回答了“有没有异议” / “都弄了”其实在答别的问题
+    ("等 Veigar(吴英杰)：单独拎出三段码叉叉的数据统计数量，用于后续分析原因",
+     ["Veigar(吴英杰)：@Xavier(吴川) 这里说的就是三段码的准确率嘛", "Xavier(吴川)：是的是的，接下来要做改善，得把这部分数据分析一下",
+      "Veigar(吴英杰)：这个我发过给你们呀，这就是最新的三段码准确率", "Veigar(吴英杰)：这周四我会再拉一次数据"], "done"),
+    ("Pieter Dickens 让你：查看蒋旭提出的调整顺序的小需求文档并确认是否有异议", ["Xavier(吴川)：没啥问题"], "done"),
+    ("Bernie 让你：在介绍PPT中整理一些体现目标市场潜力的数字",
+     ["Bernie：团建各部门都搞了么，回头双十一后面又开始忙", "Maggie：都弄了", "Maggie：郭哥他们部门吃饭了，我们去茂物野生动物园了"], "none"),
+]
+
+# 一次回复同时回应好几件事：(未结事项列表, 新消息, 每件期望)
+MULTI_PROGRESS = [
+    (["等 Veigar(吴英杰)：单独拎出三段码叉叉的数据统计数量，用于后续分析原因",
+      "等 Veigar(吴英杰)：抓取数据核实出仓单子的三段码与签收的三段码是否一致"],
+     ["Veigar(吴英杰)：这个我发过给你们呀，这就是最新的三段码准确率，叉叉的明细也在里面", "Veigar(吴英杰)：最新的结果 [文件]"],
+     ["done", "done"]),
+    (["等 Hendri：发 9 月运单明细", "等 Hendri：确认下周培训的时间"],
+     ["Hendri：明细已经发你邮箱了"], ["done", "none"]),
 ]
 
 # (在等的事, 新消息（标题 + 正文）, 期望：done / committed / ack / unrelated)
@@ -94,6 +111,16 @@ async def judge_chat(task: str, messages: list[str]) -> str:
     return verdicts[0] if verdicts else "none"
 
 
+async def judge_multi(tasks: list[str], messages: list[str]) -> list[str]:
+    lines = [f"[{i}] 10-19 14:{30 + i} {m}" for i, m in enumerate(messages)]
+    pending = "\n".join(f"[#{n}] {t}" for n, t in enumerate(tasks, 1))
+    result = await complete_structured(
+        CHAT_TASKS_SYSTEM, f"<now>{NOW}</now>\n<chat kind=\"群聊\">\n" + "\n".join(lines) + f"\n</chat>\n\n<open>\n{pending}\n</open>", TASKS_TOOL,
+    )
+    verdicts = {p.get("item_id"): p["verdict"] for p in result.get("progress") or []}
+    return [verdicts.get(n, "none") for n in range(1, len(tasks) + 1)]
+
+
 async def judge_mail(task: str, title: str, body: str) -> str:
     result = await complete_structured(
         PROGRESS_SYSTEM,
@@ -127,6 +154,7 @@ async def run(name, cases, judge) -> tuple[int, int]:
 async def main() -> None:
     totals = [
         await run("群聊/私聊事项进展", CHAT_PROGRESS, judge_chat),
+        await run("一次回复回应好几件事", MULTI_PROGRESS, judge_multi),
         await run("邮件进展（同线程/跨线程）", MAIL_PROGRESS, lambda task, mail: judge_mail(task, *mail)),
         await run("回复后还要不要等对方", REPLY_STATE, judge_reply),
         await run("私聊里谁让谁做事", PRIVATE_TASKS, extract_private),

@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import re
+import time
+from contextvars import ContextVar
 import uuid
 import weakref
 from collections.abc import AsyncIterator
@@ -25,6 +27,8 @@ from app.models import Conversation, FollowUp, Message, Mission, PendingAction, 
 logger = logging.getLogger(__name__)
 
 MAX_STEPS = 8
+FINAL_STEP_NOTE = ("〔系统提示，不是用户说的话：这一轮已经调用了 {n} 次工具，不能再调用了。现在直接回答用户："
+                   "说清楚查到了什么、依据是什么；没查到的如实说没查到、可能在哪里、需要他提供什么。不要编造。〕")
 MISSION_MAX_STEPS = 16  # 后台长期任务一轮里往往要查好几样东西
 HISTORY_LIMIT = 40
 WEEKDAYS = "一二三四五六日"
@@ -204,7 +208,7 @@ async def build_context(
     return "\n".join(lines)
 
 
-async def run_turn(
+async def _run_turn(
     session: AsyncSession,
     *,
     user: User,
@@ -263,7 +267,12 @@ async def run_turn(
         messages.append({"role": "user", "content": user_content})
 
     max_steps = MISSION_MAX_STEPS if conversation.channel == "mission" else MAX_STEPS
-    for _ in range(max_steps):
+    tool_calls = 0
+    for step in range(max_steps):
+        final = step == max_steps - 1 and conversation.channel != "mission"
+        if final and messages and messages[-1]["role"] == "user":
+            # 最后一步：不再查了，用已经查到的回答。以前到上限就只报“已停止”，用户什么也拿不到
+            messages[-1] = {"role": "user", "content": messages[-1]["content"] + [{"type": "text", "text": FINAL_STEP_NOTE.format(n=tool_calls)}]}
         completion: Completion | None = None
         async for event in provider.stream(
             model=model, system=SYSTEM_PROMPT, messages=messages, tools=tools
@@ -277,6 +286,15 @@ async def run_turn(
 
         blocks = completion.blocks
         tool_uses = [block for block in blocks if block["type"] == "tool_use"]
+        if final and tool_uses:
+            _turn_stats.get({})["forced_final"] = True
+            # 最后一步模型还想查：不执行，只留文字；连文字都没有就如实说查到哪一步了
+            blocks = [block for block in blocks if block["type"] == "text" and block.get("text", "").strip()]
+            tool_uses = []
+            if not blocks:
+                fallback = i18n.t(await language_of(session, user), "final_fallback", n=tool_calls)
+                blocks = [{"type": "text", "text": fallback}]
+                yield {"type": "text", "delta": fallback}
         if completion.stop_reason in ("max_tokens", "refusal"):
             # 被截断的工具参数不可信，拒答时的工具调用也不执行：只保留文字
             blocks = [block for block in blocks if block["type"] == "text"]
@@ -297,6 +315,8 @@ async def run_turn(
             break
 
         results = []
+        tool_calls += len(tool_uses)
+        _turn_stats.get({})["tool_calls"] = tool_calls
         for call in tool_uses:
             yield {"type": "tool_start", "name": call["name"]}
             content, is_error = await execute(ctx, call["name"], call["input"], user_initiated)
@@ -334,6 +354,54 @@ async def run_turn(
         yield {"type": "error", "message": f"连续调用工具超过 {max_steps} 步，已停止"}
 
     yield {"type": "done"}
+
+
+_turn_stats: ContextVar[dict] = ContextVar("relay_turn_stats")
+
+
+async def run_turn(session: AsyncSession, *, user: User, conversation: Conversation, **kwargs) -> AsyncIterator[dict]:
+    """处理一条消息（见 _run_turn），并记下这一轮的结果，用来发现“用户问了却没拿到回答”的情况：
+
+        answered       正常回答
+        forced_final   查到上限，按已有信息作答
+        no_answer      结束了但没有任何回答文字
+        error          出错（模型超时、接口报错……），错误只在界面上闪过，这里留下记录
+    """
+    stats = {"tool_calls": 0, "forced_final": False}
+    token = _turn_stats.set(stats)
+    started, text_len, errors, outcome = time.monotonic(), 0, [], None
+    try:
+        async for event in _run_turn(session, user=user, conversation=conversation, **kwargs):
+            if event["type"] == "text":
+                text_len += len(event["delta"])
+            elif event["type"] == "error":
+                errors.append(event["message"])
+            yield event
+        outcome = "forced_final" if stats["forced_final"] else ("answered" if text_len else ("error" if errors else "no_answer"))
+    except Exception as exc:
+        errors.append(f"{type(exc).__name__}: {str(exc)[:200]}")
+        outcome = "error"
+        raise
+    finally:
+        _turn_stats.reset(token)
+        if outcome is not None or errors:
+            await _record_turn(user, getattr(kwargs.get("mission"), "id", None), {
+                "outcome": outcome or "error", "channel": conversation.channel, "tool_calls": stats["tool_calls"],
+                "seconds": round(time.monotonic() - started, 1), "errors": errors[:3],
+            })
+
+
+async def _record_turn(user: User, mission_id: int | None, detail: dict) -> None:
+    """用独立的会话写：这一轮可能正是因为数据库或模型出错而结束的。记录失败不影响用户。"""
+    from app import assurance
+    from app.db import SessionLocal
+
+    try:
+        async with SessionLocal() as session:
+            assurance.record(session, user.id, "turn", detail, mission_id)
+            await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.warning("记录对话结果失败", exc_info=True)
 
 
 async def run_turn_text(session: AsyncSession, **kwargs) -> str:

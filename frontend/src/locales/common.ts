@@ -285,6 +285,11 @@ export const common: Record<string, readonly [string, string, string]> = {
     "Watch mentions in {name}",
     "Pantau sebutan di {name}"
   ],
+  "board.mentionsCount": [
+    "盯着{name}里@你的 {count} 条消息",
+    "Watch {count} mentions in {name}",
+    "Pantau {count} sebutan di {name}"
+  ],
   "board.groupMentions": [
     "盯着群聊里@你的消息",
     "Watch group mentions",

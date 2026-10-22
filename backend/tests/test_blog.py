@@ -19,9 +19,25 @@ from app.main import app
 from app.models import BlogAsset, BlogPost
 
 
+FIXTURE = ("relay-day", "_template")
+
+
+def _copy_fixture(root: Path) -> None:
+    """这些测试验证导入机制，只用 relay-day 这一篇做样本；新增文章不应该让它们失败。"""
+    root.mkdir(parents=True)
+    for name in FIXTURE:
+        shutil.copytree(CONTENT_ROOT / name, root / name)
+
+
+def test_every_published_article_is_valid():
+    """真实内容目录里的每一篇都要通过发布校验（新文章由这条覆盖）。"""
+    slugs = [a.slug for a in read_bundle(CONTENT_ROOT)]
+    assert "relay-day" in slugs and len(slugs) == len(set(slugs))
+
+
 def test_bundle_preserves_original_bytes_and_validates_media(tmp_path):
     root = tmp_path / "blog"
-    shutil.copytree(CONTENT_ROOT, root)
+    _copy_fixture(root)
     article = read_bundle(root)[0]
     assert article.files["index.html"] == (root / "relay-day/index.html").read_bytes()
     assert len(article.files) == 10  # HTML + eight JPGs + MP4
@@ -40,7 +56,7 @@ def test_og_image_becomes_absolute_and_the_rest_is_untouched():
 
 def test_template_and_hidden_folders_are_not_published(tmp_path):
     root = tmp_path / "blog"
-    shutil.copytree(CONTENT_ROOT, root)
+    _copy_fixture(root)
     assert [a.slug for a in read_bundle(root)] == ["relay-day"]
     # The template itself must pass the rules, so a copy starts from a valid article.
     shutil.copytree(root / "_template", root / "new-post")
@@ -61,7 +77,7 @@ def test_template_and_hidden_folders_are_not_published(tmp_path):
 ])
 def test_content_rules_block_release(tmp_path, old, new, error):
     root = tmp_path / "blog"
-    shutil.copytree(CONTENT_ROOT, root)
+    _copy_fixture(root)
     page = root / "relay-day/index.html"
     html = page.read_text(encoding="utf-8")
     assert old in html
@@ -72,7 +88,7 @@ def test_content_rules_block_release(tmp_path, old, new, error):
 
 def test_published_articles_need_a_date_but_drafts_do_not(tmp_path):
     root = tmp_path / "blog"
-    shutil.copytree(CONTENT_ROOT, root)
+    _copy_fixture(root)
     metadata = root / "relay-day/post.json"
     data = json.loads(metadata.read_text())
     del data["publishedAt"]
@@ -111,7 +127,7 @@ async def blog_db(monkeypatch):
 
 async def test_import_and_serving_survive_missing_source_files(blog_db, tmp_path):
     root = tmp_path / "blog"
-    shutil.copytree(CONTENT_ROOT, root)
+    _copy_fixture(root)
     originals = read_bundle(root)[0].files
     assert await blog_import.import_bundle(root) == 1
     async with blog_db() as session:
@@ -161,7 +177,7 @@ async def test_import_and_serving_survive_missing_source_files(blog_db, tmp_path
 
 async def test_updates_drafts_withdrawal_and_validation_are_atomic(blog_db, tmp_path):
     root = tmp_path / "blog"
-    shutil.copytree(CONTENT_ROOT, root)
+    _copy_fixture(root)
     metadata = root / "relay-day/post.json"
     original = json.loads(metadata.read_text())
     await blog_import.import_bundle(root)

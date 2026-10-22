@@ -10,12 +10,17 @@ const metrics = [
   ["adminCompletionFailure", "completion_failure", "adminCompletionDef"],
   ["adminVerificationFailure", "verification_failure", "adminVerificationDef"],
   ["adminTakeover", "human_takeover", "adminTakeoverDef"],
+  ["adminTurnNoAnswer", "turn_no_answer", "adminTurnNoAnswerDef"],
+  ["adminTurnForced", "turn_forced_final", "adminTurnForcedDef"],
+  ["adminTurnHeavy", "turn_heavy_search", "adminTurnHeavyDef"],
 ] as const;
 const number = (n: number) => n.toLocaleString(intlLocale(), { maximumFractionDigits: 2 });
 const percent = (r: QualityRate) => r.rate === null ? "—" : (r.rate * 100).toLocaleString(intlLocale(), { maximumFractionDigits: 1 }) + "%";
 const date = (value: string) => new Date(value).toLocaleDateString(intlLocale(), { timeZone: "UTC", month: "short", day: "numeric" });
 
-function Metric({ label, value, previous }: { label: string; value: QualityRate; previous: QualityRate }) {
+const EMPTY: QualityRate = { numerator: 0, denominator: 0, rate: null };
+
+function Metric({ label, value = EMPTY, previous = EMPTY }: { label: string; value?: QualityRate; previous?: QualityRate }) {
   return <article className="admin-metric">
     <h3>{t(label)}</h3>
     <div className="admin-metric-value"><strong>{percent(value)}</strong>

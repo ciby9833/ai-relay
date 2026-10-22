@@ -19,7 +19,7 @@ async function setup(page: Page, admin = true, failOnce = false, language = "zh"
     if (path === "/api/insights/notifications") return route.fulfill({ json: [{ user_id: "h", user: "Hendri", timezone: "Asia/Jakarta", days, observed_days: 7, pushes_per_day: url.searchParams.get("offset") === "0" ? 0.29 : 4 }] });
     if (path === "/api/insights/quality") {
       if (shouldFail) { return route.fulfill({ status: 503, json: { detail: "暂时不可用" } }); }
-      return route.fulfill({ json: { start: "2026-10-15T00:00:00Z", end: "2026-10-22T00:00:00Z", coverage_start: "2026-10-15T00:00:00Z", false_closure: review ? rate(1, 1) : rate(0, 0), review_coverage: review ? rate(1, 1) : rate(0, 1), completion_failure: rate(1, 4), verification_failure: rate(1, 10), verification_unknown: 2, human_takeover: rate(1, 5), closed_total: 1, closures: [{ ...closure, review }] } });
+      return route.fulfill({ json: { start: "2026-10-15T00:00:00Z", end: "2026-10-22T00:00:00Z", coverage_start: "2026-10-15T00:00:00Z", false_closure: review ? rate(1, 1) : rate(0, 0), review_coverage: review ? rate(1, 1) : rate(0, 1), completion_failure: rate(1, 4), verification_failure: rate(1, 10), verification_unknown: 2, human_takeover: rate(1, 5), turn_no_answer: rate(2, 40), turn_forced_final: rate(1, 40), turn_heavy_search: rate(3, 40), turn_median_tools: 1, turn_errors: [], closed_total: 1, closures: [{ ...closure, review }] } });
     }
     if (path === "/api/insights/missions/1/review") { writes.push(request.postDataJSON()); review = { ...request.postDataJSON(), at: new Date().toISOString() }; return route.fulfill({ json: { ok: true } }); }
     if (path === "/api/missions/1/criteria") { writes.push(request.postDataJSON()); return route.fulfill({ json: { criteria: [] } }); }
@@ -71,7 +71,7 @@ test("admin error retries without stale metrics", async ({ page }) => {
 test("admin desktop and phone layouts", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1100 }); await setup(page);
   await page.getByRole("button", { name: "运行质量", exact: true }).click();
-  await expect(page.locator(".admin-metric")).toHaveCount(4);
+  await expect(page.locator(".admin-metric")).toHaveCount(7);
   await page.screenshot({ path: "/tmp/relay-admin-overview.png", fullPage: true, animations: "disabled" });
   await page.locator(".admin-person summary").click();
   await page.screenshot({ path: "/tmp/relay-admin-desktop.png", fullPage: true, animations: "disabled" });
@@ -112,7 +112,7 @@ for (const [language, title] of [["en", "Operations quality"], ["id", "Kualitas 
     // Navigate at desktop width, then check the existing mobile shell.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByRole("button", { name: title, exact: true }).click();
-    await expect(page.locator(".admin-metric")).toHaveCount(4);
+    await expect(page.locator(".admin-metric")).toHaveCount(7);
     await expect(page.getByRole("button", { name: language === "en" ? "Refresh" : "Muat ulang", exact: true })).toBeVisible();
     await page.setViewportSize({ width: 320, height: 812 });
     const definitions = page.locator(".admin-definitions summary");

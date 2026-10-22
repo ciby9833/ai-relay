@@ -173,10 +173,17 @@ async def board(session: SessionDep, user: UserDep):
     watching = (await session.execute(
         select(Signal).where(Signal.user_id == user.id, Signal.kind == "mention", Signal.status == "watching")
     )).scalars().all()
-    for signal in watching:
-        relay.append({"kind": "watch", "title": f"盯着{signal.payload.get('chat_name') or '群聊'}里@你的消息",
+    by_chat: dict[str, list[Signal]] = {}
+    for signal in watching:  # 同一个群里@了好几次：合成一行
+        by_chat.setdefault((signal.payload or {}).get("chat_id") or str(signal.id), []).append(signal)
+    for group in by_chat.values():
+        signal = max(group, key=lambda x: x.occurred_at or x.created_at)
+        name = signal.payload.get("chat_name")
+        count = f"（{len(group)} 条）" if len(group) > 1 else ""
+        relay.append({"kind": "watch", "title": f"盯着{name or '群聊'}里@你的消息{count}",
                       "detail": "两小时内没回会提醒你", "at": signal.occurred_at.isoformat() if signal.occurred_at else None,
-                      "title_ui": {"key": "board.mentions", "values": {"name": signal.payload['chat_name']}} if signal.payload.get('chat_name') else {"key": "board.groupMentions"},
+                      "title_ui": ({"key": "board.mentions", "values": {"name": name}} if name else {"key": "board.groupMentions"})
+                      if len(group) == 1 else {"key": "board.mentionsCount", "values": {"name": name or "", "count": len(group)}},
                       "detail_ui": {"key": "board.twoHours"}})
     for item in open_items:
         if item["owner"] == "others" and item["remind_at"]:

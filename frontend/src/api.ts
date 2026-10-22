@@ -358,6 +358,8 @@ export interface QualityStats {
   start: string; end: string; coverage_start: string | null; false_closure: QualityRate; review_coverage: QualityRate;
   completion_failure: QualityRate; verification_failure: QualityRate; verification_unknown: number; human_takeover: QualityRate;
   closed_total: number; closures: ClosureReview[];
+  turn_no_answer: QualityRate; turn_forced_final: QualityRate; turn_heavy_search: QualityRate; turn_median_tools: number | null;
+  turn_errors: { at: string; errors: string[] }[];
 }
 
 export const api = {
