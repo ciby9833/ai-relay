@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>从消息提醒到可靠执行：我们做企业 AI 助理的实践</title>
+<meta name="description" content="Relay 投入使用后，我们发现难点不在模型能力，而在于什么值得打扰人、上下文从哪来、怎样才算办完。这篇文章记录我们在通知分级、事项档案、目标驱动的进展判断和长期任务验收上的做法与局限。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="从消息提醒到可靠执行：我们做企业 AI 助理的实践">
+<meta property="og:description" content="Relay 投入使用后，我们发现难点不在模型能力，而在于什么值得打扰人、上下文从哪来、怎样才算办完。">
+<meta property="og:image" content="img/cover.jpg">
+<style>
+/* 长文排版：单栏 720px，表格和代码块各自横向滚动；沿用 Relay 的暖白与陶土色。
+   机制图用 HTML + 纯 CSS 动画（文章页不允许脚本），窄屏自动换行；减少动态效果时显示静态版本。 */
+:root {
+  --paper: #faf9f5; --sunken: #f0eee6; --card: #ffffff; --ink: #141413; --ink-2: #3d3d3a; --muted: #73726c;
+  --rule: #e2dfd3; --accent: #c96442; --accent-soft: #f5e6df;
+  --crit: #b53333; --crit-soft: #f7e2e0; --ok: #4e7d4a; --ok-soft: #e6efe2; --warn: #9a6b15; --warn-soft: #f6ecd6;
+  --display: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif;
+  --body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #262624; --sunken: #1f1e1d; --card: #30302e; --ink: #f5f4ef; --ink-2: #dcdad2; --muted: #a3a199;
+    --rule: #3e3e38; --accent: #d97757; --accent-soft: #3a2c25;
+    --crit: #e0796f; --crit-soft: #3d2523; --ok: #8fbf86; --ok-soft: #26321f; --warn: #d9a84e; --warn-soft: #382f1c; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+img { max-width: 100%; height: auto; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.85 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased; }
+article { max-width: 720px; margin: 0 auto; padding-block: 56px 80px; }
+h1 { font: 700 clamp(30px, 5vw, 44px)/1.3 var(--display); margin: 0 0 16px; text-wrap: balance; }
+.lede { font-size: 19px; color: var(--ink-2); margin: 0 0 14px; }
+.meta { color: var(--muted); font-size: 14px; margin: 0 0 44px; }
+h2 { font: 700 26px/1.45 var(--display); margin: 60px 0 14px; text-wrap: balance; }
+h3 { font: 600 19px/1.5 var(--body); margin: 34px 0 10px; }
+p { color: var(--ink-2); margin: 0 0 18px; }
+strong { color: var(--ink); font-weight: 600; }
+ul, ol { color: var(--ink-2); margin: 0 0 18px; padding-left: 1.4em; }
+li { margin-bottom: 6px; }
+a { color: var(--accent); }
+code { font: 0.88em var(--mono); background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
+pre { font: 14px/1.65 var(--mono); background: var(--sunken); border-radius: 10px; padding: 16px 18px;
+  overflow-x: auto; margin: 0 0 22px; color: var(--ink); }
+pre code { background: none; padding: 0; font-size: inherit; }
+.table { overflow-x: auto; margin: 6px 0 24px; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.6; min-width: 520px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+th { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: .02em; border-bottom-color: var(--ink-2); }
+td { color: var(--ink-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rule { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0;
+  padding: 14px 18px; margin: 24px 0; }
+.rule p { color: var(--ink); margin: 0; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 56px 0; }
+.foot { color: var(--muted); font-size: 14px; }
+
+/* ---------- 机制图 ---------- */
+.fig { margin: 28px 0 30px; }
+.fig-box { background: var(--sunken); border-radius: 14px; padding: 20px; display: grid; gap: 14px; font-size: 14px; line-height: 1.55; }
+.fig figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
+.fig-h { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+.chip { display: inline-flex; flex-direction: column; background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 6px 10px; color: var(--ink); }
+.chip em { font-style: normal; font-size: 12px; color: var(--muted); }
+.chip.crit { border-color: var(--crit); background: var(--crit-soft); }
+.chip.crit em { color: var(--crit); }
+.chip.dim { color: var(--muted); border-style: dashed; background: transparent; }
+
+/* 通知分级 */
+.lane { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: start; }
+.lane + .lane { border-top: 1px solid var(--rule); padding-top: 14px; }
+.lane-h b { display: block; color: var(--ink); font-weight: 600; }
+.lane-h span { font-size: 12px; color: var(--muted); }
+.track { display: flex; flex-wrap: wrap; gap: 8px; min-height: 36px; }
+
+/* 卡片原地更新 */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.col { display: grid; gap: 8px; align-content: start; }
+.col-h { font-weight: 600; color: var(--ink); }
+.col-h span { color: var(--crit); }
+.col-h.good span { color: var(--ok); }
+.ping { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; color: var(--ink-2);
+  display: flex; gap: 8px; align-items: center; }
+.ping::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--crit); flex: none; }
+.live-card { background: var(--card); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+.live-card b { color: var(--ink); }
+.cyc { display: grid; }
+.cyc > span { grid-area: 1 / 1; color: var(--ink-2); }
+.cyc > span:last-child { color: var(--ok); font-weight: 600; }
+
+/* 事项档案 */
+.core { justify-self: start; background: var(--accent); color: #fff; border-radius: 8px; padding: 6px 12px; font-weight: 600; }
+.grp { display: grid; gap: 8px; }
+.grp .track { min-height: 0; }
+.gate { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--rule); padding-top: 14px; }
+.gate > b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+.chk { display: inline-flex; gap: 6px; align-items: center; background: var(--ok-soft); color: var(--ok); border-radius: 999px; padding: 3px 10px; }
+.chk::before { content: "✓"; font-weight: 700; }
+
+/* 进展判断 */
+.goal { color: var(--ink); }
+.goal b { font-weight: 600; }
+.frames { display: grid; }
+.frame { grid-area: 1 / 1; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
+.bubble { background: var(--card); border: 1px solid var(--rule); border-radius: 12px 12px 12px 4px; padding: 10px 12px; color: var(--ink); }
+.bubble small { display: block; color: var(--muted); font-size: 12px; }
+.arrow { color: var(--muted); }
+.out { border-radius: 10px; padding: 10px 12px; }
+.out b { display: block; font-weight: 600; }
+.out.done { background: var(--ok-soft); color: var(--ok); }
+.out.commit { background: var(--warn-soft); color: var(--warn); }
+.out.ack { background: var(--accent-soft); color: var(--accent); }
+.out.unrel { background: var(--card); color: var(--muted); border: 1px dashed var(--rule); }
+
+/* 长期任务验收 */
+.ck { display: grid; gap: 8px; }
+.ck-i { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--ink); }
+.box { width: 18px; height: 18px; border: 2px solid var(--muted); border-radius: 4px; display: inline-grid; place-items: center; flex: none; }
+.box b { color: var(--ok); font-size: 13px; line-height: 1; }
+.ev { font: 12px var(--mono); background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 1px 6px; color: var(--muted); }
+.rv { display: grid; gap: 8px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.verdict { border-radius: 8px; padding: 8px 12px; }
+.verdict.bad { background: var(--crit-soft); color: var(--crit); }
+.verdict.good { background: var(--ok-soft); color: var(--ok); }
+.verdict.hand { background: var(--card); color: var(--ink-2); border: 1px dashed var(--rule); }
+
+/* 写入后核对 */
+.steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); }
+.outs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+
+/* 出现顺序：12 秒一轮，t1–t8 依次出现，最后一起淡出 */
+.t1 { animation: t1 12s infinite; } .t2 { animation: t2 12s infinite; } .t3 { animation: t3 12s infinite; }
+.t4 { animation: t4 12s infinite; } .t5 { animation: t5 12s infinite; } .t6 { animation: t6 12s infinite; }
+.t7 { animation: t7 12s infinite; } .t8 { animation: t8 12s infinite; }
+@keyframes t1 { 0%, 3% { opacity: 0; transform: translateY(6px); } 7%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t2 { 0%, 13% { opacity: 0; transform: translateY(6px); } 17%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t3 { 0%, 23% { opacity: 0; transform: translateY(6px); } 27%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t4 { 0%, 33% { opacity: 0; transform: translateY(6px); } 37%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t5 { 0%, 43% { opacity: 0; transform: translateY(6px); } 47%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t6 { 0%, 53% { opacity: 0; transform: translateY(6px); } 57%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t7 { 0%, 63% { opacity: 0; transform: translateY(6px); } 67%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t8 { 0%, 73% { opacity: 0; transform: translateY(6px); } 77%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+/* 卡片上的状态文字：和左侧 t1–t4 同步替换 */
+.c1 { animation: c1 12s infinite; } .c2 { animation: c2 12s infinite; } .c3 { animation: c3 12s infinite; } .c4 { animation: c4 12s infinite; }
+@keyframes c1 { 0%, 3% { opacity: 0; } 6%, 12% { opacity: 1; } 14%, 100% { opacity: 0; } }
+@keyframes c2 { 0%, 13% { opacity: 0; } 16%, 22% { opacity: 1; } 24%, 100% { opacity: 0; } }
+@keyframes c3 { 0%, 23% { opacity: 0; } 26%, 32% { opacity: 1; } 34%, 100% { opacity: 0; } }
+@keyframes c4 { 0%, 33% { opacity: 0; } 36%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+/* 轮播四个画面：16 秒一轮，每个画面 4 秒 */
+.q1 { animation: q1 16s infinite; } .q2 { animation: q2 16s infinite; } .q3 { animation: q3 16s infinite; } .q4 { animation: q4 16s infinite; }
+@keyframes q1 { 0% { opacity: 0; } 3%, 22% { opacity: 1; } 25%, 100% { opacity: 0; } }
+@keyframes q2 { 0%, 25% { opacity: 0; } 28%, 47% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes q3 { 0%, 50% { opacity: 0; } 53%, 72% { opacity: 1; } 75%, 100% { opacity: 0; } }
+@keyframes q4 { 0%, 75% { opacity: 0; } 78%, 97% { opacity: 1; } 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .t1, .t2, .t3, .t4, .t5, .t6, .t7, .t8, .c1, .c2, .c3, .c4, .q1, .q2, .q3, .q4 { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .cyc > span:not(:last-child) { display: none; }
+  .frames { gap: 12px; }
+  .frame { grid-area: auto; }
+}
+@media (max-width: 600px) {
+  .fig-box { padding: 16px; }
+  .lane { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .two, .outs { grid-template-columns: minmax(0, 1fr); }
+  .frame { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .frame .arrow { transform: rotate(90deg); justify-self: start; }
+}
+</style>
+</head>
+<body>
+<article>
+  <h1>从消息提醒到可靠执行：我们做企业 AI 助理的实践</h1>
+  <p class="lede">模型已经能读邮件、看聊天、调接口，为什么一个可靠的企业助理还是很难做？这是我们做 Relay 这几个月里反复遇到的问题。</p>
+  <p class="meta"><time datetime="2026-10-22">2026 年 10 月 22 日</time> · Relay 团队</p>
+
+  <p>Relay 是我们公司内部的 AI 助理。它连接飞书邮箱、日历、审批、群聊和业务系统，把散落的消息整理成一件件事，替同事起草回复，并把需要来回追的事跟到办完。</p>
+  <p>刚开始我们以为难点在模型：能不能读懂邮件、认出待办、正确调用工具。真正用起来以后才发现，模型只是其中一部分。更难的是另外几件事：什么值得打扰人，回答问题需要的资料在哪里，对方回了一句话算不算办完，以及助理怎么证明自己真的做完了。</p>
+  <p>这篇文章按我们遇到问题的顺序，记录做法、原因和还没解决的部分。文中的数据都注明了来源。</p>
+
+  <h2>一、识别得越多，用户反而越忙</h2>
+  <p>最初的流程很直接：消息进来，模型判断，建成事项，推给用户。功能上没有问题。但我们回看早期连续三天的数据时，发现了一个明显的问题。</p>
+  <div class="table">
+    <table>
+      <thead><tr><th>用户</th><th class="num">每天收到的信号</th><th class="num">每天新建的事项</th><th class="num">每天实时推送</th></tr></thead>
+      <tbody>
+        <tr><td>用户 A</td><td class="num">2,232</td><td class="num">9.3</td><td class="num">9.0</td></tr>
+        <tr><td>用户 B</td><td class="num">755</td><td class="num">23.0</td><td class="num">22.7</td></tr>
+        <tr><td>用户 C</td><td class="num">264</td><td class="num">22.0</td><td class="num">22.0</td></tr>
+        <tr><td>用户 D</td><td class="num">193</td><td class="num">14.0</td><td class="num">14.0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>几乎每个被识别出来的事项都会实时推给用户。三天里新建的约 400 个事项，约 390 个还没有关闭。没关闭不一定是用户没处理，也可能是在等对方回复，或者系统缺少自动关闭的依据。但结论很清楚：识别出多少事项，不等于给用户创造了多少价值。如果每天推二十多条，只是把邮件和群里的消息换个地方再说一遍，Relay 就只是多了一个通知入口。</p>
+  <p>所以我们先改的是：什么时候该打扰人。</p>
+
+  <h2>二、通知分级：帮人管注意力，而不是抢注意力</h2>
+  <p>现在每件要告诉用户的事，会被分到四档之一：</p>
+  <div class="table">
+    <table>
+      <thead><tr><th>档位</th><th>什么事</th><th>怎么说</th></tr></thead>
+      <tbody>
+        <tr><td>立刻说</td><td>今天要本人处理的事（含今天的会、缺卡）、标了紧急的、来自上级的</td><td>马上推送</td></tr>
+        <tr><td>汇总</td><td>不急的审批、一般邮件、在等别人的事有了进展</td><td>工作日 11:30、16:30 一起说，早上的简报也算一次</td></tr>
+        <tr><td>只进简报</td><td>知会类信息</td><td>只出现在早上的简报里</td></tr>
+        <tr><td>静默</td><td>用户明确说过不用提醒的</td><td>不推送，只在网页看板里跟踪</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>判断不了的一律进汇总。宁可晚一点说，也不要多打断一次。</p>
+
+  <figure class="fig" aria-label="示意图：新事项被分进四个档位">
+    <div class="fig-box">
+      <div class="lane">
+        <div class="lane-h"><b>立刻说</b><span>每小时最多 3 次</span></div>
+        <div class="track">
+          <span class="chip t1">今天 14:00 的会<em>占 1 个名额</em></span>
+          <span class="chip t4">付款审批，今天截止<em>占 1 个名额</em></span>
+          <span class="chip crit t7">分拨中心系统故障<em>关键事项 · 不占名额</em></span>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="lane-h"><b>汇总</b><span>11:30 · 16:30</span></div>
+        <div class="track">
+          <span class="chip t2">一般报销审批</span>
+          <span class="chip t5">供应商周报邮件</span>
+          <span class="chip t8">Budi 交了运单明细</span>
+        </div>
+      </div>
+      <div class="lane">
+        <div class="lane-h"><b>只进简报</b><span>早上一起看</span></div>
+        <div class="track"><span class="chip t3">系统维护通知</span></div>
+      </div>
+      <div class="lane">
+        <div class="lane-h"><b>静默</b><span>只在看板跟踪</span></div>
+        <div class="track"><span class="chip dim t6">你说过不用提醒的审批类型</span></div>
+      </div>
+    </div>
+    <figcaption>新事项依次到达，按事实和用户规则分进四档。关键事项不受每小时次数限制。</figcaption>
+  </figure>
+
+  <h3>“立刻说”也要分轻重</h3>
+  <p>普通的“今天要处理”有每小时次数上限，默认 3 次。但上限会带来新问题：如果上午 9:10 出了严重的运营事故，而这一小时的名额刚好用完，总不能等到 11:30 再说。</p>
+  <p>所以“立刻说”里又分出一类关键事项：标了紧急的事（事故、客户或上级催办、今天不处理就有明显后果），上级链（直属上级、上级的上级）找他，以及他自己说过“这类随时告诉我”的。关键事项不受次数限制，在免打扰时段也会说。另外，一般的“今天要处理”超了名额不会被降到汇总，而是等下一个名额空出来再说。</p>
+
+  <h3>同一件事，不反复打断</h3>
+  <p>业务系统可能连续报告同一个故障：10:00 出现异常，10:10 开始排查，10:20 定位原因，10:30 恢复。每次变化都推一条，用户就被同一件事打断四次。</p>
+  <p>现在同一件事（同一个邮件线程、同一张审批、业务系统里同一个事件）30 分钟内又有动静时，Relay 会原地更新上次发出的那张卡片，不另发消息。只有从一般升级成紧急，才另发一条。</p>
+
+  <figure class="fig" aria-label="示意图：同一故障的四次状态变化，对比逐条推送和原地更新卡片">
+    <div class="fig-box">
+      <div class="two">
+        <div class="col">
+          <div class="col-h">每次变化推一条 · <span>打断 4 次</span></div>
+          <div class="ping t1">10:00 系统出现异常</div>
+          <div class="ping t2">10:10 技术团队开始排查</div>
+          <div class="ping t3">10:20 已定位原因</div>
+          <div class="ping t4">10:30 系统恢复正常</div>
+        </div>
+        <div class="col">
+          <div class="col-h good">原地更新同一张卡片 · <span>打断 1 次</span></div>
+          <div class="live-card t1">
+            <b>分拨中心系统异常</b>
+            <div class="cyc">
+              <span class="c1">10:00 系统出现异常</span>
+              <span class="c2">10:10 技术团队开始排查</span>
+              <span class="c3">10:20 已定位原因</span>
+              <span class="c4">10:30 系统恢复正常</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>同一件事在 30 分钟内的后续变化只更新原来的卡片。</figcaption>
+  </figure>
+  <div class="rule"><p>事项是持续存在的业务对象，通知只是它某个状态的一次呈现。</p></div>
+
+  <h3>偏好写成规则，由代码执行</h3>
+  <p>以前用户说“这类审批不用提醒我”，系统只是把这句话存进记忆，下次能不能做到，取决于模型有没有读到、有没有理解对。</p>
+  <p>现在偏好会存成结构化规则：针对某个联系人、某类审批、某个群或某个业务系统，指定立刻说、汇总、只进简报或静默。规则在推送前由代码执行，模型不能绕过。规则可以在对话里说，在卡片和看板上点“少提醒这类”，也可以在网页的提醒设置里改。</p>
+  <p>有两个细节：</p>
+  <ul>
+    <li>以前存在记忆里的提醒偏好，不会直接变成规则，而是先整理成候选规则，在简报和网页里由用户确认后才生效。AI 可以提建议，但不能未经确认就永久改变一个人的通知方式。</li>
+    <li>即使命中了“少提醒”规则，真正紧急的事仍然会说，并说明为什么，避免一条规则误伤重大事项。</li>
+  </ul>
+  <p>通知量是否真的下降、重要的事是否仍然及时送到，还需要用生产数据验证。我们已经能按人、按天统计推送次数、新建事项和亲自处理数，正在积累对比数据。</p>
+
+  <h2>三、事项档案：上下文按事组织，而不是越多越好</h2>
+  <p>有一次审一份合同，为了回答一个问题，Relay 先后搜索了约 25 次：邮件、附件、飞书表格、群聊、会议记录，再把结果拼成答案。模型并不是读不懂这些材料，问题在于系统没有提前把材料和这件事关联起来。每次被问到同一件事，都要重新找一遍，既费调用，又容易漏掉证据、混进无关信息。</p>
+  <p>为此我们给每个事项建了一份事项档案（Case File）。档案不复制原文，只记每份材料的来源、时间、关联依据和读取方式。用户问到这件事时，Relay 先看档案，再按需打开原文。这对应了上下文工程里两个常用的思路：需要时才加载（just-in-time retrieval），先看结构再看细节（progressive disclosure）。</p>
+
+  <figure class="fig" aria-label="示意图：合同审核事项的档案，强关联、弱关联和打开原文时的校验">
+    <div class="fig-box">
+      <span class="core">事项：合同审核</span>
+      <div class="grp">
+        <div class="fig-h">强关联</div>
+        <div class="track">
+          <span class="chip t1">同一邮件线程 · 3 封往来</span>
+          <span class="chip t2">附件 Contract.docx、Redline.docx</span>
+          <span class="chip t3">正文里的飞书表格 IT Review Items</span>
+          <span class="chip t3">这件事所在的群</span>
+          <span class="chip t4">Contract Review 会议的妙记</span>
+        </div>
+      </div>
+      <div class="grp">
+        <div class="fig-h">弱关联 · 只是同一个人，未必和这件事有关</div>
+        <div class="track">
+          <span class="chip dim t5">对方最近的私聊</span>
+          <span class="chip dim t5">对方参加的其他会</span>
+        </div>
+      </div>
+      <div class="gate">
+        <b>打开原文时</b>
+        <span class="chk t6">还在这件事的档案里</span>
+        <span class="chk t7">这件事属于你</span>
+        <span class="chk t8">以你的飞书身份可读</span>
+      </div>
+    </div>
+    <figcaption>档案只记材料的位置和关联依据。打开原文前，每次都重新校验三项条件。</figcaption>
+  </figure>
+
+  <h3>关联不等于相关</h3>
+  <p>开发时我们踩过一个坑：系统把联系人姓名的一部分当成了事项关键词，结果只因为出现了同一个人，就把无关的材料归到同一件事里。</p>
+  <p>现在材料分强关联和弱关联。强关联包括同一个邮件线程里的往来和附件，正文、表单或聊天里出现的飞书链接，审批单，这件事所在的会话，以及提到同样内容的群消息和会议。只是同一个人的材料（对方最近的私聊、对方参加的会、以前和同一个人的事）标为弱关联，单独展示。人名不再算“同一件事”的关键词。</p>
+  <p>即使是强关联，模型也不能直接拿来当事实。提示词要求它引用前先读原文，确认内容确实支持当前结论。</p>
+
+  <h3>能被检索到，不等于有权读取</h3>
+  <p>档案带来一个安全问题：一份材料被关联进来，是否意味着任何能打开这件事的人都能看？当然不是。</p>
+  <p>每次打开原文时，系统都会重新校验：这份材料是否还在这件事当前的档案里，这件事是否属于他，以及他本人是否有权限。附件、文档和聊天以他本人的飞书身份读取。私聊只取他本人的；群聊只取他所在的群（库里有他的发言或他被@过，或者飞书以他的身份确认他是成员）。</p>
+  <div class="rule"><p>能被检索到不等于有权读取；关联进来不等于内容可信。</p></div>
+
+  <h2>四、回复了，不代表办完了</h2>
+  <p>早期 Relay 有个典型问题：一检测到用户回了邮件，就把事项改成“等对方回复”；对方一有新消息，有时又直接把事项关掉。真实业务不是这样。研发回一句“原因找到了，今晚发版修复”，显然不代表问题已经修好。</p>
+  <p>现在邮件（同一线程和跨线程）、群聊、私聊里的新消息，都会对照“在等的事”判断它带来了什么，结果只有四种：</p>
+
+  <figure class="fig" aria-label="示意图：同一件在等的事，四条不同的新消息分别被判断为答应了、只是回应、办完了和无关">
+    <div class="fig-box">
+      <div class="goal"><b>在等的事：</b>研发修复登录故障</div>
+      <div class="frames">
+        <div class="frame q1">
+          <div class="bubble"><small>研发 · 15:20</small>原因找到了，今晚发版修复</div>
+          <span class="arrow">→</span>
+          <div class="out commit"><b>答应了</b>保持开启，今晚到点再核实</div>
+        </div>
+        <div class="frame q2">
+          <div class="bubble"><small>研发 · 15:22</small>收到，我先看一下</div>
+          <span class="arrow">→</span>
+          <div class="out ack"><b>只是回应</b>继续等，并告诉用户</div>
+        </div>
+        <div class="frame q3">
+          <div class="bubble"><small>研发 · 22:40</small>已发版，登录恢复正常，监控无报错</div>
+          <span class="arrow">→</span>
+          <div class="out done"><b>办完了</b>给出了要的结果，关闭事项</div>
+        </div>
+        <div class="frame q4">
+          <div class="bubble"><small>群公告 · 16:05</small>周五团建，大家报个名</div>
+          <span class="arrow">→</span>
+          <div class="out unrel"><b>无关</b>不改变状态</div>
+        </div>
+      </div>
+    </div>
+    <figcaption>判断的依据始终是“在等的事”要的结果，而不是对方有没有回话。</figcaption>
+  </figure>
+
+  <p>判断始终围绕最初的目标。如果在等的就是约一个会，会议邀请就是办完的证据；如果在等的是修复故障，会议邀请什么也证明不了。消息里还说着后续步骤的（“方案定了，明天上线”），按“答应了”处理，等后续真正做完。</p>
+  <div class="rule"><p>要判断的不是“有没有新动作”，而是“这些动作有没有推进原来的目标”。</p></div>
+  <p>这部分有一套来自真实场景的评测，目前 35 个用例，覆盖群聊进展、邮件同线程和跨线程、回复后还要不要等、私聊里谁让谁做事。每次出现新的误判，就加一个用例。</p>
+
+  <h2>五、长期任务：从“做了”到“可验证地做成”</h2>
+  <p>长期任务（Mission）是用户交给 Relay 在后台推进的事，比如“约齐三个人下周开评审会，跟到都接受”“盯着客户 A 的报价直到确认”。它会跨越很多次唤醒，找人、读文档、改表格、等回复。这时最危险的问题之一是目标漂移：用户只要“给我一个结论”，几轮沟通之后，模型可能把任务理解成了“整理一份详细清单”。看上去更完整，其实已经偏离了原来的目标。</p>
+
+  <h3>验收清单：只能改状态，不能改条目</h3>
+  <p>接下任务时，Relay 按用户原话定下 1 到 6 条验收标准。执行中 Relay 只能标记每条的状态并附上证据，不能修改条目。只有用户本人能在对话或网页上改。计划可以随时调整，完成标准不能被悄悄降低。</p>
+
+  <h3>每一条都要有证据，而且证据要指向真实发生的事</h3>
+  <p>能当证据的只有三类：本任务里执行成功、并且写入后核对一致的操作；用户的邮件或消息；任务时间线里记下的对方原话。Relay 自己的总结不算证据。“收到”不算完成，“预计月底完成”只是承诺，“找到原因了”也不等于“已经修复”。</p>
+  <p>对于业务结果类的条目，比如“A 网点的异常件数降到 20 以下”，清单可以绑定一个飞书表格单元格和判断规则。接任务时记下基线，结束前由连接器重新读数。这个数字来自表格，不由模型填写。</p>
+
+  <h3>结束前独立核对</h3>
+  <p>执行者认为办成了的时候，会启动一次独立核对。核对者只看四样东西：用户原话、验收清单、证据原文、准备发给用户的结论。它看不到执行者的推理过程，逐条判断“证据是否真的支持这一条”。不通过就退回继续办；连续两轮不通过，就停止自动重试，交给用户判断。</p>
+
+  <figure class="fig" aria-label="示意图：验收清单逐条附上证据，独立核对第一轮退回、第二轮通过">
+    <div class="fig-box">
+      <div class="fig-h">任务：跟进系统异常修复 · 验收清单只能改状态</div>
+      <div class="ck">
+        <div class="ck-i"><span class="box"><b class="t1">✓</b></span>确认异常原因 <code class="ev t1">signal:482 研发的说明邮件</code></div>
+        <div class="ck-i"><span class="box"><b class="t5">✓</b></span>完成修复并部署 <code class="ev t3">log:31 “今晚发版”</code><code class="ev t5">log:36 “已发版”</code></div>
+        <div class="ck-i"><span class="box"><b class="t6">✓</b></span>验证业务恢复正常 <code class="ev t6">action:57 读回一致</code></div>
+      </div>
+      <div class="rv">
+        <div class="fig-h">独立核对 · 只看原话、清单、证据原文和结论</div>
+        <div class="verdict bad t4">第 1 轮 · 退回：第 2 条的证据只是“今晚发版”，是承诺，不是已部署</div>
+        <div class="verdict good t7">第 2 轮 · 通过：三条都有证据支持</div>
+        <div class="verdict hand t8">如果两轮都不通过：停下来，交给用户判断</div>
+      </div>
+    </div>
+    <figcaption>每条验收都要指向真实发生的事；核对者看不到执行者的推理过程。</figcaption>
+  </figure>
+
+  <p>这不能完全消除误判，但能降低执行者“自己说自己做完了”的风险。我们用 10 个来自真实失败的场景评测核对者（例如对方只回了“1”、只回了“收到”、把“发了邮件”说成“对方已确认”、只做了一半），每个场景跑两次，20 次判断全部符合预期。这是开发阶段的评测，只说明已覆盖场景的判断正确，不代表生产环境的整体准确率。</p>
+
+  <h3>每次醒来都从干净的上下文开始</h3>
+  <p>长期任务不再每次带上全部历史对话。每次醒来，Relay 只拿到：为什么醒、用户原话、验收清单、计划、工作笔记，以及最近的时间线和操作记录。上下文更小，任务在多轮之后偏离目标的风险也更低。</p>
+
+  <h3>写入后读回核对：接口成功不等于写对了</h3>
+  <p>写飞书表格、提交多维表格记录、发消息、建任务之后，Relay 会按对象把结果读回来核对：表格重读单元格，多维表格按记录 ID 查询，消息确认确实存在。</p>
+
+  <figure class="fig" aria-label="示意图：写入表格后读回核对，三种结果">
+    <div class="fig-box">
+      <div class="steps">
+        <span class="chip t1">写入：表格 B12 = 18</span><span class="t2">→</span>
+        <span class="chip t2">接口返回成功</span><span class="t3">→</span>
+        <span class="chip t3">读回 B12</span>
+      </div>
+      <div class="outs">
+        <div class="verdict good t4"><b>一致</b><br>可以作为证据</div>
+        <div class="verdict bad t5"><b>不一致</b><br>如实告诉用户，不能当证据</div>
+        <div class="verdict hand t6"><b>没能核对</b><br>标为“未核对”，不自动重试</div>
+      </div>
+    </div>
+    <figcaption>读回的结果只会是三种之一。“未核对”不当成失败，避免重复提交产生重复记录。</figcaption>
+  </figure>
+
+  <p>评测和自动化测试只能说明已覆盖场景的正确性，实际效果还要看长期任务在生产中的表现。</p>
+
+  <h2>六、可靠性也取决于工具和交互层</h2>
+  <p>不少问题不是模型推理错了，而是出在工具调用和最终呈现上。比如邮件里的特殊字符在飞书卡片上没有转义，会显示错乱，甚至变成可点击的链接；卡片超过平台的大小限制会被拒绝，退回纯文本以后按钮也没了。</p>
+  <p>现在卡片里的业务内容按飞书富文本规则转义，邮件里的链接不会在 Relay 卡片上变成可点击链接，只有飞书和 Relay 自己的链接可以点。卡片超过 30 KB 时自动换成精简版，还超就截断，并提示去网页查看。纯文本兜底时也会去掉标签和 markdown 记号。</p>
+  <p>还有一次教训：为了省 token，我们裁剪了一部分工具定义，结果误删了表格写入工具，模型就告诉用户“我没有写入权限”。实际测量后发现，工具定义的开销完全可以接受。最后我们保留了完整的工具集，改用事项档案帮模型更快找到该用的工具和材料。</p>
+  <div class="rule"><p>优化之前先测量瓶颈，不要为了少几个工具、省一点 token 而牺牲能力。</p></div>
+
+  <h2>七、从协作信息走向业务系统</h2>
+  <p>如果 Relay 只能处理邮件和聊天，能力仍然有限。公司真正的业务在 TMS、WMS、ERP 和财务系统里：某个运单现在到哪了，分拨中心还有多少异常件，这辆车的运输任务是否超时，能不能重新分配这批运单。</p>
+  <p>我们把接入业务系统的能力分成三层：</p>
+  <div class="table">
+    <table>
+      <thead><tr><th>层次</th><th>做什么</th><th>怎么做</th></tr></thead>
+      <tbody>
+        <tr><td>感知</td><td>业务系统有需要人处理的事时，主动推给 Relay</td><td>带签名的推送接口，按事件编号去重，同一业务对象的事件归成一件事</td></tr>
+        <tr><td>查询</td><td>对话里按需查实时业务数据</td><td>用 MCP 作为标准接入方式</td></tr>
+        <tr><td>执行</td><td>经用户授权后操作业务系统，并核对结果</td><td>先开放只读查询，再逐步开放低风险写操作</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>感知这一层 Relay 已经在用，查询和执行是下一步要做的。MCP 解决的是“怎么接”，替代不了业务权限、幂等控制和操作审计。凡是改变业务状态的操作，都要走同一条路：准备 → 用户确认 → 执行 → 读回核对 → 留下审计记录。</p>
+
+  <h2>八、五条工程原则</h2>
+  <h3>1. 管理注意力，而不是增加通知</h3>
+  <p>助理的价值不在于发现了多少事，而在于准确判断哪些事需要人立刻介入。通知变少不是目标，要优化的是无效打断、重要事项漏报和用户实际处理的效率。</p>
+  <h3>2. 按事组织上下文，而不是无限堆积</h3>
+  <p>更大的上下文窗口不一定带来更好的答案。围绕具体事项建立可追溯的资料索引，引用前读原文核实。</p>
+  <h3>3. 围绕目标判断进展，而不是围绕消息判断状态</h3>
+  <p>收到回复不代表办完，找到原因不代表解决，操作成功也不一定达成了业务目标。状态要由目标、证据和实际结果共同决定。</p>
+  <h3>4. 模型负责理解和推理，系统负责约束和验证</h3>
+  <p>权限、幂等、通知规则、审计和关键业务约束，交给确定性的代码。重要操作要分清四个层次：操作已发起，接口返回成功，结果已核对，业务目标真正达成。只有最后一层才算办完。</p>
+  <h3>5. 持续评估比一次性优化更重要</h3>
+  <p>真实环境会不断出现新的说法、新的业务规则和新的异常。每一次误判、漏报、重复执行或错误关联，都应该变成一个新的回归用例。自动化测试回答“是否符合已知预期”，生产指标回答“是否真的改善了体验和结果”。</p>
+
+  <h2>九、还没解决的问题</h2>
+  <ol>
+    <li><strong>通知分级的实际收益还没有量化。</strong>需要对比改造前后的无效打断、重要事项漏报和处理情况。</li>
+    <li><strong>跨渠道的同一件事还会重复建。</strong>同一个故障可能同时出现在邮件、群聊和业务系统里。档案能把材料聚到一起，但还没有完全避免不同渠道各建一个事项。</li>
+    <li><strong>新旧长期任务的验收方式不同。</strong>新任务使用验收清单和独立核对，验收机制出现之前创建的任务仍按原来的方式结束，需要明确的迁移或兼容策略。</li>
+    <li><strong>业务系统的查询和执行还没形成闭环。</strong>目前业务系统只能把事件推给 Relay，查询和授权操作还要等 MCP 接入。</li>
+  </ol>
+
+  <h2>十、下一步</h2>
+  <p>接下来我们不再以增加数据源和功能数量为主要目标，而是围绕执行可靠性、业务系统连接和可量化的价值来建设。</p>
+  <ol>
+    <li><strong>观察长期任务验收的真实表现。</strong>重点看：任务是否按原始验收条件完成，有没有错误关闭，写入后核对是否可靠，独立核对能否拦住证据不足的结论，交给人判断的时机是否合理。高风险操作仍然保留用户确认。</li>
+    <li><strong>补齐统一的指标。</strong>管理员已经能看到通知统计和质量基线，下一步按维度补齐：注意力（无效打断率、漏报率、通知处理率）、上下文（关联准确率、错误引用率、重复检索次数）、执行（目标完成率、误关闭率、核对成功率）、成本（耗时、token、工具调用）和用户价值（节省的时间、人工接管率、办结周期）。暂时测不了的，先建采集和人工抽样，不提前给出没有依据的准确率。</li>
+    <li><strong>接入业务系统。</strong>推送接口负责感知，MCP 负责查询和授权操作；先只读，后低风险写入，所有改变业务状态的操作都经过权限检查、幂等控制、必要的用户确认、审计和结果核对。</li>
+    <li><strong>识别同一件业务事件。</strong>从“同一事项的资料关联”升级到“同一业务事件的统一识别”，让 Relay 回答清楚：发生了什么，谁在处理，进展如何，是否已经解决，下一步需要谁。</li>
+  </ol>
+
+  <h2>结语：从能执行，到值得信任</h2>
+  <p>回头看，我们一开始关心的是模型能做什么：能不能读懂邮件、认出待办、调用工具、生成回复。真实环境把我们的注意力转向了另外几个问题：它知不知道什么时候不该打扰人？能不能找到正确的业务背景，而不是拼接不相关的信息？会不会始终守住用户最初的目标？能不能证明自己真的办完了？信息不足、执行失败或证据不够时，它知不知道该停下来交给人？</p>
+  <p>这些问题靠更强的模型解决不了，需要上下文组织、状态管理、权限、工具编排、结果核对、可观测性和持续评估一起起作用。</p>
+  <div class="rule"><p>让模型负责理解和推理，让系统负责约束和验证，让工具负责执行，让证据决定结果，让人保留最终决定权。</p></div>
+  <p>衡量一个企业助理，不该看它每天调用了多少次模型、执行了多少次工具、发了多少条通知，而要看它真正解决了多少问题，减少了多少不必要的人工操作，以及同事在多大程度上可以信任它的判断和执行结果。</p>
+
+  <hr>
+  <p class="foot">第一节的数据来自 Relay 早期连续三天的统计，已隐去用户身份；评测结果为开发阶段数据。示意图中的事项和人名为举例。长期任务的验收设计参考了 Anthropic 关于长时间运行 agent 的工程实践。</p>
+</article>
+</body>
+</html>
