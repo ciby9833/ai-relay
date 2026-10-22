@@ -3,6 +3,7 @@ import { api, type ClosureReview, type NotificationDay, type NotificationStats, 
 import { t, intlLocale } from "../i18n";
 import Icon from "./Icon";
 import CriterionEvidence from "./CriterionEvidence";
+import Performance from "./Performance";
 
 const kinds: (keyof NotificationDay)[] = ["interrupt", "digest", "brief", "meeting", "mission", "other"];
 const metrics = [
@@ -61,7 +62,7 @@ function Review({ closure, onSaved }: { closure: ClosureReview; onSaved: () => v
   </details>;
 }
 
-export default function Admin() {
+function Quality() {
   const [days, setDays] = useState(7);
   const [revision, setRevision] = useState(0);
   const [data, setData] = useState<{ rows: NotificationStats[]; previous: NotificationStats[]; quality: QualityStats; oldQuality: QualityStats } | null>(null);
@@ -124,4 +125,12 @@ export default function Admin() {
         </section>
       </>}
   </div></div></main>;
+}
+
+export default function Admin() {
+  const [tab, setTab] = useState<"quality" | "performance">("quality");
+  return <><nav className="admin-tabs" aria-label={t("perfAdminNav")}>
+    <button className="btn secondary" aria-pressed={tab === "quality"} onClick={() => setTab("quality")}>{t("adminQuality")}</button>
+    <button className="btn secondary" aria-pressed={tab === "performance"} onClick={() => setTab("performance")}>{t("perfTitle")}</button>
+  </nav>{tab === "quality" ? <Quality /> : <Performance />}</>;
 }

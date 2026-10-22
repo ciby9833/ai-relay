@@ -23,6 +23,9 @@ services:
       - ./backend:/srv
 
   web:
+    depends_on:
+      api:
+        condition: service_healthy
     build: !reset null
     image: node:22-alpine
     working_dir: /app

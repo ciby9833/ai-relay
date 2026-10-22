@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 5s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets: [node-exporter:9100]
+    sample_limit: 5000
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'node_(cpu_seconds_total|load1|memory_.+|filesystem_.+|disk_.+|vmstat_oom_kill|time_seconds|scrape_collector_success)'
+        action: keep
+  - job_name: cadvisor
+    static_configs:
+      - targets: [cadvisor:8080]
+    sample_limit: 5000
+    metric_relabel_configs:
+      - source_labels: [container_label_com_docker_compose_project]
+        regex: relay
+        action: keep
+      - source_labels: [container_label_com_docker_compose_service]
+        regex: 'api|worker|feishu|db|web|prometheus|node-exporter|cadvisor'
+        action: keep
+      - source_labels: [__name__]
+        regex: 'container_(cpu_usage_seconds_total|memory_working_set_bytes|last_seen|network_receive_bytes_total|network_transmit_bytes_total)'
+        action: keep
+      - source_labels: [container_label_com_docker_compose_service]
+        target_label: service
+      - regex: 'container_label_.*|image|name'
+        action: labeldrop
+  - job_name: api
+    static_configs:
+      - targets: [api:9101]
+    sample_limit: 5000
+  - job_name: worker
+    static_configs:
+      - targets: [worker:9101]
+    sample_limit: 5000
+  - job_name: feishu
+    static_configs:
+      - targets: [feishu:9101]
+    sample_limit: 5000

@@ -30,7 +30,9 @@ def _providers() -> dict[str, tuple[Provider, list[str]]]:
         from app.llm.gemini_provider import GeminiProvider
 
         providers["gemini"] = (GeminiProvider(genai_client()), _split(settings.gemini_models))
-    return providers
+    from app.telemetry import ObservedProvider
+
+    return {name: (ObservedProvider(provider), models) for name, (provider, models) in providers.items()}
 
 
 def available_models() -> list[str]:

@@ -7,7 +7,8 @@ from fastapi import FastAPI
 
 from app.api import assistant, auth, blog, conversations, feishu_events, integrations, missions, proactive
 from app import insights
-from app.api import quality
+from app.api import quality, performance
+from app import telemetry
 from app.config import get_settings
 from app.feishu.client import FeishuClient
 from app.llm.google import keep_fresh
@@ -36,10 +37,14 @@ async def lifespan(app: FastAPI):
         # 文章包有问题不能拖垮助手本身：保留数据库里上一版文章，记日志后照常启动
         logging.getLogger("relay.blog").exception("博客文章导入失败，继续使用数据库中的上一版")
     refresher = asyncio.create_task(keep_fresh())  # Google 访问令牌后台提前刷新
-    async with httpx.AsyncClient(timeout=30) as http:
-        app.state.feishu = FeishuClient(get_settings(), http)
-        yield
-    refresher.cancel()
+    monitoring = telemetry.start()
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            app.state.feishu = FeishuClient(get_settings(), http)
+            yield
+    finally:
+        refresher.cancel()
+        await telemetry.stop(monitoring)
 
 
 app = FastAPI(title="Relay", lifespan=lifespan)
@@ -60,6 +65,7 @@ app.include_router(missions.router)
 app.include_router(integrations.router)
 app.include_router(blog.router)
 app.include_router(quality.router)
+app.include_router(performance.router)
 
 
 @app.get("/api/health")

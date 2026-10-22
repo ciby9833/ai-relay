@@ -1,0 +1,81 @@
+# Optional Linux / rootful Docker overlay. The original five services keep their roles.
+# docker compose -f compose.yml -f compose.monitoring.yml up -d --build
+services:
+  api:
+    environment:
+      MONITORING_ENABLED: "true"
+      MONITORING_PORT: "9101"
+      PROMETHEUS_URL: http://prometheus:9090
+  worker:
+    environment:
+      MONITORING_ENABLED: "true"
+      MONITORING_PORT: "9101"
+  feishu:
+    environment:
+      MONITORING_ENABLED: "true"
+      MONITORING_PORT: "9101"
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+      - --query.max-concurrency=4
+      - --query.timeout=5s
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - monitoring-data:/prometheus
+    mem_limit: 512m
+    cpus: 0.50
+    security_opt: ["no-new-privileges:true"]
+    # No public ports and no dependency from a business service to this service.
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containerd/.+)($$|/)
+      # Bridge networking does not expose the host network namespace. Do not mislabel
+      # exporter-container traffic as host traffic; application traffic comes from cAdvisor.
+      - --no-collector.netdev
+      - --no-collector.netstat
+      - --no-collector.sockstat
+    volumes:
+      - /:/host:ro,rslave
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.25
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:0.60.6
+    restart: unless-stopped
+    # cAdvisor's documented Linux collection privileges are confined to this collector.
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --disable_metrics=percpu,sched,tcp,udp,hugetlb,referenced_memory,resctrl
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    mem_limit: 256m
+    cpus: 0.50
+
+volumes:
+  monitoring-data:

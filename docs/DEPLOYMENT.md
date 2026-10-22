@@ -1,5 +1,7 @@
 # 部署与发布
 
+可选的管理员服务器资源、任务运行与模型调用监控见 [系统性能监控](MONITORING.md)。使用独立 Compose 叠加文件启用，基础部署默认关闭，不新增业务表迁移。
+
 ## 公开仓库范围
 
 本机发布源仅限 `/Users/ellis/Documents/CargoPPT/relay`，仓库固定为

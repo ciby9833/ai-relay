@@ -362,7 +362,20 @@ export interface QualityStats {
   turn_errors: { at: string; errors: string[] }[];
 }
 
+export interface PerformanceSeries { labels: Record<string, string>; points: [number, number | null][] }
+export interface PerformanceData {
+  status: "disabled" | "unavailable" | "partial" | "ok";
+  gpu: "not_configured";
+  current: Record<string, PerformanceSeries[]>;
+  history: Record<string, PerformanceSeries[]>;
+  queue: Record<string, { due: number; oldest_seconds: number }> | null;
+  targets: Record<string, "up" | "down" | "unknown">;
+  errors: string[]; window: string; collected_at: number | null;
+  start?: number; end?: number; step?: number;
+}
+
 export const api = {
+  performance: (window: string, signal?: AbortSignal) => request<PerformanceData>(`/admin/performance?window=${encodeURIComponent(window)}`, { signal }),
   notificationStats: (days: number, offset = 0) => request<NotificationStats[]>(`/insights/notifications?days=${days}&offset=${offset}`),
   qualityStats: (days: number, offset = 0) => request<QualityStats>(`/insights/quality?days=${days}&offset=${offset}`),
   reviewClosure: (id: number, verdict: ReviewVerdict, reason: string) => request(`/insights/missions/${id}/review`, json("POST", { verdict, reason })),

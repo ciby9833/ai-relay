@@ -1988,6 +1988,31 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 /* Operations quality uses the same type, controls and semantic colors as the workspace. */
 .admin-page { width: min(1120px, 100%); margin: 0 auto; padding: 36px 28px 64px; }
 .admin-page h1 { margin: 0; font: 600 26px/1.3 var(--serif); }
+.admin-tabs { display: flex; flex: 0 0 auto; gap: 8px; padding: 12px 24px; border-bottom: 1px solid var(--border); }
+.admin-tabs button[aria-pressed="true"] { background: var(--bg-sunken); border-color: var(--border-strong); color: var(--text); }
+.perf-page { overflow-wrap: anywhere; }
+.perf-notice { padding: 14px 16px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 10px; margin: 16px 0; }
+.perf-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+.perf-trend { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--surface); }
+.perf-trend h3 { margin: 0; font-size: 13px; font-weight: 500; }
+.perf-trend svg { display: block; width: 100%; height: 100px; overflow: hidden; }
+.perf-line { stroke: var(--accent); stroke-width: 2; fill: none; vector-effect: non-scaling-stroke; }
+.perf-baseline { stroke: var(--border); stroke-width: 1; fill: none; }
+.perf-chart-time { display: flex; justify-content: space-between; gap: 16px; margin-top: 8px; font-size: 10px; }
+.perf-chart-time span:last-child { text-align: right; }
+.perf-details { margin: 20px 0; font-size: 13px; }
+.perf-details > summary { cursor: pointer; color: var(--text-2); padding: 8px 0; }
+.perf-details[open] > summary { margin-bottom: 12px; }
+.perf-core-list { display: flex; gap: 10px 24px; flex-wrap: wrap; }
+.perf-device { display: block; font-weight: 400; }
+.perf-page .admin-table-wrap table { min-width: 560px; }
+.perf-page .admin-metric strong { font-size: 25px; }
+@media (max-width: 650px) {
+  .admin-tabs { padding: 10px 16px; }
+  .perf-charts { grid-template-columns: 1fr; }
+  .perf-page .admin-header { align-items: flex-start; flex-direction: column; }
+  .perf-page .admin-controls { flex-wrap: wrap; }
+}
 .admin-page h2 { font-size: 16px; font-weight: 600; margin: 0; }
 .admin-page section { margin-top: 32px; }
 .admin-header, .admin-section-head { display: flex; justify-content: space-between; gap: 12px 20px; align-items: center; }

@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # 主动流程（邮件分级、起草、简报）用的模型，provider:model；留空用默认模型
     triage_model: str = ""
 
+    # Optional observability; no dependency on the monitoring stack for business requests.
+    monitoring_enabled: bool = False
+    monitoring_port: int = 9101
+    prometheus_url: str = "http://prometheus:9090"
+
     @property
     def is_production(self) -> bool:
         return self.env.lower() == "production"

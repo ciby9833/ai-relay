@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import i18n, insights
+from app import i18n, insights, telemetry
 from app.proactive.settings import get_settings_row, language_of
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.tools import ToolContext, execute, tool_specs
@@ -319,7 +319,8 @@ async def _run_turn(
         _turn_stats.get({})["tool_calls"] = tool_calls
         for call in tool_uses:
             yield {"type": "tool_start", "name": call["name"]}
-            content, is_error = await execute(ctx, call["name"], call["input"], user_initiated)
+            with telemetry.work("tool"):
+                content, is_error = await execute(ctx, call["name"], call["input"], user_initiated)
             yield {"type": "tool_end", "name": call["name"], "ok": not is_error}
             results.append(
                 {
@@ -371,12 +372,13 @@ async def run_turn(session: AsyncSession, *, user: User, conversation: Conversat
     token = _turn_stats.set(stats)
     started, text_len, errors, outcome = time.monotonic(), 0, [], None
     try:
-        async for event in _run_turn(session, user=user, conversation=conversation, **kwargs):
-            if event["type"] == "text":
-                text_len += len(event["delta"])
-            elif event["type"] == "error":
-                errors.append(event["message"])
-            yield event
+        with telemetry.work("turn"):
+            async for event in _run_turn(session, user=user, conversation=conversation, **kwargs):
+                if event["type"] == "text":
+                    text_len += len(event["delta"])
+                elif event["type"] == "error":
+                    errors.append(event["message"])
+                yield event
         outcome = "forced_final" if stats["forced_final"] else ("answered" if text_len else ("error" if errors else "no_answer"))
     except Exception as exc:
         errors.append(f"{type(exc).__name__}: {str(exc)[:200]}")

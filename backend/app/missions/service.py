@@ -370,9 +370,12 @@ async def due(session: AsyncSession, limit: int = 5, feishu: FeishuClient | None
 
 
 async def run_due(session: AsyncSession, feishu: FeishuClient) -> None:
+    from app import telemetry
+
     for mission, reason in await due(session, feishu=feishu):
         try:
-            await run(session, feishu, mission, reason)
+            with telemetry.work("mission"):
+                await run(session, feishu, mission, reason)
         except Exception:
             logger.exception("任务 #%s 执行失败", mission.id)
             await session.rollback()

@@ -23,6 +23,7 @@ from app.proactive import chats
 from app.proactive.engine import run_for_user
 from app.proactive.push import push
 from app.scheduler.schedule import next_cron_run
+from app import telemetry
 
 logger = logging.getLogger("relay.worker")
 
@@ -135,18 +136,21 @@ async def main() -> None:
     async with httpx.AsyncClient(timeout=30) as http:
         feishu = FeishuClient(get_settings(), http)
         logger.info("worker 已启动，每 %s 秒检查一次", POLL_SECONDS)
+        telemetry.start()
         refresher = asyncio.create_task(keep_fresh())  # Google 访问令牌后台提前刷新  # noqa: F841
         while True:
             try:
                 for task_id in await claim_due_tasks():
                     try:
-                        await run_task(task_id, feishu)
+                        with telemetry.work("scheduled"):
+                            await run_task(task_id, feishu)
                         logger.info("任务 #%s 执行完成", task_id)
                     except Exception:
                         logger.exception("任务 #%s 执行失败", task_id)
             except Exception:
                 logger.exception("检查定时任务失败")
             await run_proactive(feishu)
+            telemetry.cycle_completed()
             await asyncio.sleep(POLL_SECONDS)
 
 
