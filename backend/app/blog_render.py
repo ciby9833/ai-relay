@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 NAVIGATION = (
     b'<relay-blog-navigation full-bleed style="display:block;min-height:89px">'
     b'</relay-blog-navigation>'
+    b'<relay-blog-toc></relay-blog-toc>'
     b'<script src="/blog-navigation.js" defer></script>'
 )
 OG_IMAGE = re.compile(
