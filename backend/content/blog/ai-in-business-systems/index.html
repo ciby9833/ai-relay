@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 不是许愿池：业务系统里的 AI 是怎么干活的</title>
+<meta name="description" content="同一个问题，AI 为什么一次答得准、一次编得像真的？从接话、上下文、知识库、工具调用到智能体，拆开 AI 在业务系统里的工作方式，再讲产品上怎么定义一个 AI 功能、怎么写方案。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI 不是许愿池：业务系统里的 AI 是怎么干活的">
+<meta property="og:description" content="同一个问题，AI 为什么一次答得准、一次编得像真的？拆开 AI 在业务系统里的工作方式，再讲怎么定义一个 AI 功能、怎么写方案。">
+<meta property="og:image" content="img/cover.jpg">
+<style>
+/* 单栏 720px 长文，沿用 Relay 的暖白与陶土色。
+   示意图用 HTML + 纯 CSS 动画（文章页不允许脚本），窄屏自动换行；减少动态效果时显示静态版本。 */
+:root {
+  --paper: #faf9f5; --sunken: #f0eee6; --card: #ffffff; --ink: #141413; --ink-2: #3d3d3a; --muted: #73726c;
+  --rule: #e2dfd3; --accent: #c96442; --accent-soft: #f5e6df;
+  --crit: #b53333; --crit-soft: #f7e2e0; --ok: #4e7d4a; --ok-soft: #e6efe2; --warn: #9a6b15; --warn-soft: #f6ecd6;
+  --blue: #3b6ea8; --blue-soft: #e3ecf6;
+  --display: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif;
+  --body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #262624; --sunken: #1f1e1d; --card: #30302e; --ink: #f5f4ef; --ink-2: #dcdad2; --muted: #a3a199;
+    --rule: #3e3e38; --accent: #d97757; --accent-soft: #3a2c25;
+    --crit: #e0796f; --crit-soft: #3d2523; --ok: #8fbf86; --ok-soft: #26321f; --warn: #d9a84e; --warn-soft: #382f1c;
+    --blue: #8db4e0; --blue-soft: #233041; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+img { max-width: 100%; height: auto; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.85 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased; }
+article { max-width: 720px; margin: 0 auto; padding-block: 56px 80px; }
+h1 { font: 700 clamp(30px, 5vw, 44px)/1.3 var(--display); margin: 0 0 16px; text-wrap: balance; }
+.lede { font-size: 19px; color: var(--ink-2); margin: 0 0 14px; }
+.meta { color: var(--muted); font-size: 14px; margin: 0 0 44px; }
+.part { font-size: 13px; letter-spacing: .12em; color: var(--accent); font-weight: 600; margin: 72px 0 -40px; }
+h2 { font: 700 26px/1.45 var(--display); margin: 60px 0 14px; text-wrap: balance; }
+h3 { font: 600 19px/1.5 var(--body); margin: 34px 0 10px; }
+p { color: var(--ink-2); margin: 0 0 18px; }
+strong { color: var(--ink); font-weight: 600; }
+ul, ol { color: var(--ink-2); margin: 0 0 18px; padding-left: 1.4em; }
+li { margin-bottom: 6px; }
+a { color: var(--accent); }
+code { font: 0.88em var(--mono); background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
+pre { font: 14px/1.65 var(--mono); background: var(--sunken); border-radius: 10px; padding: 16px 18px;
+  overflow-x: auto; margin: 0 0 22px; color: var(--ink); }
+pre code { background: none; padding: 0; font-size: inherit; }
+.table { overflow-x: auto; margin: 6px 0 24px; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.6; min-width: 520px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+th { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: .02em; border-bottom-color: var(--ink-2); }
+td { color: var(--ink-2); }
+td:first-child { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.rule { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0;
+  padding: 14px 18px; margin: 24px 0; }
+.rule p { color: var(--ink); margin: 0; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 56px 0; }
+.foot { color: var(--muted); font-size: 14px; }
+.dev { border-top: 1px solid var(--rule); margin-top: 48px; padding-top: 8px; }
+.dev h2 { margin-top: 32px; }
+
+/* ---------- 示意图通用 ---------- */
+.fig { margin: 28px 0 30px; }
+.fig-box { background: var(--sunken); border-radius: 14px; padding: 20px; display: grid; gap: 14px; font-size: 14px; line-height: 1.55; }
+.fig figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
+.fig-h { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+.chip { display: inline-flex; flex-direction: column; background: var(--card); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 6px 10px; color: var(--ink); }
+.chip.dim { color: var(--muted); border-style: dashed; background: transparent; }
+.arrow { color: var(--muted); }
+.stack { display: grid; }
+.stack > * { grid-area: 1 / 1; }
+
+/* 图：逐词生成 */
+.prompt { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; color: var(--ink-2); }
+.prompt i { font-style: normal; font-size: 12px; color: var(--muted); margin-right: 6px; }
+.gen-out { font-size: 18px; color: var(--ink); min-height: 1.6em; }
+.gen-out .tok { border-bottom: 2px solid var(--accent); margin-right: 2px; }
+.cands { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; }
+.cand-set { display: grid; gap: 6px; }
+.cand { display: grid; grid-template-columns: 76px minmax(0, 1fr) 40px; gap: 10px; align-items: center; color: var(--ink-2); }
+.cand:first-of-type { color: var(--ink); font-weight: 600; }
+.bar { height: 6px; background: var(--sunken); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--muted); border-radius: 3px; }
+.cand:first-of-type .bar i { background: var(--accent); }
+.cand b { font-weight: 400; font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 图：模型能看到的那一页 */
+.frame { display: grid; grid-template-columns: minmax(0, 1.1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; }
+.page { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+.slip { border-radius: 6px; padding: 4px 8px; background: var(--sunken); color: var(--ink); }
+.slip i { font-style: normal; font-size: 12px; color: var(--muted); margin-right: 6px; }
+.slip.miss { background: transparent; border: 1px dashed var(--rule); color: var(--muted); }
+.out { border-radius: 10px; padding: 10px 12px; }
+.out b { display: block; font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+.out.bad { background: var(--crit-soft); color: var(--crit); }
+.out.good { background: var(--ok-soft); color: var(--ok); }
+.out span { color: var(--ink); }
+
+/* 图：知识库检索 */
+.rag { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; align-items: start; }
+.rag-l { display: grid; gap: 10px; }
+.vec { font: 13px var(--mono); color: var(--blue); background: var(--blue-soft); border-radius: 8px; padding: 6px 10px; }
+.kb { display: grid; gap: 6px; }
+.kb-i { display: flex; justify-content: space-between; gap: 10px; background: var(--card); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 6px 10px; color: var(--ink-2); }
+.kb-i .sc { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+.kb-i.hit .sc { color: var(--accent); font-weight: 600; }
+.ctx { border-top: 1px solid var(--rule); padding-top: 12px; color: var(--ink); }
+.ctx b { color: var(--accent); }
+
+/* 图：谁在做什么 */
+.flow { display: grid; gap: 8px; }
+.step { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.who { justify-self: start; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.who.user { background: var(--card); color: var(--ink-2); border: 1px solid var(--rule); }
+.who.app { background: var(--accent-soft); color: var(--accent); }
+.who.model { background: var(--blue-soft); color: var(--blue); }
+.who.sys { background: var(--warn-soft); color: var(--warn); }
+.step p { margin: 0; color: var(--ink); }
+.step p small { color: var(--muted); font-size: 13px; }
+
+/* 图：智能体循环、方案状态流转 */
+.loop { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.st { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; color: var(--ink); position: relative; }
+.st small { display: block; color: var(--muted); font-size: 12px; }
+.loop .st:not(:last-child)::after { content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%); color: var(--muted); }
+.back { color: var(--muted); font-size: 13px; text-align: right; border-top: 1px dashed var(--rule); padding-top: 6px; }
+.exits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.st.done { border-color: var(--ok); }
+.st.hand { border-style: dashed; color: var(--ink-2); }
+.log { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px;
+  font-size: 13px; color: var(--ink-2); }
+.log b { color: var(--ink); font-weight: 600; }
+.states { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.states .st:not(:last-child)::after { content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%); color: var(--muted); }
+.evt { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; color: var(--ink); }
+.evt span { font: 12px var(--mono); color: var(--muted); margin-right: 8px; }
+
+/* 图：通知改版前后 */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.col { display: grid; gap: 8px; align-content: start; }
+.col-h { font-weight: 600; color: var(--ink); }
+.col-h span { color: var(--crit); font-weight: 500; }
+.col-h.good span { color: var(--ok); }
+.ping { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 5px 10px; color: var(--ink-2);
+  display: flex; gap: 8px; align-items: center; }
+.ping::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--crit); flex: none; }
+.tier { display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 8px; }
+.tier:first-of-type { border-top: 0; padding-top: 0; }
+.tier > b { font-size: 12px; font-weight: 600; color: var(--muted); }
+.tier > b.now { color: var(--crit); }
+.tier .track { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
+.tier .chip { padding: 3px 9px; }
+
+/* 图：开单信息识别 */
+.extract { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; }
+.bubble { background: var(--card); border: 1px solid var(--rule); border-radius: 12px 12px 12px 4px; padding: 10px 12px; color: var(--ink); }
+.bubble small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.form { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+.field { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.field > i { font-style: normal; font-size: 12px; color: var(--muted); }
+.field > span { border-bottom: 1px solid var(--rule); color: var(--ink); min-height: 1.55em; }
+.field.ask > span { background: var(--warn-soft); color: var(--warn); border-radius: 4px; padding: 0 6px; border-bottom: 0; }
+.note { font-size: 13px; color: var(--muted); }
+
+/* 方案模板 */
+.tpl { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 6px 18px; margin: 10px 0 24px; }
+.tpl dl { margin: 0; }
+.tpl dt { font-weight: 600; color: var(--ink); margin-top: 14px; }
+.tpl dd { margin: 2px 0 14px; color: var(--ink-2); padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.tpl dd:last-child { border-bottom: 0; }
+.tpl dd small { display: block; color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+/* ---------- 动画 ---------- */
+/* 两个画面轮播，14 秒一轮 */
+.f1 { animation: f1 14s infinite; } .f2 { animation: f2 14s infinite; }
+@keyframes f1 { 0% { opacity: 0; } 3%, 46% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes f2 { 0%, 50% { opacity: 0; } 53%, 96% { opacity: 1; } 100% { opacity: 0; } }
+/* 依次出现：12 秒一轮，t1–t7 依次出现并保持，最后一起淡出 */
+.t1 { animation: t1 12s infinite; } .t2 { animation: t2 12s infinite; } .t3 { animation: t3 12s infinite; }
+.t4 { animation: t4 12s infinite; } .t5 { animation: t5 12s infinite; } .t6 { animation: t6 12s infinite; }
+.t7 { animation: t7 12s infinite; }
+@keyframes t1 { 0%, 3% { opacity: 0; transform: translateY(6px); } 7%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t2 { 0%, 13% { opacity: 0; transform: translateY(6px); } 17%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t3 { 0%, 23% { opacity: 0; transform: translateY(6px); } 27%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t4 { 0%, 33% { opacity: 0; transform: translateY(6px); } 37%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t5 { 0%, 43% { opacity: 0; transform: translateY(6px); } 47%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t6 { 0%, 53% { opacity: 0; transform: translateY(6px); } 57%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes t7 { 0%, 63% { opacity: 0; transform: translateY(6px); } 67%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+/* 五段轮换：12 秒一轮，k1–k5 各占一段（只在自己那段显示） */
+.k1 { animation: k1 12s infinite; } .k2 { animation: k2 12s infinite; } .k3 { animation: k3 12s infinite; }
+.k4 { animation: k4 12s infinite; } .k5 { animation: k5 12s infinite; }
+@keyframes k1 { 0% { opacity: 0; } 2%, 17% { opacity: 1; } 19%, 100% { opacity: 0; } }
+@keyframes k2 { 0%, 19% { opacity: 0; } 21%, 37% { opacity: 1; } 39%, 100% { opacity: 0; } }
+@keyframes k3 { 0%, 39% { opacity: 0; } 41%, 57% { opacity: 1; } 59%, 100% { opacity: 0; } }
+@keyframes k4 { 0%, 59% { opacity: 0; } 61%, 77% { opacity: 1; } 79%, 100% { opacity: 0; } }
+@keyframes k5 { 0%, 79% { opacity: 0; } 81%, 96% { opacity: 1; } 98%, 100% { opacity: 0; } }
+/* 逐词生成：每段末尾选中的词出现并保持 */
+.w1 { animation: w1 12s infinite; } .w2 { animation: w2 12s infinite; } .w3 { animation: w3 12s infinite; }
+.w4 { animation: w4 12s infinite; } .w5 { animation: w5 12s infinite; }
+@keyframes w1 { 0%, 12% { opacity: 0; } 14%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+@keyframes w2 { 0%, 32% { opacity: 0; } 34%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+@keyframes w3 { 0%, 52% { opacity: 0; } 54%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+@keyframes w4 { 0%, 72% { opacity: 0; } 74%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+@keyframes w5 { 0%, 90% { opacity: 0; } 92%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+/* 状态高亮：h1–h5 依次点亮（12 秒一轮，和 k1–k5 同步） */
+.h1, .h2, .h3, .h4, .h5 { animation-duration: 12s; animation-iteration-count: infinite; }
+.h1 { animation-name: h1; } .h2 { animation-name: h2; } .h3 { animation-name: h3; } .h4 { animation-name: h4; } .h5 { animation-name: h5; }
+@keyframes h1 { 0%, 18% { background: var(--accent-soft); border-color: var(--accent); } 20%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes h2 { 0%, 19% { background: var(--card); border-color: var(--rule); } 21%, 38% { background: var(--accent-soft); border-color: var(--accent); } 40%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes h3 { 0%, 39% { background: var(--card); border-color: var(--rule); } 41%, 58% { background: var(--accent-soft); border-color: var(--accent); } 60%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes h4 { 0%, 59% { background: var(--card); border-color: var(--rule); } 61%, 78% { background: var(--accent-soft); border-color: var(--accent); } 80%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes h5 { 0%, 79% { background: var(--card); border-color: var(--rule); } 81%, 98% { background: var(--ok-soft); border-color: var(--ok); } 100% { background: var(--card); border-color: var(--rule); } }
+/* 知识库命中：前 35% 普通，之后点亮 */
+.hit { animation: hit 12s infinite; }
+@keyframes hit { 0%, 33% { background: var(--card); border-color: var(--rule); } 37%, 94% { background: var(--accent-soft); border-color: var(--accent); } 98%, 100% { background: var(--card); border-color: var(--rule); } }
+/* 智能体循环：16 秒一轮，三轮“决定 → 调用 → 查看”后办完 */
+.a1, .a2, .a3, .a4, .a5 { animation-duration: 16s; animation-iteration-count: infinite; }
+.a1 { animation-name: a1; } .a2 { animation-name: a2; } .a3 { animation-name: a3; } .a4 { animation-name: a4; } .a5 { animation-name: a5; }
+@keyframes a1 { 0%, 9% { background: var(--accent-soft); border-color: var(--accent); } 10%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes a2 { 0%, 9% { background: var(--card); border-color: var(--rule); } 10%, 19% { background: var(--accent-soft); border-color: var(--accent); }
+  20%, 39% { background: var(--card); border-color: var(--rule); } 40%, 49% { background: var(--accent-soft); border-color: var(--accent); }
+  50%, 69% { background: var(--card); border-color: var(--rule); } 70%, 79% { background: var(--accent-soft); border-color: var(--accent); } 80%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes a3 { 0%, 19% { background: var(--card); border-color: var(--rule); } 20%, 29% { background: var(--accent-soft); border-color: var(--accent); }
+  30%, 49% { background: var(--card); border-color: var(--rule); } 50%, 59% { background: var(--accent-soft); border-color: var(--accent); } 60%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes a4 { 0%, 29% { background: var(--card); border-color: var(--rule); } 30%, 39% { background: var(--accent-soft); border-color: var(--accent); }
+  40%, 59% { background: var(--card); border-color: var(--rule); } 60%, 69% { background: var(--accent-soft); border-color: var(--accent); } 70%, 100% { background: var(--card); border-color: var(--rule); } }
+@keyframes a5 { 0%, 79% { background: var(--card); border-color: var(--ok); } 80%, 97% { background: var(--ok-soft); border-color: var(--ok); } 100% { background: var(--card); border-color: var(--ok); } }
+.l1 { animation: l1 16s infinite; } .l2 { animation: l2 16s infinite; } .l3 { animation: l3 16s infinite; }
+@keyframes l1 { 0%, 37% { opacity: 0; } 39%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+@keyframes l2 { 0%, 67% { opacity: 0; } 69%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+@keyframes l3 { 0%, 79% { opacity: 0; } 81%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .f1, .f2, .t1, .t2, .t3, .t4, .t5, .t6, .t7, .k1, .k2, .k3, .k4, .k5, .w1, .w2, .w3, .w4, .w5,
+  .h1, .h2, .h3, .h4, .h5, .hit, .a1, .a2, .a3, .a4, .a5, .l1, .l2, .l3 { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .stack { gap: 12px; }
+  .stack > * { grid-area: auto; }
+  .cands .cand-set:not(.k2) { display: none; }
+  .hit { background: var(--accent-soft); border-color: var(--accent); }
+}
+@media (max-width: 600px) {
+  .fig-box { padding: 16px; }
+  .frame, .extract, .rag { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .frame .arrow, .extract .arrow { transform: rotate(90deg); justify-self: start; }
+  .two, .exits { grid-template-columns: minmax(0, 1fr); }
+  .loop { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .loop .st:nth-child(2)::after { content: none; }
+  .states { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .states .st:not(:last-child)::after { content: "↓"; right: 12px; top: 50%; transform: translateY(-50%); }
+  .step { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .cand { grid-template-columns: 64px minmax(0, 1fr) 36px; }
+}
+</style>
+</head>
+<body>
+<article>
+  <h1>AI 不是许愿池：业务系统里的 AI 是怎么干活的</h1>
+  <p class="lede">客服问 AI：“SG123456 到哪了？”它答得很干脆：“已到达雅加达中转仓，预计明天派送。”实际上这票货卡在 GW 中转环节，分拣出了异常，已经两天没有新轨迹。AI 没出故障，它只是从头到尾没看到这票货的任何数据。</p>
+  <p class="meta"><time datetime="2026-10-23">2026 年 10 月 23 日</time> · Relay 团队</p>
+
+  <p>“把资料给 AI，它就能解决”，这是很多人对 AI 的第一印象。真把 AI 放进业务系统，就会发现它的表现几乎完全取决于周围的设计：它看到了什么，能查什么，能做什么，什么时候停下来。弄懂它怎么工作，这些设计就不难想清楚。</p>
+
+  <p class="part">原理篇</p>
+
+  <h2>一、它其实在“接话”</h2>
+  <p>现在说的 AI，大多指大语言模型。训练时它读了海量文字，反复做同一道题：遮住后面的内容，猜下一个词是什么。猜得足够多以后，它学会了语法、常识和一些推理的套路。</p>
+  <p>用的时候也一样。它把你给的文字读一遍，算出下一个词每个候选的可能性，挑一个写上，再接着算下一个。一段回答就是这样一个词一个词“接”出来的。</p>
+
+  <figure class="fig" aria-label="示意图：模型逐词生成回答，每一步给出几个候选词和可能性，选中一个后接着算下一个">
+    <div class="fig-box">
+      <div class="prompt"><i>它读到的</i>查询结果：SG123456 在 GW 中转站，分拣异常，48 小时无新轨迹。问题：货到哪了？</div>
+      <div class="gen-out"><span class="tok w1">货</span><span class="tok w2">卡在</span><span class="tok w3">GW 中转站</span><span class="tok w4">，正在</span><span class="tok w5">处理异常</span></div>
+      <div class="cands">
+        <div class="fig-h">下一个词的候选</div>
+        <div class="stack">
+          <div class="cand-set k1">
+            <div class="cand"><span>货</span><span class="bar"><i style="width:68%"></i></span><b>68%</b></div>
+            <div class="cand"><span>您的</span><span class="bar"><i style="width:21%"></i></span><b>21%</b></div>
+            <div class="cand"><span>目前</span><span class="bar"><i style="width:8%"></i></span><b>8%</b></div>
+          </div>
+          <div class="cand-set k2">
+            <div class="cand"><span>卡在</span><span class="bar"><i style="width:74%"></i></span><b>74%</b></div>
+            <div class="cand"><span>已到</span><span class="bar"><i style="width:15%"></i></span><b>15%</b></div>
+            <div class="cand"><span>正在</span><span class="bar"><i style="width:7%"></i></span><b>7%</b></div>
+          </div>
+          <div class="cand-set k3">
+            <div class="cand"><span>GW 中转站</span><span class="bar"><i style="width:83%"></i></span><b>83%</b></div>
+            <div class="cand"><span>雅加达</span><span class="bar"><i style="width:9%"></i></span><b>9%</b></div>
+            <div class="cand"><span>泗水</span><span class="bar"><i style="width:4%"></i></span><b>4%</b></div>
+          </div>
+          <div class="cand-set k4">
+            <div class="cand"><span>，正在</span><span class="bar"><i style="width:61%"></i></span><b>61%</b></div>
+            <div class="cand"><span>。</span><span class="bar"><i style="width:27%"></i></span><b>27%</b></div>
+            <div class="cand"><span>，预计</span><span class="bar"><i style="width:9%"></i></span><b>9%</b></div>
+          </div>
+          <div class="cand-set k5">
+            <div class="cand"><span>处理异常</span><span class="bar"><i style="width:79%"></i></span><b>79%</b></div>
+            <div class="cand"><span>派送</span><span class="bar"><i style="width:11%"></i></span><b>11%</b></div>
+            <div class="cand"><span>装车</span><span class="bar"><i style="width:5%"></i></span><b>5%</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>每一步只挑最合适的下一个词。百分比为示意，实际模型的切分方式和数值不同。</figcaption>
+  </figure>
+
+  <p>这个机制解释了 AI 的几个特点：</p>
+  <ul>
+    <li><strong>它追求的是“像”，不是“对”。</strong>候选词的可能性来自它读过的文字，与事实是否正确没有直接关系。</li>
+    <li><strong>同一个问题，两次回答可能不一样。</strong>挑词时有一定随机性，排第二的词偶尔也会被选中。</li>
+    <li><strong>它按“词块”计算和计费。</strong>模型把文字切成小块处理，叫 token，中文大致一个字左右一块。输入和输出越长，越慢也越贵。</li>
+  </ul>
+
+  <h2>二、它只看得到这一页纸</h2>
+  <p>每次调用模型，它能读到的全部内容叫“上下文”：给它的工作说明、附上的资料、之前的对话、用户的问题。上下文之外的东西，对它来说不存在。</p>
+  <p>聊天工具看起来记得前面聊过什么，是因为程序每次都把前面的对话重新发了一遍。模型本身不记事。上下文的长度也有上限，塞得太多，它反而容易忽略中间的内容。</p>
+  <p>开头那个答错的例子就发生在这里。上下文里只有一个问题，它只能按“这类问题通常怎么回答”往下接，接出来的话很像真的。这种情况叫“幻觉”。</p>
+
+  <figure class="fig" aria-label="示意图：同一个问题，只给问题时模型会猜一个答案；附上规则和查询结果后，回答有依据">
+    <div class="fig-box">
+      <div class="stack">
+        <div class="frame f1">
+          <div class="page">
+            <div class="fig-h">这一次的上下文</div>
+            <div class="slip"><i>问题</i>运单 SG123456 到哪了？</div>
+            <div class="slip miss">没有运单数据，也没有公司规则</div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="out bad"><b>听起来很对，其实是猜的</b><span>“已到达雅加达中转仓，预计明天派送。”</span></div>
+        </div>
+        <div class="frame f2">
+          <div class="page">
+            <div class="fig-h">这一次的上下文</div>
+            <div class="slip"><i>规则</i>中转站超过 48 小时无新轨迹，按运输超时处理</div>
+            <div class="slip"><i>查询结果</i>SG123456：在 GW 中转站，分拣异常（面单破损），48 小时无新轨迹</div>
+            <div class="slip"><i>问题</i>运单 SG123456 到哪了？</div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="out good"><b>每句话都有出处</b><span>“货在 GW 中转站，因面单破损分拣异常，已 48 小时没有新轨迹，按运输超时处理，正在等现场补打面单。”</span></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>同一个模型、同一个问题，差别只在上下文里放了什么。规则和单号均为举例。</figcaption>
+  </figure>
+
+  <p>所以在业务系统里用 AI，要解决的第一件事是：每次调用时，往上下文里放什么。接下来三节讲的知识库、工具和智能体，都是围绕这件事的办法。</p>
+
+  <h2>三、让它知道公司的事：知识库</h2>
+  <p>公司的规则、流程、口径有成百上千条，不可能每次都全部塞进上下文。常用的做法是先检索、再回答：用户提问后，程序先去知识库里找出最相关的几条，和问题一起交给模型。这种做法叫检索增强生成，英文缩写 RAG。好比开卷考试，模型不用背整本书，只要每次先翻到对的那一页。</p>
+  <p>“找相关”靠的是向量。程序事先把每条知识转成一串数字，意思越接近的两段话，数字越接近。所以客户问“货两天没动了是怎么回事”，即使知识库里写的是“中转站超过 48 小时无新轨迹，按运输超时处理”，几乎没有相同的字，也能匹配上。</p>
+
+  <figure class="fig" aria-label="示意图：问题被转成向量，在知识库中找到最接近的两条，放进上下文">
+    <div class="fig-box">
+      <div class="rag">
+        <div class="rag-l">
+          <div class="bubble t1"><small>客户问</small>货两天没动了是怎么回事？</div>
+          <div class="vec t2">[0.12, −0.48, 0.91, 0.07, …]</div>
+          <div class="note t2">问题也转成一串数字，再和每条知识比较</div>
+        </div>
+        <div class="kb">
+          <div class="fig-h">知识库</div>
+          <div class="kb-i"><span>可以改收件地址吗</span><span class="sc t3">0.21</span></div>
+          <div class="kb-i hit"><span>中转站超过 48 小时无新轨迹，按运输超时处理</span><span class="sc t3">0.89</span></div>
+          <div class="kb-i"><span>到仓 24 小时内上架</span><span class="sc t3">0.18</span></div>
+          <div class="kb-i hit"><span>GW 分拣异常的常见原因和处理办法</span><span class="sc t3">0.84</span></div>
+          <div class="kb-i"><span>超重件的计费方式</span><span class="sc t3">0.09</span></div>
+        </div>
+      </div>
+      <div class="ctx t5">放进上下文：<b>最接近的 2 条</b> + 客户的问题，再交给模型回答</div>
+    </div>
+    <figcaption>数值为示意。知识库只负责找出资料，回答仍由模型来写。</figcaption>
+  </figure>
+
+  <p>知识库的效果主要取决于知识本身写得好不好。一条好用的知识，只讲一个问题，写清楚四样东西：遇到的是什么情况，怎么处理，去哪个系统查，结论是什么。条件和数字写具体。一份几十页的制度文件整个放进去，效果通常不如几十条这样写好的短条目。</p>
+
+  <h2>四、让它动手：工具调用</h2>
+  <p>知识库解决的是规则，实时数据要靠工具。做法是告诉模型：“你可以用 <code>query_waybill(运单号)</code> 查轨迹”，并写清楚这个工具是做什么的。模型读完问题，自己判断要不要查、查哪个单号。</p>
+  <p>要注意的是，模型自己不会执行任何操作。它只是输出一句结构化的请求：“我要调用 query_waybill，参数是 SG123456”。真正去查系统的是我们的程序。所以哪些系统能查、哪些字段能看、哪些操作要人确认，控制权都在程序这一边，也就是在产品设计这一边。</p>
+
+  <figure class="fig" aria-label="示意图：客服查询运单的一次完整过程，标出每一步由用户、程序、模型还是业务系统完成">
+    <div class="fig-box">
+      <div class="fig-h">客服问一个运单为什么还没到</div>
+      <div class="flow">
+        <div class="step t1"><span class="who user">客服</span><p>“SG123456 怎么还没到？”</p></div>
+        <div class="step t2"><span class="who app">我们的程序</span><p>从知识库里找出相关的两条规则</p></div>
+        <div class="step t3"><span class="who app">我们的程序</span><p>把说明、规则、问题和“可以查运单”这个能力一起发给模型</p></div>
+        <div class="step t4"><span class="who model">模型</span><p>“我要查这个运单的轨迹。” <small>只是提出请求，自己不能执行</small></p></div>
+        <div class="step t5"><span class="who sys">运单系统</span><p>程序替它查询，把结果交回模型</p></div>
+        <div class="step t6"><span class="who model">模型</span><p>写出结论：卡在 GW 分拣环节，面单破损，已超时，建议请 GW 加急补打面单</p></div>
+        <div class="step t7"><span class="who app">我们的程序</span><p>附上信息来源，展示给客服；发给客户之前由客服确认</p></div>
+      </div>
+    </div>
+    <figcaption>七步里模型只占两步，其余都要在产品和系统里设计。</figcaption>
+  </figure>
+
+  <h2>五、让它自己推进：智能体</h2>
+  <p>上面的例子里，模型查一次就够了。很多实际问题要查好几次：查了轨迹发现货在 GW 停了两天，要再查异常记录；发现是面单破损，可能还要查 GW 的处理进度。让模型在一个循环里自己决定下一步、调用工具、看结果、再决定下一步，直到办完，这样的程序叫智能体（Agent）。</p>
+
+  <figure class="fig" aria-label="示意图：智能体的工作循环，决定下一步、调用工具、查看结果，三轮后办完；拿不准或超过步数时交给人">
+    <div class="fig-box">
+      <div class="fig-h">目标：弄清 SG123456 为什么还没到，并给出下一步</div>
+      <div class="loop">
+        <div class="st a1">理解目标<small>要查清原因</small></div>
+        <div class="st a2">决定下一步<small>还缺什么信息</small></div>
+        <div class="st a3">调用工具<small>由程序执行</small></div>
+        <div class="st a4">查看结果<small>够了吗</small></div>
+      </div>
+      <div class="back">还没弄清 ↺ 回到“决定下一步”</div>
+      <div class="exits">
+        <div class="st done a5">办完<small>给出结论和下一步建议</small></div>
+        <div class="st hand">拿不准，或超过步数上限<small>停下来，交给人</small></div>
+      </div>
+      <div class="log">
+        <div class="l1"><b>第 1 轮</b> 查运单轨迹 → 在 GW 中转站，48 小时无新轨迹</div>
+        <div class="l2"><b>第 2 轮</b> 查异常记录 → 分拣异常，面单破损，待补打</div>
+        <div class="l3"><b>第 3 轮</b> 信息够了 → 结论：运输超时，请 GW 加急补打面单</div>
+      </div>
+    </div>
+    <figcaption>智能体每轮只做一步，看了结果再决定下一步。步数上限和“交给人”的出口是设计时必须定的。</figcaption>
+  </figure>
+
+  <p>智能体能处理更复杂的事，也更难控制：步骤越多，花的时间和费用越多，中途走偏的机会也越多。所以有三样东西不能少：</p>
+  <ul>
+    <li><strong>步数上限。</strong>到了上限还没办完，就停下来交给人。</li>
+    <li><strong>操作分级。</strong>查询可以让它自己做；改单、发消息这类会改变业务状态的操作，只让它准备好，等人确认。</li>
+    <li><strong>办完的标准。</strong>事先写清楚“什么算办完”，最后对照着检查，而不是它自己说完成就算完成。</li>
+  </ul>
+  <p>还有一个经验：能用固定流程解决的，就别让它自由发挥。先用程序写死“查轨迹，再查异常记录，最后让 AI 总结”，跑稳了再考虑让它自己决定顺序。</p>
+
+  <p class="part">产品篇</p>
+
+  <h2>六、产品上怎么定义一个 AI 功能</h2>
+  <p>前面五节可以归成四个台阶。定义一个 AI 功能，先想清楚它要站在哪一级。级别越高，能做的事越多，要设计和控制的东西也越多。</p>
+  <div class="table">
+    <table>
+      <thead><tr><th>台阶</th><th>比上一级多了什么</th><th>典型用法</th><th>要防的问题</th></tr></thead>
+      <tbody>
+        <tr><td>1. 只靠说明</td><td>写好的工作说明和格式要求</td><td>改写邮件、翻译、总结会议记录</td><td>涉及公司的事会编</td></tr>
+        <tr><td>2. 加知识库</td><td>能查公司的规则和资料</td><td>内部流程问答、客服口径</td><td>资料过期或写得含糊就答错</td></tr>
+        <tr><td>3. 加工具</td><td>能查实时数据，能提出操作</td><td>运单查询、开单信息识别</td><td>改数据的操作必须人确认</td></tr>
+        <tr><td>4. 智能体</td><td>自己决定下一步，多轮推进</td><td>跟进超时件直到恢复运输</td><td>费用、走偏、何时算办完</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>先找麻烦，再找 AI</h3>
+  <p>“我们也要做个 AI”很难落地。“客服每天花两小时在三个系统之间查运单”就能直接拿来设计。判断一个场景值不值得用 AI，可以问三个问题：</p>
+  <ol>
+    <li><strong>每天要做很多次吗？</strong>一个月做两次的事，做 AI 不划算。</li>
+    <li><strong>输入是杂乱的文字吗？</strong>规则清楚、数据规整的事，写普通程序更快也更稳。AI 的长处在处理人说的话、写的字。</li>
+    <li><strong>做错了代价大吗？</strong>代价小的可以全自动；代价大的让 AI 先出草稿，人来确认。</li>
+  </ol>
+  <div class="table">
+    <table>
+      <thead><tr><th>物流里的常见场景</th><th>台阶</th><th>AI 负责的部分</th><th>建议从哪里做起</th></tr></thead>
+      <tbody>
+        <tr><td>运单查询</td><td>3</td><td>把几个系统的结果合成一句结论</td><td>程序按固定顺序查，AI 只做最后的总结</td></tr>
+        <tr><td>客服回复</td><td>2–3</td><td>理解问题，结合规则和运单起草回复</td><td>先做“AI 起草、客服确认后发送”</td></tr>
+        <tr><td>开单信息识别</td><td>3</td><td>从客户消息里提取开单字段</td><td>填进表单，拿不准的字段标出来让人补</td></tr>
+        <tr><td>用自然语言查数据</td><td>3</td><td>把问题转成查询语句，解释结果</td><td>先只支持一类问题，比如每日单量</td></tr>
+        <tr><td>内部问答</td><td>2</td><td>回答同事关于流程的问题</td><td>从过去的聊天记录里整理问答，审核后入库</td></tr>
+        <tr><td>异常件跟进</td><td>4</td><td>多轮查询、联系、等回复，直到解决</td><td>前三级跑稳以后再做</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <figure class="fig" aria-label="示意图：客户一条混着印尼语和中文的消息，被提取成开单表单，拿不准的详细地址标黄等人补">
+    <div class="fig-box">
+      <div class="extract">
+        <div class="bubble"><small>客户消息</small>Halo kak, kirim ke Budi 0812-3456-7890, Surabaya, 20 箱手机壳，下周能到吗？</div>
+        <div class="arrow">→</div>
+        <div class="form">
+          <div class="field t1"><i>收件人</i><span>Budi</span></div>
+          <div class="field t2"><i>电话</i><span>0812-3456-7890</span></div>
+          <div class="field t3"><i>城市</i><span>Surabaya</span></div>
+          <div class="field t4"><i>货物</i><span>手机壳 × 20 箱</span></div>
+          <div class="field ask t5"><i>详细地址</i><span>消息里没有，请补充</span></div>
+          <div class="note t6">客户还问了时效，交给客服回答</div>
+        </div>
+      </div>
+    </div>
+    <figcaption>开单信息识别：允许 AI 说“这一项我拿不准”，比让它把每一格都填满更安全。人名和号码为虚构。</figcaption>
+  </figure>
+
+  <h3>四个必须回答的问题</h3>
+  <div class="table">
+    <table>
+      <thead><tr><th>问题</th><th>产品要给出什么</th><th>以运单查询为例</th></tr></thead>
+      <tbody>
+        <tr><td>它要知道什么</td><td>工作说明，以及要用到的业务规则</td><td>时效规则、常见异常的处理办法、回复客户的口径</td></tr>
+        <tr><td>它能动用什么</td><td>能查哪些系统、哪些字段；能不能改数据</td><td>能查轨迹和异常记录；不能改单</td></tr>
+        <tr><td>什么时候交给人</td><td>哪些情况它不该自己处理，交给谁</td><td>查不到单号、客户要赔偿、涉及改地址，转客服</td></tr>
+        <tr><td>怎样算做对</td><td>一组真实问题和标准答案，作为验收依据</td><td>30 个历史咨询，每个写清回答必须包含的要点</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>最后一个问题最容易被跳过。普通功能按步骤点一遍就能验收，AI 功能不行：改了一句说明，这个问题答对了，另一个问题可能就答错了。所以要有一组固定的测试问题，每次调整后完整跑一遍，看答对的比例有没有下降。这组问题由最懂业务的人来写。</p>
+
+  <h3>放进产品时的几个做法</h3>
+  <ul>
+    <li><strong>放在用户已经在用的页面里。</strong>在运单详情页加一个“帮我看看”按钮，比另开一个聊天窗口更容易被用起来。面对空白的对话框，很多人不知道该问什么。</li>
+    <li><strong>让用户看到依据。</strong>结论旁边写明来自哪个系统、哪条规则，用户才敢用。</li>
+    <li><strong>随时可以转人工。</strong>AI 拿不准时主动转，用户不满意时也能一键转。</li>
+    <li><strong>只给完成任务需要的数据。</strong>证件号、密码、银行卡号不要发给模型。</li>
+    <li><strong>记录每一次使用。</strong>问了什么、答了什么、用户觉得有没有用。这些记录就是下一版的测试问题和知识库素材。</li>
+  </ul>
+
+  <h2>七、案例：Relay 是怎么定位、怎么起步的</h2>
+  <p>Relay 是我们公司内部的 AI 助理，接在飞书的邮箱、日历、审批、群聊和业务系统上，属于上面的第 4 级。它从一个模糊的想法变成现在这样，中间做了几次关键的判断。</p>
+
+  <h3>从“什么都能做”收窄到一件事</h3>
+  <p>最初的设想很宽：一个什么都能问的个人助手，能记住你，能回答问题，能替你办事，能定时提醒。这样的描述适合宣传，拿来做设计却无从下手，不知道先做什么，也不知道怎样算做好了。</p>
+  <p>后来我们换了个问法：同事每天在哪件事上花了最多不该花的时间？答案很集中。事情散在邮件、审批和群消息里，要自己整理哪些要回、哪些在等别人，等别人的事还得记着去催。</p>
+  <div class="rule"><p>给谁：每天被邮件、审批、群消息追着跑的同事。<br>替他做什么：把消息整理成一件件事，先起草好回复，把要来回追的事跟到办完。<br>不做什么：不替他对外拍板。发邮件、回会议邀请都先准备好，等他点确认。</p></div>
+  <p>第三句和前两句一样重要，它直接决定了很多设计：确认按钮只认点击者本人；邮件和文档里的内容只当资料看，就算里面写着要求，对外操作也仍然要他确认；长期任务里哪些操作可以自动做，只能由用户在界面上勾选，模型不能给自己授权。</p>
+
+  <h3>第一版上线，数据给了当头一棒</h3>
+  <p>第一版的流程很直接：消息进来，模型判断是不是要处理的事，是就建成事项推给用户。演示效果很好。上线后我们看了早期连续三天的数据：有的同事每天收到二十多条实时推送，三天新建的约 400 个事项里，约 390 个还没关闭。识别得越多，用户反而越忙，只是把邮件和群消息换个地方又说了一遍。</p>
+  <p>第二步改的不是模型，是规则：什么事值得马上打断人。</p>
+
+  <figure class="fig" aria-label="示意图：同样六件事，第一版逐条推送，改版后分进立刻说、汇总、只进简报、静默四档">
+    <div class="fig-box">
+      <div class="two">
+        <div class="col">
+          <div class="col-h">第一版：识别出来就推 <span>· 打断 6 次</span></div>
+          <div class="ping t1">今天 14:00 的会</div>
+          <div class="ping t2">一般报销审批</div>
+          <div class="ping t3">供应商周报邮件</div>
+          <div class="ping t4">系统维护通知</div>
+          <div class="ping t5">付款审批，今天截止</div>
+          <div class="ping t6">你说过不用提醒的审批</div>
+        </div>
+        <div class="col">
+          <div class="col-h good">现在：先分档 <span>· 打断 2 次</span></div>
+          <div class="tier"><b class="now">立刻说</b><div class="track"><span class="chip t1">今天 14:00 的会</span><span class="chip t5">付款审批，今天截止</span></div></div>
+          <div class="tier"><b>汇总 · 11:30、16:30</b><div class="track"><span class="chip t2">一般报销审批</span><span class="chip t3">供应商周报邮件</span></div></div>
+          <div class="tier"><b>只进早上的简报</b><div class="track"><span class="chip t4">系统维护通知</span></div></div>
+          <div class="tier"><b>静默，只在看板上</b><div class="track"><span class="chip dim t6">你说过不用提醒的审批</span></div></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>同样六件事依次到达。改版后只有今天必须本人处理的事会马上打断人，判断不了的进汇总。</figcaption>
+  </figure>
+
+  <p>改版的细节写在<a href="/blog/relay-reliable-agent/">《从消息提醒到可靠执行》</a>里；Relay 现在一天里怎么用，可以看<a href="/blog/relay-day/">《邮件、审批、群消息，每一件事都有人跟进》</a>里的演示视频。回头看，对做 AI 产品最有用的几条是：</p>
+  <ol>
+    <li><strong>定位里要写“不做什么”。</strong>AI 能做的事太多，边界不写清楚，风险和范围都会失控。</li>
+    <li><strong>演示效果好，不代表有用。</strong>上线后看用户实际怎么处理它给的结果：打开了没有，采纳了没有，有没有被打扰。</li>
+    <li><strong>最大的改进往往不在模型。</strong>Relay 上线后的几轮改进，大多是在改规则、改流程、补数据，而不是换模型。</li>
+  </ol>
+
+  <h2>八、AI 功能的方案怎么写</h2>
+  <p>普通功能的方案描述页面和流程。AI 功能的方案还要写清楚：它知道什么，能做什么，状态怎么流转，什么时候停下来。下面这个结构可以直接套用，每一项附上“运单异常助手”的写法作为参考。</p>
+
+  <div class="tpl">
+    <dl>
+      <dt>1. 背景和目标</dt>
+      <dd>现在的麻烦是什么，用数字说明；做完以后看哪个数字变化。<small>例：运输超时和中转异常每天约 40 票，客服要在 3 个系统间查询再写回复，平均 6 分钟一票。目标：降到 2 分钟以内。</small></dd>
+      <dt>2. 用户和场景</dt>
+      <dd>谁在什么时候用，从哪个页面进入。<small>例：客服在异常件列表里点“帮我处理”。</small></dd>
+      <dt>3. AI 负责的部分和台阶</dt>
+      <dd>一句话写清它做什么、不做什么，属于第几级。<small>例：第 3 级。汇总轨迹和异常记录，起草给客户的回复；不直接发送，不改运单。</small></dd>
+      <dt>4. 流程和状态</dt>
+      <dd>列出每个状态、进入和离开的条件，以及每一步由谁完成。画出来比写出来清楚，见下图。</dd>
+      <dt>5. 资料和知识库</dt>
+      <dd>用到哪些规则和口径，由谁维护，多久更新。<small>例：中转异常处理办法 12 条，由客服主管每月复核。</small></dd>
+      <dt>6. 系统接口和权限</dt>
+      <dd>每个系统查什么、哪些字段；改数据的操作单独列出，写明谁来确认。<small>例：查轨迹、查异常记录，只读。</small></dd>
+      <dt>7. 交给人的规则</dt>
+      <dd>哪些情况必须转人工，转给谁，界面上怎么显示。<small>例：查不到单号、客户要求赔偿、同一票货第二次超时。</small></dd>
+      <dt>8. 验收样例和上线标准</dt>
+      <dd>至少 30 个真实案例，每个写出回复必须包含的要点和不能出现的内容。上线标准写成数字。<small>例：30 票里至少 27 票的草稿客服不改或只改措辞。</small></dd>
+      <dt>9. 上线后看的指标</dt>
+      <dd>使用次数、草稿被直接采用的比例、转人工比例、平均处理时长、用户反馈“没用”的记录。</dd>
+      <dt>10. 风险和兜底</dt>
+      <dd>模型服务不可用、查询超时、回答明显出错时怎么办。<small>例：任何一步失败都退回到原来的人工流程，页面提示原因。</small></dd>
+      <dt>11. 分期计划</dt>
+      <dd>先做哪一级，满足什么条件再进下一级。<small>例：一期只起草回复；采用率连续一个月超过 80% 后，二期再考虑自动跟进 GW 的处理进度。</small></dd>
+    </dl>
+  </div>
+
+  <p>第 4 项最值得多花时间。AI 功能出问题，多半出在状态的边界上：什么时候算处理完，谁有权推进到下一步，失败了退回哪里。</p>
+
+  <figure class="fig" aria-label="示意图：运单异常助手中一票异常件的状态流转，从新异常到已关闭，每一步写明发生了什么">
+    <div class="fig-box">
+      <div class="fig-h">一票异常件的状态流转</div>
+      <div class="states">
+        <div class="st h1">新异常<small>系统推送</small></div>
+        <div class="st h2">AI 整理中<small>查询并起草</small></div>
+        <div class="st h3">待客服确认<small>人来把关</small></div>
+        <div class="st h4">已回复客户<small>等 GW 处理</small></div>
+        <div class="st h5">已关闭<small>轨迹恢复</small></div>
+      </div>
+      <div class="stack">
+        <div class="evt k1"><span>10:02</span>运单系统推来异常：SG123456 在 GW 中转站超过 48 小时无新轨迹</div>
+        <div class="evt k2"><span>10:02</span>AI 查了轨迹和异常记录，起草回复，附上信息来源</div>
+        <div class="evt k3"><span>10:05</span>客服改了一句措辞，点“确认发送”</div>
+        <div class="evt k4"><span>10:05</span>回复发给客户，系统记录谁在什么时候确认的</div>
+        <div class="evt k5"><span>2 天后</span>面单补打完成，轨迹恢复更新，自动关闭</div>
+      </div>
+      <div class="back" style="text-align:left">任何一步查询失败或 AI 拿不准 → 转“人工处理”，并写明原因</div>
+    </div>
+    <figcaption>方案里的状态图要写清进入和离开每个状态的条件。时间和单号为举例。</figcaption>
+  </figure>
+
+  <h2>九、写方案之前，先花半天验证</h2>
+  <p>请开发排期之前，自己就能判断这个场景值不值得做：</p>
+  <ol>
+    <li><strong>写一页工作说明。</strong>用对新同事交代工作的口气：你是谁，要做什么，参考哪些规则，遇到什么情况转给人，回答用什么格式、多长。</li>
+    <li><strong>准备 20 个真实问题。</strong>从历史聊天、工单里挑，去掉客户的敏感信息。多挑一些难的、说得含糊的、中英印尼语混着写的。</li>
+    <li><strong>在模型的调试界面里逐个试。</strong>把工作说明放进“系统指令”，相关规则贴在问题前面，查询结果先手工从系统里复制过去。调试界面的权限可以请开发同事帮忙开通。</li>
+    <li><strong>记录对错，改说明，再试一遍。</strong>答错的看原因：缺资料，缺数据，还是说明没写清楚。通常两三轮就能看出这个场景行不行。</li>
+    <li><strong>把结果写进方案。</strong>工作说明、需要接的系统清单、测试问题，正好对应方案的第 3、6、8 项。</li>
+  </ol>
+
+  <section class="dev">
+    <h2>附：给开发同事的示例代码</h2>
+    <p>示例用 Google 的 Gemini 模型，通过 Vertex AI 用服务账号鉴权，其他模型的接法大同小异。服务账号的 JSON 凭证由管理员发放，放在代码仓库以外，路径写进环境变量，不要提交到 Git。下面三段代码在我们的环境里实际跑过。</p>
+
+    <h3>1. 建立连接，问第一个问题</h3>
+<pre><code># pip install google-genai
+import os
+from google import genai
+from google.genai import types
+from google.oauth2 import service_account
+
+creds = service_account.Credentials.from_service_account_file(
+    os.environ["GOOGLE_CREDENTIALS_FILE"],
+    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+)
+client = genai.Client(
+    vertexai=True,                                  # 走 Vertex AI，用服务账号鉴权
+    project=os.environ["GOOGLE_CLOUD_PROJECT"],
+    location="global",
+    credentials=creds,
+)
+MODEL = os.environ["GEMINI_MODEL"]                  # 填项目里已开通的模型
+
+reply = client.models.generate_content(
+    model=MODEL,
+    contents="海运从广州到雅加达一般要多久？",
+    config=types.GenerateContentConfig(system_instruction="你是物流客服助手，回答不超过两句。"),
+)
+print(reply.text)</code></pre>
+    <p>多运行几次，回答的天数可能都不一样。它用的是通用常识，不是公司的时效规则。</p>
+
+    <h3>2. 提取开单信息，输出固定格式</h3>
+<pre><code>from typing import Optional
+from pydantic import BaseModel, Field
+
+class Order(BaseModel):
+    receiver_name: Optional[str] = Field(description="收件人姓名")
+    phone: Optional[str] = Field(description="电话")
+    city: Optional[str] = Field(description="城市")
+    goods: Optional[str] = Field(description="货物和数量")
+    uncertain_fields: list[str] = Field(description="消息里没有或拿不准的字段")
+
+reply = client.models.generate_content(
+    model=MODEL,
+    contents="Halo kak, kirim ke Budi 0812-3456-7890, Surabaya, 20 箱手机壳",
+    config=types.GenerateContentConfig(
+        system_instruction="从客户消息中提取开单信息。推不出的字段填 null，并写进 uncertain_fields。",
+        response_mime_type="application/json",
+        response_schema=Order,
+    ),
+)
+order = reply.parsed          # 已经是 Order 对象，格式不对会报错
+print(order)</code></pre>
+
+    <h3>3. 工具调用：让它自己查运单</h3>
+<pre><code>def query_waybill(waybill_no: str) -&gt; dict:
+    """按运单号查询物流轨迹和当前状态。"""
+    return {"location": "GW 中转站", "last_update": "48 小时前", "status": "无新轨迹"}  # 换成调用运单系统
+
+def query_exception(waybill_no: str) -&gt; dict:
+    """按运单号查询异常记录和处理进度，轨迹长时间没有更新时调用。"""
+    return {"node": "GW 中转站", "exception": "分拣异常，面单破损", "progress": "待现场补打面单"}  # 换成调用异常系统
+
+chat = client.chats.create(
+    model=MODEL,
+    config=types.GenerateContentConfig(
+        system_instruction="你是物流查询助手。先用工具查真实数据，再给一句话结论和下一步建议。只用工具返回的信息。",
+        tools=[query_waybill, query_exception],       # 直接传 Python 函数，SDK 负责执行并把结果交回模型
+    ),
+)
+print(chat.send_message("运单 SG123456 怎么还没到？").text)</code></pre>
+    <p>我们实际运行时，模型先查了轨迹，看到 48 小时没有新轨迹，又自己决定去查异常记录，最后回答：在 GW 中转站分拣异常，面单破损，已 48 小时无新轨迹，正在等现场补打面单。这就是第五节那个循环最简单的形式。函数的说明文字是模型选择工具的依据，写得越清楚，它选得越准。</p>
+    <p>这两个函数只查询、不改数据，所以可以交给 SDK 自动执行。会改变业务状态的操作不要这样接：让模型提出要做什么，由程序展示给用户，用户确认后再执行，并记录日志。</p>
+  </section>
+
+  <h2>最后</h2>
+  <p>回到开头那个答错的例子。换一个更强的模型，它多半还是会答错，因为它仍然看不到这票货的数据。把查询接上，把规则整理好，写清楚什么时候交给人，同一个模型就能答对。</p>
+  <p>AI 不是许愿池，扔进去资料，不会自动掉出答案。它更像一个能力很强的新同事：交代清楚，给对工具，定好边界，它就能实实在在地分担工作。</p>
+
+  <hr>
+  <p class="foot">文中的单号、人名、电话、规则、百分比和相似度数值为举例或示意。Relay 的数据来自早期连续三天的统计，已隐去用户身份。</p>
+</article>
+</body>
+</html>
