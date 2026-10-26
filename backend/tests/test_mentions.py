@@ -121,6 +121,13 @@ async def test_when_the_model_fails_mentions_keep_the_old_safety_net(monkeypatch
             await chats.extract(session, None, only_chats=[f"oc_{tag}"])
             signal = (await session.execute(select(Signal).where(Signal.user_id == user_id))).scalars().one()
             assert signal.status == "watching"
+            # 消息没丢：标回未处理，下一轮再试；连续失败 3 次才放弃
+            stored = (await session.execute(select(ChatMessage).where(ChatMessage.chat_id == f"oc_{tag}"))).scalars().one()
+            assert stored.processed is False
+            await chats.extract(session, None, only_chats=[f"oc_{tag}"])
+            await chats.extract(session, None, only_chats=[f"oc_{tag}"])
+            await session.refresh(stored)
+            assert stored.processed is True
         finally:
             await session.rollback()
             await session.execute(delete(ChatMessage).where(ChatMessage.chat_id == f"oc_{tag}"))

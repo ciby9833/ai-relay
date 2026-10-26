@@ -26,6 +26,8 @@ RETENTION = timedelta(days=14)
 BATCH = 40
 CONTEXT = 10
 WAITING_DEFAULT = timedelta(days=2)
+MAX_ATTEMPTS = 3
+_failures: dict[tuple, int] = {}  # 每段会话连续失败的次数（进程内；重启后重新计数）
 
 TASKS_TOOL = {
     "name": "report_tasks",
@@ -149,8 +151,18 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
             TASKS_TOOL,
         )
     except Exception:
-        logger.exception("提取聊天待办失败 %s", chat_id)
+        # 模型出错（限流、超时）不能把这段消息丢掉：标回未处理，下一轮再试；同一段连续失败几次才放弃
+        key = (chat_id, owner.id if owner else None)
+        _failures[key] = _failures.get(key, 0) + 1
+        if _failures[key] < MAX_ATTEMPTS:
+            for message in new:
+                message.processed = False
+            logger.warning("提取聊天待办失败（第 %s 次，下一轮重试）%s", _failures[key], chat_id, exc_info=True)
+        else:
+            _failures.pop(key, None)
+            logger.exception("提取聊天待办连续失败 %s 次，放弃这段消息 %s", MAX_ATTEMPTS, chat_id)
         return
+    _failures.pop((chat_id, owner.id if owner else None), None)
     by_id = {i.id: i for i in open_items}
     changes = result.get("progress") or []
     for change in changes:
