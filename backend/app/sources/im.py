@@ -58,6 +58,7 @@ async def recent_messages(feishu: FeishuClient, user: User, chat_id: str, hours:
                          for m in item.get("mentions") or []],
             "sender": (item.get("sender") or {}).get("id"), "sender_type": (item.get("sender") or {}).get("sender_type"),
             "text": text, "at": datetime.fromtimestamp(int(item.get("create_time", "0")) / 1000, UTC),
+            "parent_id": item.get("parent_id") or None,
         })
     return messages[::-1]
 

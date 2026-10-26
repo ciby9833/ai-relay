@@ -48,6 +48,20 @@ TASKS_TOOL = {
                     "additionalProperties": False,
                 },
             },
+            "asks": {
+                "type": "array",
+                "description": "新消息里在问某个人、需要他亲自回答的话（不是让他办事）；答复他自己问题的、抄送、致谢不算",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "message_ref": {"type": "integer"},
+                        "to": {"type": "string", "description": "被问的人名"},
+                        "question": {"type": "string", "description": "问的是什么，一句话"},
+                    },
+                    "required": ["message_ref", "to", "question"],
+                    "additionalProperties": False,
+                },
+            },
             "progress": {
                 "type": "array",
                 "description": "<open> 里的未结事项中，新消息带来了实质进展的（只回了“收到/好的/在看”不算，不用列）",
@@ -65,7 +79,7 @@ TASKS_TOOL = {
                 },
             },
         },
-        "required": ["tasks", "progress"],
+        "required": ["tasks", "asks", "progress"],
         "additionalProperties": False,
     },
 }
@@ -102,7 +116,8 @@ async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[
         for message in new:
             message.processed = True
         # 这个会话里还没结的事（等别人回复、别人让他做的事）：新消息可能就是进展，要一起判断
-        open_query = select(FollowUp).where(FollowUp.status == "open", FollowUp.url == chat_link(chat_id), FollowUp.key.like("chat:%"))
+        open_query = select(FollowUp).where(FollowUp.status == "open", FollowUp.url == chat_link(chat_id),
+                                            or_(FollowUp.key.like("chat:%"), FollowUp.key.like("mention:%")))
         if owner is not None:
             open_query = open_query.where(FollowUp.user_id == owner.id)
         open_items = list((await session.execute(open_query)).scalars())
@@ -115,8 +130,10 @@ async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[
 
 async def _process(session, chat_id, new, earlier, open_items, users, by_name, owner) -> None:
     tz = ZoneInfo((owner or next(iter(users.values()), None)).timezone if (owner or users) else "UTC")
-    lines = [f"（之前）{m.sender_name or '某人'}：{m.text}" for m in earlier]
-    lines += [f"[{i}] {m.created_at.astimezone(tz):%m-%d %H:%M} {m.sender_name or '某人'}：{m.text}" for i, m in enumerate(new)]
+    replied = await _parents(session, earlier + new)
+    lines = [f"（之前）{m.sender_name or '某人'}{replied.get(m.message_id, '')}：{m.text}" for m in earlier]
+    lines += [f"[{i}] {m.created_at.astimezone(tz):%m-%d %H:%M} {m.sender_name or '某人'}{replied.get(m.message_id, '')}：{m.text}"
+              for i, m in enumerate(new)]
     pending = "\n".join(f"[#{i.id}] {i.title}" + (f"（{i.summary}）" if i.summary else "") for i in open_items)
     if owner:
         # 私聊只有两个人：告诉模型是谁和谁，否则“你帮我……”里的“你”对应不到人名
@@ -201,6 +218,52 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
                 due_at=due, remind_at=due or datetime.now(UTC) + WAITING_DEFAULT,
                 facets={"people": [task["assignee"]], "chat": chat_name},
             )
+
+    if owner is None:
+        await _settle_mentions(session, new, result, users, by_name)
+
+
+async def _parents(session, messages: list[ChatMessage]) -> dict[str, str]:
+    """话题回复 / 引用回复：每条消息前面标上它回复的是谁的哪句话。"""
+    ids = {m.parent_message_id for m in messages if m.parent_message_id}
+    if not ids:
+        return {}
+    parents = {p.message_id: p for p in (await session.execute(select(ChatMessage).where(ChatMessage.message_id.in_(ids)))).scalars()}
+    return {m.message_id: f"（回复 {parents[m.parent_message_id].sender_name or '某人'}：{parents[m.parent_message_id].text[:60]}）"
+            for m in messages if m.parent_message_id in parents}
+
+
+async def _settle_mentions(session, new: list[ChatMessage], result: dict, users: dict, by_name: dict) -> None:
+    """群里@了某位用户：读过上下文之后再决定要不要等他回。
+
+    以前只要@了他、两小时内他没在群里说话，就提醒“@你的消息还没回”——可那条@常常是在回答他自己刚问的问题，
+    或者只是抄送。现在：被判为在问他、要他回答的，才继续盯着（并记下问的是什么）；建成了待办的，由待办跟进；
+    其余的（答复、抄送、致谢……）直接结束，不再提醒。模型没给出判断时（出错）保持原来的做法。
+    """
+    asked: dict[tuple[str, str], str] = {}
+    for ask in result.get("asks") or []:
+        if 0 <= ask.get("message_ref", -1) < len(new):
+            source = new[ask["message_ref"]]
+            mentioned = {x.get("name"): x.get("open_id") for x in source.mentions}
+            target = users.get(mentioned.get(ask["to"])) or by_name.get(ask["to"])
+            if target is not None:
+                asked[(source.message_id, target.feishu_open_id)] = ask["question"]
+    for message in new:
+        for mention in message.mentions or []:
+            user = users.get(mention.get("open_id"))
+            if user is None:
+                continue
+            signal = (await session.execute(select(Signal).where(
+                Signal.user_id == user.id, Signal.kind == "mention", Signal.external_id == message.message_id,
+                Signal.status == "watching"))).scalars().first()
+            if signal is None:
+                continue  # 已经建成待办（见上）或已经结束
+            question = asked.get((message.message_id, user.feishu_open_id))
+            if question:
+                signal.payload = {**(signal.payload or {}), "ask": question}
+            else:
+                signal.status = "done"
+                signal.payload = {**(signal.payload or {}), "settled": "读过上下文：不需要他回复（答复、抄送或已有结论）"}
 
 
 MERGE_WINDOW = timedelta(minutes=10)

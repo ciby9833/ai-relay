@@ -367,10 +367,16 @@ async def _from_simple(session: AsyncSession, user: User, signal: Signal, fresh:
             facets={"people": [creator], "open_ids": [p.get("creator_open_id")]},
         )
     elif signal.kind == "mention":
+        p = signal.payload or {}
+        chat = p.get("chat_name") or "群聊"
         await upsert(
             session, user, f"mention:{signal.external_id}", signal, silent=not fresh,
-            kind="mention", owner="me", title=f"{signal.payload.get('chat_name') or '群聊'}里@你的消息还没回",
-            summary=signal.body, next_step="在群里回复", url=signal.url,
+            kind="mention", owner="me",
+            # 读过上下文、确认是在问他的，标题直接写问的是什么
+            title=f"{p.get('sender_name') or '有人'} 在{chat}问你：{p['ask']}" if p.get("ask") else f"{chat}里@你的消息还没回",
+            summary=signal.body, next_step="在群里回复",
+            url=signal.url or (f"https://applink.feishu.cn/client/chat/open?openChatId={p['chat_id']}" if p.get("chat_id") else None),
+            facets={"people": [p.get("sender_name")] if p.get("sender_name") else [], "chat": p.get("chat_name")},
         )
     signal.status = "tracked"
 

@@ -113,7 +113,7 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
             session.add(ChatMessage(
                 message_id=m["message_id"], chat_id=chat_id, chat_name=f"和 {await feishu.user_name(other) or '同事'} 的私聊",
                 sender_open_id=m["sender"], sender_name=name, text=m["text"][:4000], mentions=m.get("mentions") or [],
-                owner_user_id=user.id, created_at=m["at"],
+                owner_user_id=user.id, created_at=m["at"], parent_message_id=m.get("parent_id"),
             ))
             created += 1
         seen[chat_id] = newest.isoformat()

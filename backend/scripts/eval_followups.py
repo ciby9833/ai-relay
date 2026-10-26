@@ -91,6 +91,31 @@ PRIVATE_TASKS = [
 ]
 
 
+# 群里@了 Xavier：读过上下文，这条需不需要他亲自回应（要他回答或要他办事）。(之前的消息, 新消息, 期望)
+# 2026-10-26 生产复盘：被@的多半是在答复他自己的问题
+MENTIONS = [
+    (["Xavier(吴川)：他PDA有是把这个上传吗？", "Callesya Lovely (李芋璇)：我问网点确认一下"],
+     ["Callesya Lovely (李芋璇)（回复 Xavier(吴川)：他PDA有是把这个上传吗？）：@Xavier(吴川) 是的，用PDA"], False),
+    (["Xavier(吴川)：@Veigar(吴英杰) 我怎么不在这个群里"], ["Veigar(吴英杰)：@Xavier(吴川) 拉你了"], False),
+    (["Xavier(吴川)：@Veigar(吴英杰) 你说二段码 地图和区域唯一的调整吗？"],
+     ["Veigar(吴英杰)：@Xavier(吴川) 不一定，只要你们有做过这个方向的调整措施都算，可以主要看区域唯一和地图"], False),
+    ([], ["Callesya Lovely (李芋璇)：@Hendri Yanto 可以麻烦你帮忙修改一下吗？ 数据不一致会影响网点的考核 Cc @Xavier(吴川)"], False),
+    ([], ["Yohannes（王永安）：@Xavier(吴川) @Ruson(邹玉胜) 这个周末国内上班吗？"], True),
+    (["Veigar(吴英杰)：和OA系统打通，基础对接OA的开退网流程，同步网点状态"],
+     ["Veigar(吴英杰)：@Xavier(吴川) 你给基础提个需求，是否考虑网点信息中要有个退网中的状态"], True),
+    (["Pax(刘攀)：围栏缺失的网点怎么处理"], ["Veigar(吴英杰)：@Xavier(吴川) @Yohannes（王永安） 这个需求谁在跟进下发？"], True),
+    ([], ["Yohannes（王永安）：@Xavier(吴川) 周末上班吗？", "Ruson(邹玉胜)：国内这周六上班的"], False),
+]
+
+
+async def judge_mention(before: list[str], new: list[str]) -> bool:
+    lines = [f"（之前）{m}" for m in before] + [f"[{i}] 10-23 21:{40 + i} {m}" for i, m in enumerate(new)]
+    result = await complete_structured(CHAT_TASKS_SYSTEM, f"<now>{NOW}</now>\n<chat kind=\"群聊\">\n" + "\n".join(lines) + "\n</chat>", TASKS_TOOL)
+    asks = [a for a in result.get("asks") or [] if "Xavier" in a.get("to", "")]
+    tasks = [t for t in result.get("tasks") or [] if "Xavier" in t.get("assignee", "") and "Xavier" not in t.get("requester", "")]
+    return bool(asks or tasks)
+
+
 async def extract_private(messages: list[str]):
     lines = [f"[{i}] 10-19 14:{30 + i} {m}" for i, m in enumerate(messages)]
     result = await complete_structured(
@@ -155,6 +180,7 @@ async def main() -> None:
     totals = [
         await run("群聊/私聊事项进展", CHAT_PROGRESS, judge_chat),
         await run("一次回复回应好几件事", MULTI_PROGRESS, judge_multi),
+        await run("群里@他：需不需要他回应", MENTIONS, judge_mention),
         await run("邮件进展（同线程/跨线程）", MAIL_PROGRESS, lambda task, mail: judge_mail(task, *mail)),
         await run("回复后还要不要等对方", REPLY_STATE, judge_reply),
         await run("私聊里谁让谁做事", PRIVATE_TASKS, extract_private),

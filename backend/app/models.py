@@ -352,6 +352,8 @@ class ChatMessage(Base):
     text: Mapped[str] = mapped_column(Text)
     mentions: Mapped[list] = mapped_column(JSONB, server_default="[]")  # [{"open_id", "name"}]
     processed: Mapped[bool] = mapped_column(Boolean, server_default="false")  # 是否已提取过待办
+    # 回复的是哪条消息（飞书的话题回复 / 引用回复）：判断“这条@是在回答他刚才的问题”要靠它
+    parent_message_id: Mapped[str | None] = mapped_column(String(128))
     # 私聊消息属于读取它的那位用户（以他的身份读到的），只用于他自己的事项，永远不给别人当背景；群消息为空
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

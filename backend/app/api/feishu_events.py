@@ -211,6 +211,7 @@ async def _watch_group_message(
                     sender_name=sender_name,
                     text=text[:4000],
                     mentions=[{"open_id": (m.get("id") or {}).get("open_id"), "name": m.get("name")} for m in message.get("mentions") or []],
+                    parent_message_id=message.get("parent_id") or None,
                 ).on_conflict_do_nothing(index_elements=["message_id"])
             )
         if sender:
