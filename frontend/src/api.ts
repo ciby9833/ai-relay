@@ -221,6 +221,8 @@ export interface EvalItem {
 
 export interface EvalData {
   enrolled: boolean;
+  status: "not_started" | "queued" | "running" | "live";
+  progress: number | null;
   processed_until: string | null;
   enrolled_at: string | null;
   days: number;
@@ -475,7 +477,7 @@ export const api = {
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),
   saveSettings: (settings: Settings) => request("/settings", json("PUT", settings)),
-  evaluation: (days = 2) => request<EvalData>(`/eval?days=${days}`),
+  evaluation: () => request<EvalData>("/eval"),
   evalEnroll: (days = 2) => request<{ enrolled: boolean }>("/eval/enroll", json("POST", { days })),
   evalLabel: (target: "ledger" | "followup", key: string, value: EvalFeedbackValue | null, snapshot: Record<string, string> = {}) =>
     request("/eval/labels", json("PUT", { target, key, label: value?.label ?? null, reason: value?.reason ?? null, note: value?.note ?? null, snapshot })),

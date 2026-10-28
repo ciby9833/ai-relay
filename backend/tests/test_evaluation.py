@@ -62,7 +62,9 @@ async def test_incremental_ledger(monkeypatch):
             ])
             await engine.enroll(session, me, days=1)
             await engine.advance(session, provider, me, now)
-            matters = (await session.execute(select(LedgerMatter).where(LedgerMatter.user_id == user_id))).scalars().all()
+            state = await session.get(SourceState, (user_id, engine.STATE))
+            assert state.cursor["backfilled"] is True and state.cursor["progress"] == state.cursor["until"]
+            matters =(await session.execute(select(LedgerMatter).where(LedgerMatter.user_id == user_id))).scalars().all()
             assert [m.title for m in matters] == ["盘点逻辑"]
             commitments = (await session.execute(select(LedgerCommitment).where(LedgerCommitment.user_id == user_id))).scalars().all()
             assert [(c.owner, c.status) for c in commitments] == [("me", "open")]
@@ -136,6 +138,10 @@ async def test_each_person_sees_and_labels_only_their_own():
             as_user["current"] = users[ids[0]]
             assert (await client.post("/api/eval/enroll", json={"days": 2})).json()["enrolled"]
             data = (await client.get("/api/eval")).json()
+            # 刚开始：排队中，范围定为开始时选的 2 天；再点开始不会改范围
+            assert (data["status"], data["progress"], data["days"]) == ("queued", 0.0, 2)
+            await client.post("/api/eval/enroll", json={"days": 3})
+            assert (await client.get("/api/eval")).json()["days"] == 2
             assert [c["what"] for c in data["ledger"]] == ["看一下盘点逻辑"]
             assert [c["title"] for c in data["current"]] == ["派给你的任务：chatgpt培训"]
             key = data["ledger"][0]["key"]

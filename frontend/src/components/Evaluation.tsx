@@ -91,9 +91,17 @@ export default function Evaluation() {
   const [data, setData] = useState<EvalData | null>(null);
   const [tab, setTab] = useState<"ledger" | "current">("ledger");
   const [missed, setMissed] = useState("");
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(() => api.evaluation(days).then(setData).catch((e) => setError(e instanceof Error ? e.message : t("操作失败"))), [days]);
+  const load = useCallback(() => api.evaluation().then(setData).catch((e) => setError(e instanceof Error ? e.message : t("操作失败"))), []);
   useEffect(() => void load(), [load]);
+  // 一次评估是一个任务：整理期间每 15 秒刷新一次进度和已经整理出来的结果；整理完就停
+  const busy = data?.status === "queued" || data?.status === "running";
+  useEffect(() => {
+    if (!busy) return;
+    const timer = window.setInterval(load, 15_000);
+    return () => window.clearInterval(timer);
+  }, [busy, load]);
 
   if (!data) return <div className="eval-page">{error ? <p role="alert" className="error-text">{error}</p> : null}</div>;
 
@@ -106,15 +114,10 @@ export default function Evaluation() {
     try { await api.evalLabel(target, key, value, snapshot); } catch { setError(t("保存失败，请重试")); load(); }
   };
   const done = (list: { feedback: EvalFeedbackValue | null }[]) => list.filter((x) => x.feedback).length;
-  const range = (
-    <div className="eval-days" role="radiogroup" aria-label={t("时间范围")}>
-      {DAYS.map((d) => (
-        <button key={d} type="button" role="radio" aria-checked={days === d} className={`chip ${days === d ? "active" : ""}`} onClick={() => setDays(d)}>
-          {t("最近 {count} 天", { count: d })}
-        </button>
-      ))}
-    </div>
-  );
+  const start = async () => {
+    setStarting(true);
+    try { await api.evalEnroll(days); await load(); } catch { setError(t("操作失败")); } finally { setStarting(false); }
+  };
 
   return (
     <div className="eval-page">
@@ -127,17 +130,32 @@ export default function Evaluation() {
 
       {!data.enrolled ? (
         <section className="eval-start">
-          {range}
-          <p>{t("开始后，Relay 会先整理你最近 {count} 天的事，之后持续更新。", { count: days })}</p>
-          <button className="btn primary" onClick={() => api.evalEnroll(days).then(load)}>{t("开始")}</button>
+          <p>{t("整理多久的事？")}</p>
+          <div className="eval-days" role="radiogroup" aria-label={t("时间范围")}>
+            {DAYS.map((d) => (
+              <button key={d} type="button" role="radio" aria-checked={days === d} className={`chip ${days === d ? "active" : ""}`}
+                disabled={starting} onClick={() => setDays(d)}>
+                {t("最近 {count} 天", { count: d })}
+              </button>
+            ))}
+          </div>
+          <p className="muted small">{t("开始后范围就定下来了；整理完之后有新消息会自动更新。")}</p>
+          <button className="btn primary" disabled={starting} onClick={start}>{starting ? t("正在开始…") : t("开始")}</button>
         </section>
       ) : (
         <>
-          <div className="eval-bar">
-            {range}
-            <span className="muted small">
-              {data.processed_until ? t("已整理到 {time}", { time: relative(data.processed_until) }) : t("正在整理，几分钟后回来看。")}
-            </span>
+          <div className="eval-bar" aria-live="polite">
+            <span className="chip active">{t("整理范围：最近 {count} 天", { count: data.days })}</span>
+            {busy ? (
+              <span className="eval-progress">
+                <span className="eval-progress-track"><span style={{ width: `${Math.round((data.progress ?? 0) * 100)}%` }} /></span>
+                <span className="muted small">
+                  {data.status === "queued" ? t("排队中，马上开始…") : t("正在整理 {percent}%，已整理出的结果可以先看", { percent: Math.round((data.progress ?? 0) * 100) })}
+                </span>
+              </span>
+            ) : (
+              <span className="muted small">{t("已整理完，有新消息会自动更新（最近一次 {time}）", { time: data.processed_until ? relative(data.processed_until) : "—" })}</span>
+            )}
           </div>
           <nav className="eval-tabs">
             <button className="btn secondary" aria-pressed={tab === "ledger"} onClick={() => setTab("ledger")}>
@@ -151,7 +169,7 @@ export default function Evaluation() {
             data.ledger.length ? data.ledger.map((item) => (
               <Commitment key={item.key} item={item}
                 onFeedback={(v) => save("ledger", item.key, v, { what: item.what, status: item.status, matter: item.matter })} />
-            )) : <p className="empty-note">{t("还没有整理出来，稍后再看。")}</p>
+            )) : <p className="empty-note">{busy ? t("正在整理，结果会陆续出现在这里。") : t("这段时间没有整理出要跟进的事。")}</p>
           ) : (
             data.current.length ? data.current.map((item) => (
               <Current key={item.key} item={item} onFeedback={(v) => save("followup", item.key, v, { title: item.title, status: item.status })} />

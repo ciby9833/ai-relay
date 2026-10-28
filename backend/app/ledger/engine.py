@@ -74,6 +74,8 @@ async def advance(session: AsyncSession, provider, user: User, now: datetime | N
             processed_until = window_start
             break
         window_start += shadow.WINDOW
+        # 每处理完一窗就记下进度：页面上能看到“整理到哪了”，中途重启也从这里接着做
+        state.cursor = {**(state.cursor or {}), "progress": min(window_start, now).isoformat()}
         await session.commit()
     # 5 天没动静的未结承诺
     stale_before = now - shadow.STALE
@@ -83,7 +85,9 @@ async def advance(session: AsyncSession, provider, user: User, now: datetime | N
             LedgerCommitment.matter_id.in_(select(LedgerMatter.id).where(LedgerMatter.user_id == user.id, LedgerMatter.last_at < stale_before)),
         ).values(status="stale", updated_at=now)
     )
-    state.cursor = {**cursor, "until": max(processed_until, until).isoformat(), "last_run": {"calls": meter.calls, "tokens": meter.tokens, "errors": meter.errors}}
+    done = processed_until >= now
+    state.cursor = {**cursor, "until": max(processed_until, until).isoformat(), "progress": max(processed_until, until).isoformat(),
+                    "backfilled": bool(cursor.get("backfilled")) or done, "last_run": {"calls": meter.calls, "tokens": meter.tokens, "errors": meter.errors}}
     await session.commit()
     return meter
 

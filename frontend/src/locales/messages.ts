@@ -1436,10 +1436,6 @@ export const messages: Record<string, readonly [string, string]> = {
     "Help Relay get smarter",
     "Bantu Relay jadi lebih pintar"
   ],
-  "已整理到 {time}": [
-    "Updated {time}",
-    "Diperbarui {time}"
-  ],
   "新方式整理的承诺": [
     "New approach: commitments",
     "Cara baru: komitmen"
@@ -1447,10 +1443,6 @@ export const messages: Record<string, readonly [string, string]> = {
   "现在系统的事项": [
     "Current system: items",
     "Sistem saat ini: item"
-  ],
-  "还没有整理出来，稍后再看。": [
-    "Nothing organised yet — check back later.",
-    "Belum ada hasil — cek lagi nanti."
   ],
   "两边都漏掉的": [
     "Missed by both",
@@ -1596,17 +1588,9 @@ export const messages: Record<string, readonly [string, string]> = {
     "We're trying a new approach: emails, chats and approvals about the same matter are kept together to work out who owes whom what, and whether it's done. It only runs in the background and won't send you reminders. Tap 👍 if it's right, 👎 if not — and say what's wrong if you like. Only you can see this.",
     "Kami sedang mencoba cara baru: email, chat, dan persetujuan tentang hal yang sama dikumpulkan untuk melihat siapa berutang apa kepada siapa, dan apakah sudah selesai. Hanya berjalan di latar belakang dan tidak mengirim pengingat. Ketuk 👍 jika benar, 👎 jika tidak — dan sebutkan yang salah jika mau. Hanya Anda yang dapat melihat ini."
   ],
-  "开始后，Relay 会先整理你最近 {count} 天的事，之后持续更新。": [
-    "Once you start, Relay organises your last {count} days, then keeps it up to date.",
-    "Setelah dimulai, Relay merapikan {count} hari terakhir Anda, lalu terus memperbaruinya."
-  ],
   "开始": [
     "Start",
     "Mulai"
-  ],
-  "正在整理，几分钟后回来看。": [
-    "Organising — check back in a few minutes.",
-    "Sedang dirapikan — cek lagi dalam beberapa menit."
   ],
   "这段时间没有事项。": [
     "No items in this period.",
@@ -1619,5 +1603,41 @@ export const messages: Record<string, readonly [string, string]> = {
   "每格是 👍 的占比（反馈数），以及最常见的 👎 原因。内容只有本人看得到。": [
     "Each cell shows the 👍 share (feedback count) and the most common 👎 reasons. Only each person can see their own content.",
     "Setiap sel menunjukkan porsi 👍 (jumlah umpan balik) dan alasan 👎 yang paling sering. Isi hanya bisa dilihat pemiliknya."
+  ],
+  "整理多久的事？": [
+    "How far back should Relay look?",
+    "Seberapa jauh ke belakang?"
+  ],
+  "开始后范围就定下来了；整理完之后有新消息会自动更新。": [
+    "The range is fixed once you start; after that, new messages are added automatically.",
+    "Rentang tidak bisa diubah setelah dimulai; setelah itu pesan baru ditambahkan otomatis."
+  ],
+  "正在开始…": [
+    "Starting…",
+    "Memulai…"
+  ],
+  "整理范围：最近 {count} 天": [
+    "Range: last {count} days",
+    "Rentang: {count} hari terakhir"
+  ],
+  "排队中，马上开始…": [
+    "Queued — starting shortly…",
+    "Dalam antrean — segera dimulai…"
+  ],
+  "正在整理 {percent}%，已整理出的结果可以先看": [
+    "Organising {percent}% — you can review what's ready so far",
+    "Sedang dirapikan {percent}% — hasil yang sudah ada bisa dilihat"
+  ],
+  "已整理完，有新消息会自动更新（最近一次 {time}）": [
+    "Done — new messages are added automatically (last update {time})",
+    "Selesai — pesan baru ditambahkan otomatis (terakhir {time})"
+  ],
+  "正在整理，结果会陆续出现在这里。": [
+    "Organising — results will appear here as they're ready.",
+    "Sedang dirapikan — hasil akan muncul di sini."
+  ],
+  "这段时间没有整理出要跟进的事。": [
+    "Nothing to follow up on in this period.",
+    "Tidak ada yang perlu ditindaklanjuti dalam periode ini."
   ]
 };

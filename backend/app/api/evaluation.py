@@ -3,6 +3,7 @@
 隐私：每个人只看得到、只能标注自己的；管理员只看到每个人的汇总数字（标了多少、真实率、状态正确率），看不到内容。
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -24,6 +25,14 @@ WRONG_REASONS = ("already_done", "not_done", "wrong_detail")
 Reason = Literal["not_mine", "duplicate", "too_old", "already_done", "not_done", "wrong_detail"]
 
 
+REF = re.compile(r"\[?(?:sig|chat):[^\]\s,，、]+\]?\s*")
+
+
+def readable(text: str) -> str:
+    """依据里的内部编号（[sig:123]、[chat:om_xxx]）给人看时去掉。"""
+    return REF.sub("", text or "").strip(" ；;，,")
+
+
 def commitment_key(c: LedgerCommitment) -> str:
     """对账会整体替换一件事的承诺行；同一件事、同样内容的承诺沿用原来的评价。"""
     return f"{c.matter_id}:{c.owner}:{c.what.strip()[:400]}"
@@ -41,10 +50,13 @@ async def enroll(session: SessionDep, user: UserDep, body: EnrollBody | None = N
 
 
 @router.get("/eval")
-async def evaluation(session: SessionDep, user: UserDep, days: int = 2):
-    days = max(1, min(days, 3))
-    since = datetime.now(UTC) - timedelta(days=days)
+async def evaluation(session: SessionDep, user: UserDep):
+    """一次评估是一个任务：开始时选定范围（最近 1~3 天），整理完后持续更新；看到的是从那时起的全部结果。"""
     state = await session.get(SourceState, (user.id, engine.STATE))
+    cursor = (state.cursor or {}) if state else {}
+    days = cursor.get("backfill_days") or engine.BACKFILL_DAYS
+    enrolled_at = datetime.fromisoformat(cursor["enrolled_at"]) if cursor.get("enrolled_at") else datetime.now(UTC)
+    since = enrolled_at - timedelta(days=days)
     labels = {(r.target, r.target_key): {"label": r.label, "reason": r.reason, "note": r.note} for r in (await session.execute(
         select(EvalLabel).where(EvalLabel.user_id == user.id))).scalars()}
     ledger = []
@@ -64,7 +76,7 @@ async def evaluation(session: SessionDep, user: UserDep, days: int = 2):
             key = commitment_key(c)
             m = matters[c.matter_id]
             ledger.append({"key": key, "matter_id": m.id, "matter": m.title, "summary": m.summary, "owner": c.owner, "party": c.party,
-                           "what": c.what, "due": c.due, "status": c.status, "evidence": c.evidence, "last_at": m.last_at.isoformat(),
+                           "what": c.what, "due": c.due, "status": c.status, "evidence": readable(c.evidence), "last_at": m.last_at.isoformat(),
                            "materials": materials.get(m.id, [])[::-1], "feedback": labels.get(("ledger", key))})
     items = (await session.execute(
         select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.created_at >= since).order_by(FollowUp.created_at.desc())
@@ -74,9 +86,17 @@ async def evaluation(session: SessionDep, user: UserDep, days: int = 2):
                for i in items]
     feedback = [{"id": f.id, "kind": f.kind, "text": f.text, "created_at": f.created_at.isoformat()} for f in (await session.execute(
         select(EvalFeedback).where(EvalFeedback.user_id == user.id).order_by(EvalFeedback.id.desc()).limit(50))).scalars()]
-    cursor = (state.cursor or {}) if state else {}
-    return {"enrolled": state is not None, "processed_until": cursor.get("until"), "enrolled_at": cursor.get("enrolled_at"),
-            "days": days, "ledger": ledger, "current": current, "feedback": feedback}
+    if state is None:
+        status, progress = "not_started", None
+    elif cursor.get("backfilled"):
+        status, progress = "live", 1.0
+    else:
+        # 回填进行中：按已处理到的时间点算进度
+        done_until = datetime.fromisoformat(cursor["progress"]) if cursor.get("progress") else since
+        status = "running" if cursor.get("progress") else "queued"
+        progress = round(max(0.0, min(1.0, (done_until - since) / max(enrolled_at - since, timedelta(seconds=1)))), 2)
+    return {"enrolled": state is not None, "status": status, "progress": progress, "processed_until": cursor.get("until"),
+            "enrolled_at": cursor.get("enrolled_at"), "days": days, "ledger": ledger, "current": current, "feedback": feedback}
 
 
 class LabelBody(BaseModel):
