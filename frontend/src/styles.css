@@ -2125,3 +2125,13 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .eval-summary th, .eval-summary td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .eval-summary .eval-total td { font-weight: 600; }
 .table-scroll { overflow-x: auto; }
+
+.eval-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; }
+.eval-days, .eval-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.eval-page .chip { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: inherit; cursor: pointer; }
+.eval-page .chip.active { border-color: var(--accent); color: var(--accent); background: var(--bg-sunken, transparent); }
+.eval-feedback-box { margin-top: 8px; }
+.eval-thumbs { display: flex; gap: 6px; }
+.eval-page .btn.eval-down { border-color: #c62828; color: #c62828; }
+.eval-reasons { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.eval-note { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: inherit; width: 100%; box-sizing: border-box; }

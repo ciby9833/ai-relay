@@ -60,6 +60,7 @@ async def test_incremental_ledger(monkeypatch):
                 {"summary": "Callesya 请他看盘点逻辑", "commitments": [{"owner": "me", "party": "Callesya", "what": "看一下盘点逻辑",
                                                                    "status": "open", "evidence": "她@他请他看"}]},
             ])
+            await engine.enroll(session, me, days=1)
             await engine.advance(session, provider, me, now)
             matters = (await session.execute(select(LedgerMatter).where(LedgerMatter.user_id == user_id))).scalars().all()
             assert [m.title for m in matters] == ["盘点逻辑"]
@@ -133,31 +134,35 @@ async def test_each_person_sees_and_labels_only_their_own():
             users = {u.id: u for u in [await session.get(User, i) for i in ids]}
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://relay") as client:
             as_user["current"] = users[ids[0]]
-            assert (await client.post("/api/eval/enroll")).json()["enrolled"]
+            assert (await client.post("/api/eval/enroll", json={"days": 2})).json()["enrolled"]
             data = (await client.get("/api/eval")).json()
             assert [c["what"] for c in data["ledger"]] == ["看一下盘点逻辑"]
             assert [c["title"] for c in data["current"]] == ["派给你的任务：chatgpt培训"]
             key = data["ledger"][0]["key"]
-            assert (await client.put("/api/eval/labels", json={"target": "ledger", "key": key, "label": "ok"})).status_code == 200
-            assert (await client.put("/api/eval/labels", json={"target": "followup", "key": str(item_id), "label": "noise"})).status_code == 200
+            assert (await client.put("/api/eval/labels", json={"target": "ledger", "key": key, "label": "up"})).status_code == 200
+            assert (await client.put("/api/eval/labels", json={"target": "followup", "key": str(item_id), "label": "down",
+                                                               "reason": "too_old", "note": "两个月前的任务"})).status_code == 200
             assert (await client.post("/api/eval/feedback", json={"kind": "missed", "text": "等 Hendri 发运单明细"})).status_code == 200
             labeled = (await client.get("/api/eval")).json()
-            assert labeled["ledger"][0]["label"] == "ok" and labeled["current"][0]["label"] == "noise"
+            assert labeled["ledger"][0]["feedback"]["label"] == "up"
+            assert labeled["current"][0]["feedback"] == {"label": "down", "reason": "too_old", "note": "两个月前的任务"}
 
             # 别人看不到他的，也标不了他的
             as_user["current"] = users[ids[1]]
             mine = (await client.get("/api/eval")).json()
             assert mine["ledger"] == [] and mine["current"] == [] and mine["enrolled"] is False
-            assert (await client.put("/api/eval/labels", json={"target": "followup", "key": str(item_id), "label": "ok"})).status_code == 404
-            assert (await client.put("/api/eval/labels", json={"target": "ledger", "key": f"{matter_id}:me:x", "label": "ok"})).status_code == 404
+            assert (await client.put("/api/eval/labels", json={"target": "followup", "key": str(item_id), "label": "up"})).status_code == 404
+            assert (await client.put("/api/eval/labels", json={"target": "ledger", "key": f"{matter_id}:me:x", "label": "up"})).status_code == 404
             assert (await client.get("/api/insights/eval")).status_code == 403
 
             # 管理员只看到数字
             as_user["current"] = users[ids[2]]
             overview = (await client.get("/api/insights/eval")).json()
             row = next(r for r in overview["users"] if r["user"] == "Xavier(吴川)")
-            assert row["ledger"]["ok"] == 1 and row["current"]["noise"] == 1 and row["missed"] == 1
+            assert row["ledger"]["correct"] == 1.0 and row["current"]["reasons"] == {"too_old": 1} and row["current"]["real"] == 0.0
+            assert row["missed"] == 1
             assert "盘点逻辑" not in str(overview) and "chatgpt" not in str(overview) and "Hendri" not in str(overview)
+            assert "两个月前" not in str(overview)  # 备注也只有本人看得到
     finally:
         app.dependency_overrides.pop(deps.get_current_user, None)
         async with SessionLocal() as session:

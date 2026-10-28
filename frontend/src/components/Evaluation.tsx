@@ -1,27 +1,51 @@
 import { t } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
-import { api, type EvalCommitment, type EvalData, type EvalItem, type EvalLabel, type EvalOverview, type EvalRates } from "../api";
+import { api, type EvalCommitment, type EvalData, type EvalFeedbackValue, type EvalItem, type EvalOverview, type EvalRates, type EvalReason } from "../api";
 import { dayLabel, relative, timeOf } from "../format";
 import Icon from "./Icon";
 
 const STATUS: Record<EvalCommitment["status"], string> = { open: "未完成", done: "已办完", dropped: "不用办了", stale: "5 天没动静" };
-const LABELS: [EvalLabel, string][] = [["ok", "真实，状态也对"], ["state", "真实，但状态不对"], ["noise", "不是我要管的"]];
+const DAYS = [1, 2, 3] as const;
+// 和 Claude 的反馈方式一样：👍 一下就好；👎 时可以顺手说一下哪里不对（可选）
+const REASONS: [EvalReason, string][] = [
+  ["not_mine", "不是我的事"], ["already_done", "其实已经办完了"], ["not_done", "其实还没办完"],
+  ["duplicate", "重复了"], ["too_old", "很久以前的事"], ["wrong_detail", "内容不对"],
+];
 
-function LabelButtons({ value, onChange }: { value: EvalLabel | null; onChange: (label: EvalLabel | null) => void }) {
+function Feedback({ value, onChange }: { value: EvalFeedbackValue | null; onChange: (value: EvalFeedbackValue | null) => void }) {
+  const [note, setNote] = useState(value?.note ?? "");
+  useEffect(() => setNote(value?.note ?? ""), [value?.note]);
+  const set = (label: "up" | "down") =>
+    onChange(value?.label === label ? null : { label, reason: null, note: null });
   return (
-    <div className="eval-labels" role="radiogroup">
-      {LABELS.map(([label, text]) => (
-        <button key={label} type="button" role="radio" aria-checked={value === label}
-          className={`btn small ${value === label ? `primary eval-${label}` : "ghost"}`}
-          onClick={() => onChange(value === label ? null : label)}>
-          {t(text)}
-        </button>
-      ))}
+    <div className="eval-feedback-box">
+      <div className="eval-thumbs">
+        <button type="button" className={`btn small ${value?.label === "up" ? "primary" : "ghost"}`} aria-pressed={value?.label === "up"}
+          title={t("对")} onClick={() => set("up")}>👍 {t("对")}</button>
+        <button type="button" className={`btn small ${value?.label === "down" ? "eval-down" : "ghost"}`} aria-pressed={value?.label === "down"}
+          title={t("不对")} onClick={() => set("down")}>👎 {t("不对")}</button>
+      </div>
+      {value?.label === "down" && (
+        <div className="eval-reasons">
+          <span className="muted small">{t("哪里不对？（可选）")}</span>
+          <div className="eval-chips">
+            {REASONS.map(([reason, text]) => (
+              <button key={reason} type="button" className={`chip ${value.reason === reason ? "active" : ""}`} aria-pressed={value.reason === reason}
+                onClick={() => onChange({ ...value, reason: value.reason === reason ? null : reason })}>
+                {t(text)}
+              </button>
+            ))}
+          </div>
+          <input className="eval-note" value={note} placeholder={t("补充一句（可选）")} aria-label={t("补充一句（可选）")}
+            onChange={(e) => setNote(e.target.value)}
+            onBlur={() => note.trim() !== (value.note ?? "") && onChange({ ...value, note: note.trim() || null })} />
+        </div>
+      )}
     </div>
   );
 }
 
-function Commitment({ item, onLabel }: { item: EvalCommitment; onLabel: (label: EvalLabel | null) => void }) {
+function Commitment({ item, onFeedback }: { item: EvalCommitment; onFeedback: (value: EvalFeedbackValue | null) => void }) {
   return (
     <article className="eval-card">
       <div className="eval-matter">{item.matter}</div>
@@ -41,83 +65,97 @@ function Commitment({ item, onLabel }: { item: EvalCommitment; onLabel: (label: 
           </ul>
         </details>
       )}
-      <LabelButtons value={item.label} onChange={onLabel} />
+      <Feedback value={item.feedback} onChange={onFeedback} />
     </article>
   );
 }
 
-function Current({ item, onLabel }: { item: EvalItem; onLabel: (label: EvalLabel | null) => void }) {
+function Current({ item, onFeedback }: { item: EvalItem; onFeedback: (value: EvalFeedbackValue | null) => void }) {
   const closed = item.status !== "open";
   return (
     <article className="eval-card">
       <div className="eval-matter">{item.title}</div>
       <p className="muted small">
-        {dayLabel(item.created_at)} {timeOf(item.created_at)} · {item.kind} ·{" "}
+        {dayLabel(item.created_at)} {timeOf(item.created_at)} ·{" "}
         <span className={`eval-status ${closed ? "done" : "open"}`}>{closed ? `${t("已结束")}：${item.resolution ?? item.status}` : t("未结")}</span>
       </p>
       {item.summary && <p className="muted small">{item.summary}</p>}
-      <LabelButtons value={item.label} onChange={onLabel} />
+      <Feedback value={item.feedback} onChange={onFeedback} />
     </article>
   );
 }
 
-/** 每个人对照两条链路给出反馈：新链路的承诺账本 vs 现有系统的事项。只看得到自己的。 */
+/** 每个人对照两条链路给出反馈：新方式整理的承诺 vs 现在系统的事项。只看得到自己的。 */
 export default function Evaluation() {
+  const [days, setDays] = useState(2);
   const [data, setData] = useState<EvalData | null>(null);
   const [tab, setTab] = useState<"ledger" | "current">("ledger");
   const [missed, setMissed] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(() => api.evaluation().then(setData).catch((e) => setError(e instanceof Error ? e.message : t("操作失败"))), []);
+  const load = useCallback(() => api.evaluation(days).then(setData).catch((e) => setError(e instanceof Error ? e.message : t("操作失败"))), [days]);
   useEffect(() => void load(), [load]);
 
   if (!data) return <div className="eval-page">{error ? <p role="alert" className="error-text">{error}</p> : null}</div>;
 
-  const label = async (target: "ledger" | "followup", key: string, value: EvalLabel | null, snapshot: Record<string, string>) => {
+  const save = async (target: "ledger" | "followup", key: string, value: EvalFeedbackValue | null, snapshot: Record<string, string>) => {
     setData((d) => d && {
       ...d,
-      ledger: target === "ledger" ? d.ledger.map((c) => (c.key === key ? { ...c, label: value } : c)) : d.ledger,
-      current: target === "followup" ? d.current.map((c) => (c.key === key ? { ...c, label: value } : c)) : d.current,
+      ledger: target === "ledger" ? d.ledger.map((c) => (c.key === key ? { ...c, feedback: value } : c)) : d.ledger,
+      current: target === "followup" ? d.current.map((c) => (c.key === key ? { ...c, feedback: value } : c)) : d.current,
     });
     try { await api.evalLabel(target, key, value, snapshot); } catch { setError(t("保存失败，请重试")); load(); }
   };
-  const labeled = (list: { label: EvalLabel | null }[]) => list.filter((x) => x.label).length;
+  const done = (list: { feedback: EvalFeedbackValue | null }[]) => list.filter((x) => x.feedback).length;
+  const range = (
+    <div className="eval-days" role="radiogroup" aria-label={t("时间范围")}>
+      {DAYS.map((d) => (
+        <button key={d} type="button" role="radio" aria-checked={days === d} className={`chip ${days === d ? "active" : ""}`} onClick={() => setDays(d)}>
+          {t("最近 {count} 天", { count: d })}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="eval-page">
       <header className="eval-head">
         <h1>{t("帮 Relay 变聪明")}</h1>
         <p className="muted">
-          {t("我们在试一种新的整理方式：把同一件事的邮件、聊天、审批放在一起，整体判断“谁欠谁什么、办完没有”。它目前只在后台计算，不会给你发提醒。请对照你的真实情况，标一标两边的结果哪些是真的、状态对不对。只有你自己看得到这些内容。")}
+          {t("我们在试一种新方式：把同一件事的邮件、聊天、审批放在一起，判断“谁欠谁什么、办完没有”。它只在后台计算，不会给你发提醒。觉得对就点 👍，不对点 👎，愿意的话说一下哪里不对。只有你自己看得到。")}
         </p>
       </header>
 
       {!data.enrolled ? (
         <section className="eval-start">
-          <p>{t("开始后，Relay 会先整理你最近 7 天的事（大约需要半小时），之后持续更新。")}</p>
-          <button className="btn primary" onClick={() => api.evalEnroll().then(load)}>{t("开始评估")}</button>
+          {range}
+          <p>{t("开始后，Relay 会先整理你最近 {count} 天的事，之后持续更新。", { count: days })}</p>
+          <button className="btn primary" onClick={() => api.evalEnroll(days).then(load)}>{t("开始")}</button>
         </section>
       ) : (
         <>
-          <p className="muted small">
-            {data.processed_until ? t("已整理到 {time}", { time: relative(data.processed_until) }) : t("正在整理你最近 7 天的事，大约半小时后回来看。")}
-          </p>
+          <div className="eval-bar">
+            {range}
+            <span className="muted small">
+              {data.processed_until ? t("已整理到 {time}", { time: relative(data.processed_until) }) : t("正在整理，几分钟后回来看。")}
+            </span>
+          </div>
           <nav className="eval-tabs">
             <button className="btn secondary" aria-pressed={tab === "ledger"} onClick={() => setTab("ledger")}>
-              {t("新方式整理的承诺")} · {labeled(data.ledger)}/{data.ledger.length}
+              {t("新方式整理的承诺")} · {done(data.ledger)}/{data.ledger.length}
             </button>
             <button className="btn secondary" aria-pressed={tab === "current"} onClick={() => setTab("current")}>
-              {t("现在系统的事项")} · {labeled(data.current)}/{data.current.length}
+              {t("现在系统的事项")} · {done(data.current)}/{data.current.length}
             </button>
           </nav>
           {tab === "ledger" ? (
             data.ledger.length ? data.ledger.map((item) => (
               <Commitment key={item.key} item={item}
-                onLabel={(v) => label("ledger", item.key, v, { what: item.what, status: item.status, matter: item.matter })} />
+                onFeedback={(v) => save("ledger", item.key, v, { what: item.what, status: item.status, matter: item.matter })} />
             )) : <p className="empty-note">{t("还没有整理出来，稍后再看。")}</p>
           ) : (
             data.current.length ? data.current.map((item) => (
-              <Current key={item.key} item={item} onLabel={(v) => label("followup", item.key, v, { title: item.title, status: item.status })} />
-            )) : <p className="empty-note">{t("最近 7 天没有事项。")}</p>
+              <Current key={item.key} item={item} onFeedback={(v) => save("followup", item.key, v, { title: item.title, status: item.status })} />
+            )) : <p className="empty-note">{t("这段时间没有事项。")}</p>
           )}
 
           <section className="eval-missed">
@@ -142,9 +180,16 @@ export default function Evaluation() {
 }
 
 const percent = (value: number | null) => (value === null ? "—" : `${Math.round(value * 100)}%`);
+const REASON_TEXT: Record<string, string> = { ...Object.fromEntries(REASONS), unspecified: "没说原因" };
 
 function Rates({ rates }: { rates: EvalRates }) {
-  return <span>{percent(rates.real)} / {percent(rates.correct)} <span className="muted small">({rates.labeled})</span></span>;
+  const top = Object.entries(rates.reasons).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).slice(0, 2);
+  return (
+    <span>
+      👍 {percent(rates.correct)} <span className="muted small">({rates.labeled})</span>
+      {top.length > 0 && <span className="muted small"> · {top.map(([r, n]) => `${t(REASON_TEXT[r] ?? r)} ${n}`).join("、")}</span>}
+    </span>
+  );
 }
 
 /** 管理员：各人的评估汇总（只有数字，没有内容）。 */
@@ -155,7 +200,7 @@ export function EvalSummary() {
   return (
     <section className="eval-summary">
       <h2>{t("新旧链路评估")}</h2>
-      <p className="muted small">{t("每格是“真实率 / 全对率（标注数）”：真实率 = 标为真实的占比，全对率 = 真实且状态也对的占比。内容只有本人看得到。")}</p>
+      <p className="muted small">{t("每格是 👍 的占比（反馈数），以及最常见的 👎 原因。内容只有本人看得到。")}</p>
       <div className="table-scroll">
         <table>
           <thead><tr><th>{t("用户")}</th><th>{t("新方式")}</th><th>{t("现在的系统")}</th><th>{t("漏掉的")}</th><th>{t("已整理到")}</th></tr></thead>

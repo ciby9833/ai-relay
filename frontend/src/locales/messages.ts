@@ -1436,25 +1436,9 @@ export const messages: Record<string, readonly [string, string]> = {
     "Help Relay get smarter",
     "Bantu Relay jadi lebih pintar"
   ],
-  "我们在试一种新的整理方式：把同一件事的邮件、聊天、审批放在一起，整体判断“谁欠谁什么、办完没有”。它目前只在后台计算，不会给你发提醒。请对照你的真实情况，标一标两边的结果哪些是真的、状态对不对。只有你自己看得到这些内容。": [
-    "We're trying a new way to organise your work: emails, chats and approvals about the same matter are kept together and judged as a whole — who owes whom what, and whether it's done. It only runs in the background for now and won't send you reminders. Please compare both sides with what's really going on and mark which results are real and whether their status is right. Only you can see this.",
-    "Kami sedang mencoba cara baru merapikan pekerjaan: email, chat, dan persetujuan tentang hal yang sama dikumpulkan dan dinilai sekaligus — siapa berutang apa kepada siapa, dan apakah sudah selesai. Untuk sementara hanya berjalan di latar belakang dan tidak mengirim pengingat. Bandingkan kedua sisi dengan kenyataan, tandai mana yang benar dan apakah statusnya tepat. Hanya Anda yang dapat melihat ini."
-  ],
-  "开始后，Relay 会先整理你最近 7 天的事（大约需要半小时），之后持续更新。": [
-    "Once you start, Relay first organises your last 7 days (about half an hour), then keeps it up to date.",
-    "Setelah dimulai, Relay merapikan 7 hari terakhir Anda (sekitar setengah jam), lalu terus memperbaruinya."
-  ],
-  "开始评估": [
-    "Start",
-    "Mulai"
-  ],
   "已整理到 {time}": [
     "Updated {time}",
     "Diperbarui {time}"
-  ],
-  "正在整理你最近 7 天的事，大约半小时后回来看。": [
-    "Organising your last 7 days — check back in about half an hour.",
-    "Sedang merapikan 7 hari terakhir Anda — cek lagi sekitar setengah jam lagi."
   ],
   "新方式整理的承诺": [
     "New approach: commitments",
@@ -1467,10 +1451,6 @@ export const messages: Record<string, readonly [string, string]> = {
   "还没有整理出来，稍后再看。": [
     "Nothing organised yet — check back later.",
     "Belum ada hasil — cek lagi nanti."
-  ],
-  "最近 7 天没有事项。": [
-    "No items in the last 7 days.",
-    "Tidak ada item dalam 7 hari terakhir."
   ],
   "两边都漏掉的": [
     "Missed by both",
@@ -1487,18 +1467,6 @@ export const messages: Record<string, readonly [string, string]> = {
   "提交": [
     "Submit",
     "Kirim"
-  ],
-  "真实，状态也对": [
-    "Real, status right",
-    "Benar, status tepat"
-  ],
-  "真实，但状态不对": [
-    "Real, status wrong",
-    "Benar, status salah"
-  ],
-  "不是我要管的": [
-    "Not mine to handle",
-    "Bukan urusan saya"
   ],
   "我欠": [
     "I owe",
@@ -1548,10 +1516,6 @@ export const messages: Record<string, readonly [string, string]> = {
     "Old vs new pipeline",
     "Evaluasi alur lama vs baru"
   ],
-  "每格是“真实率 / 全对率（标注数）”：真实率 = 标为真实的占比，全对率 = 真实且状态也对的占比。内容只有本人看得到。": [
-    "Each cell is “real rate / fully-right rate (labels)”: real rate = share marked real; fully-right = real with the right status. Only each person can see their own content.",
-    "Setiap sel adalah “tingkat benar / tingkat tepat (label)”: tingkat benar = porsi yang ditandai benar; tepat = benar dan statusnya tepat. Isi hanya bisa dilihat pemiliknya."
-  ],
   "用户": [
     "User",
     "Pengguna"
@@ -1579,5 +1543,81 @@ export const messages: Record<string, readonly [string, string]> = {
   "整理中": [
     "Processing",
     "Diproses"
+  ],
+  "对": [
+    "Right",
+    "Benar"
+  ],
+  "不对": [
+    "Wrong",
+    "Salah"
+  ],
+  "哪里不对？（可选）": [
+    "What's wrong? (optional)",
+    "Apa yang salah? (opsional)"
+  ],
+  "不是我的事": [
+    "Not mine",
+    "Bukan urusan saya"
+  ],
+  "其实已经办完了": [
+    "Already done",
+    "Sudah selesai"
+  ],
+  "其实还没办完": [
+    "Not done yet",
+    "Belum selesai"
+  ],
+  "重复了": [
+    "Duplicate",
+    "Duplikat"
+  ],
+  "很久以前的事": [
+    "From long ago",
+    "Sudah lama sekali"
+  ],
+  "内容不对": [
+    "Details wrong",
+    "Isinya salah"
+  ],
+  "补充一句（可选）": [
+    "Add a note (optional)",
+    "Tambahkan catatan (opsional)"
+  ],
+  "时间范围": [
+    "Time range",
+    "Rentang waktu"
+  ],
+  "最近 {count} 天": [
+    "Last {count} days",
+    "{count} hari terakhir"
+  ],
+  "我们在试一种新方式：把同一件事的邮件、聊天、审批放在一起，判断“谁欠谁什么、办完没有”。它只在后台计算，不会给你发提醒。觉得对就点 👍，不对点 👎，愿意的话说一下哪里不对。只有你自己看得到。": [
+    "We're trying a new approach: emails, chats and approvals about the same matter are kept together to work out who owes whom what, and whether it's done. It only runs in the background and won't send you reminders. Tap 👍 if it's right, 👎 if not — and say what's wrong if you like. Only you can see this.",
+    "Kami sedang mencoba cara baru: email, chat, dan persetujuan tentang hal yang sama dikumpulkan untuk melihat siapa berutang apa kepada siapa, dan apakah sudah selesai. Hanya berjalan di latar belakang dan tidak mengirim pengingat. Ketuk 👍 jika benar, 👎 jika tidak — dan sebutkan yang salah jika mau. Hanya Anda yang dapat melihat ini."
+  ],
+  "开始后，Relay 会先整理你最近 {count} 天的事，之后持续更新。": [
+    "Once you start, Relay organises your last {count} days, then keeps it up to date.",
+    "Setelah dimulai, Relay merapikan {count} hari terakhir Anda, lalu terus memperbaruinya."
+  ],
+  "开始": [
+    "Start",
+    "Mulai"
+  ],
+  "正在整理，几分钟后回来看。": [
+    "Organising — check back in a few minutes.",
+    "Sedang dirapikan — cek lagi dalam beberapa menit."
+  ],
+  "这段时间没有事项。": [
+    "No items in this period.",
+    "Tidak ada item dalam periode ini."
+  ],
+  "没说原因": [
+    "No reason given",
+    "Tanpa alasan"
+  ],
+  "每格是 👍 的占比（反馈数），以及最常见的 👎 原因。内容只有本人看得到。": [
+    "Each cell shows the 👍 share (feedback count) and the most common 👎 reasons. Only each person can see their own content.",
+    "Setiap sel menunjukkan porsi 👍 (jumlah umpan balik) dan alasan 👎 yang paling sering. Isi hanya bisa dilihat pemiliknya."
   ]
 };

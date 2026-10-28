@@ -550,7 +550,11 @@ class EvalLabel(Base):
     target: Mapped[str] = mapped_column(String(16))  # ledger | followup
     # 被评价的对象：承诺用“事项编号:承诺内容”（对账会整体替换承诺行，内容不变就沿用评价），事项用 id
     target_key: Mapped[str] = mapped_column(String(600))
-    label: Mapped[str] = mapped_column(String(16))  # ok | state | noise
+    label: Mapped[str] = mapped_column(String(16))  # up 对 | down 不对
+    # 不对的原因（可选）：not_mine 不是我的事 | duplicate 重复了 | too_old 很久以前的事（这三种 = 不该出现）
+    #                     already_done 其实已经办完了 | not_done 其实还没办完 | wrong_detail 内容不对（这三种 = 事是真的、判断错了）
+    reason: Mapped[str | None] = mapped_column(String(32))
+    note: Mapped[str | None] = mapped_column(Text)
     snapshot: Mapped[dict] = mapped_column(JSONB, server_default="{}")  # 评价时它长什么样（状态、标题）
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

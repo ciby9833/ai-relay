@@ -189,7 +189,8 @@ export interface CaseContent {
   url: string | null;
 }
 
-export type EvalLabel = "ok" | "state" | "noise";
+export type EvalReason = "not_mine" | "duplicate" | "too_old" | "already_done" | "not_done" | "wrong_detail";
+export interface EvalFeedbackValue { label: "up" | "down"; reason: EvalReason | null; note: string | null }
 
 export interface EvalCommitment {
   key: string;
@@ -204,7 +205,7 @@ export interface EvalCommitment {
   evidence: string;
   last_at: string;
   materials: { at: string; actor: string; text: string; kind: string }[];
-  label: EvalLabel | null;
+  feedback: EvalFeedbackValue | null;
 }
 
 export interface EvalItem {
@@ -215,7 +216,7 @@ export interface EvalItem {
   resolution: string | null;
   summary: string;
   created_at: string;
-  label: EvalLabel | null;
+  feedback: EvalFeedbackValue | null;
 }
 
 export interface EvalData {
@@ -228,7 +229,7 @@ export interface EvalData {
   feedback: { id: number; kind: string; text: string; created_at: string }[];
 }
 
-export interface EvalRates { labeled: number; real: number | null; correct: number | null; ok: number; state: number; noise: number }
+export interface EvalRates { labeled: number; up: number; down: number; real: number | null; correct: number | null; reasons: Partial<Record<EvalReason | "unspecified", number>> }
 
 export interface EvalOverview {
   users: { user: string; enrolled: boolean; processed_until: string | null; ledger: EvalRates; current: EvalRates; missed: number }[];
@@ -474,10 +475,10 @@ export const api = {
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),
   saveSettings: (settings: Settings) => request("/settings", json("PUT", settings)),
-  evaluation: (days = 7) => request<EvalData>(`/eval?days=${days}`),
-  evalEnroll: () => request<{ enrolled: boolean }>("/eval/enroll", { method: "POST" }),
-  evalLabel: (target: "ledger" | "followup", key: string, label: EvalLabel | null, snapshot: Record<string, string> = {}) =>
-    request("/eval/labels", json("PUT", { target, key, label, snapshot })),
+  evaluation: (days = 2) => request<EvalData>(`/eval?days=${days}`),
+  evalEnroll: (days = 2) => request<{ enrolled: boolean }>("/eval/enroll", json("POST", { days })),
+  evalLabel: (target: "ledger" | "followup", key: string, value: EvalFeedbackValue | null, snapshot: Record<string, string> = {}) =>
+    request("/eval/labels", json("PUT", { target, key, label: value?.label ?? null, reason: value?.reason ?? null, note: value?.note ?? null, snapshot })),
   evalFeedback: (kind: "missed" | "comment", text: string) => request("/eval/feedback", json("POST", { kind, text })),
   evalOverview: () => request<EvalOverview>("/insights/eval"),
   notifyRules: () => request<NotifyRule[]>("/notify-rules"),

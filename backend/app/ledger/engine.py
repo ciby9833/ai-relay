@@ -7,7 +7,7 @@
       → 规则过滤 → 归入事项（轻量模型，每人每次一次调用）→ 只对有新材料的事项对账（判断模型）
       → 5 天没动静的未结承诺标为“可能已过期”
 
-第一次参加时回填最近 7 天。
+第一次参加时回填最近 2 天（可选 1~3 天）。
 """
 
 import json
@@ -24,16 +24,17 @@ from app.models import LedgerCommitment, LedgerEvent, LedgerMatter, SourceState,
 logger = logging.getLogger("relay.ledger")
 
 STATE = "ledger"  # SourceState.source：{"until": 处理到哪, "enrolled_at": 何时加入评估}
-BACKFILL = timedelta(days=7)
+BACKFILL_DAYS = 2  # 第一次加入时回填几天（可选 1~3）
 OVERLAP = timedelta(hours=1)
 MAX_EVENTS_PER_CALL = 60
 
 
-async def enroll(session: AsyncSession, user: User) -> SourceState:
-    """加入评估（幂等）。之后由 ledger 服务开始为他计算。"""
+async def enroll(session: AsyncSession, user: User, days: int = BACKFILL_DAYS) -> SourceState:
+    """加入评估（幂等）。之后由 ledger 服务开始为他计算，先回填最近 days 天。"""
     state = await session.get(SourceState, (user.id, STATE))
     if state is None:
-        state = SourceState(user_id=user.id, source=STATE, cursor={"enrolled_at": datetime.now(UTC).isoformat()})
+        state = SourceState(user_id=user.id, source=STATE, cursor={"enrolled_at": datetime.now(UTC).isoformat(),
+                                                                   "backfill_days": max(1, min(days, 3))})
         session.add(state)
         await session.flush()
     return state
@@ -56,7 +57,7 @@ async def advance(session: AsyncSession, provider, user: User, now: datetime | N
     meter = shadow.Meter()
     state = await enroll(session, user)
     cursor = dict(state.cursor or {})
-    until = datetime.fromisoformat(cursor["until"]) if cursor.get("until") else now - BACKFILL
+    until = datetime.fromisoformat(cursor["until"]) if cursor.get("until") else now - timedelta(days=cursor.get("backfill_days") or BACKFILL_DAYS)
     start = until - OVERLAP if cursor.get("until") else until
     events = await shadow.collect(session, user, start, now)
     shadow.screen(events)
