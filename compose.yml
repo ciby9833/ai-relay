@@ -64,6 +64,14 @@ services:
         condition: service_healthy
     command: python -m app.feishu.longconn
 
+  ledger:
+    <<: *backend
+    depends_on:
+      api:
+        condition: service_healthy
+    # 承诺账本（评估阶段）：为参加评估的用户增量计算，只算不推；独立进程，不影响 worker 的提醒
+    command: python -m app.ledger.runner
+
   web:
     build: ./frontend
     restart: unless-stopped

@@ -189,6 +189,52 @@ export interface CaseContent {
   url: string | null;
 }
 
+export type EvalLabel = "ok" | "state" | "noise";
+
+export interface EvalCommitment {
+  key: string;
+  matter_id: number;
+  matter: string;
+  summary: string | null;
+  owner: "me" | "other";
+  party: string;
+  what: string;
+  due: string | null;
+  status: "open" | "done" | "dropped" | "stale";
+  evidence: string;
+  last_at: string;
+  materials: { at: string; actor: string; text: string; kind: string }[];
+  label: EvalLabel | null;
+}
+
+export interface EvalItem {
+  key: string;
+  title: string;
+  kind: string;
+  status: string;
+  resolution: string | null;
+  summary: string;
+  created_at: string;
+  label: EvalLabel | null;
+}
+
+export interface EvalData {
+  enrolled: boolean;
+  processed_until: string | null;
+  enrolled_at: string | null;
+  days: number;
+  ledger: EvalCommitment[];
+  current: EvalItem[];
+  feedback: { id: number; kind: string; text: string; created_at: string }[];
+}
+
+export interface EvalRates { labeled: number; real: number | null; correct: number | null; ok: number; state: number; noise: number }
+
+export interface EvalOverview {
+  users: { user: string; enrolled: boolean; processed_until: string | null; ledger: EvalRates; current: EvalRates; missed: number }[];
+  total: { ledger: EvalRates; current: EvalRates };
+}
+
 export type AttentionLevel = "now" | "batch" | "brief" | "mute";
 
 export interface NotifyRule {
@@ -428,6 +474,12 @@ export const api = {
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),
   saveSettings: (settings: Settings) => request("/settings", json("PUT", settings)),
+  evaluation: (days = 7) => request<EvalData>(`/eval?days=${days}`),
+  evalEnroll: () => request<{ enrolled: boolean }>("/eval/enroll", { method: "POST" }),
+  evalLabel: (target: "ledger" | "followup", key: string, label: EvalLabel | null, snapshot: Record<string, string> = {}) =>
+    request("/eval/labels", json("PUT", { target, key, label, snapshot })),
+  evalFeedback: (kind: "missed" | "comment", text: string) => request("/eval/feedback", json("POST", { kind, text })),
+  evalOverview: () => request<EvalOverview>("/insights/eval"),
   notifyRules: () => request<NotifyRule[]>("/notify-rules"),
   updateRule: (id: number, level: AttentionLevel) => request(`/notify-rules/${id}`, json("PUT", { level })),
   decideRule: (id: number, decision: "accept" | "reject") => request(`/notify-rules/${id}/${decision}`, { method: "POST" }),

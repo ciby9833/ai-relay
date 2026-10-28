@@ -1431,5 +1431,153 @@ export const messages: Record<string, readonly [string, string]> = {
   "修改": [
     "Edit",
     "Ubah"
+  ],
+  "帮 Relay 变聪明": [
+    "Help Relay get smarter",
+    "Bantu Relay jadi lebih pintar"
+  ],
+  "我们在试一种新的整理方式：把同一件事的邮件、聊天、审批放在一起，整体判断“谁欠谁什么、办完没有”。它目前只在后台计算，不会给你发提醒。请对照你的真实情况，标一标两边的结果哪些是真的、状态对不对。只有你自己看得到这些内容。": [
+    "We're trying a new way to organise your work: emails, chats and approvals about the same matter are kept together and judged as a whole — who owes whom what, and whether it's done. It only runs in the background for now and won't send you reminders. Please compare both sides with what's really going on and mark which results are real and whether their status is right. Only you can see this.",
+    "Kami sedang mencoba cara baru merapikan pekerjaan: email, chat, dan persetujuan tentang hal yang sama dikumpulkan dan dinilai sekaligus — siapa berutang apa kepada siapa, dan apakah sudah selesai. Untuk sementara hanya berjalan di latar belakang dan tidak mengirim pengingat. Bandingkan kedua sisi dengan kenyataan, tandai mana yang benar dan apakah statusnya tepat. Hanya Anda yang dapat melihat ini."
+  ],
+  "开始后，Relay 会先整理你最近 7 天的事（大约需要半小时），之后持续更新。": [
+    "Once you start, Relay first organises your last 7 days (about half an hour), then keeps it up to date.",
+    "Setelah dimulai, Relay merapikan 7 hari terakhir Anda (sekitar setengah jam), lalu terus memperbaruinya."
+  ],
+  "开始评估": [
+    "Start",
+    "Mulai"
+  ],
+  "已整理到 {time}": [
+    "Updated {time}",
+    "Diperbarui {time}"
+  ],
+  "正在整理你最近 7 天的事，大约半小时后回来看。": [
+    "Organising your last 7 days — check back in about half an hour.",
+    "Sedang merapikan 7 hari terakhir Anda — cek lagi sekitar setengah jam lagi."
+  ],
+  "新方式整理的承诺": [
+    "New approach: commitments",
+    "Cara baru: komitmen"
+  ],
+  "现在系统的事项": [
+    "Current system: items",
+    "Sistem saat ini: item"
+  ],
+  "还没有整理出来，稍后再看。": [
+    "Nothing organised yet — check back later.",
+    "Belum ada hasil — cek lagi nanti."
+  ],
+  "最近 7 天没有事项。": [
+    "No items in the last 7 days.",
+    "Tidak ada item dalam 7 hari terakhir."
+  ],
+  "两边都漏掉的": [
+    "Missed by both",
+    "Terlewat oleh keduanya"
+  ],
+  "你确实欠别人、或在等别人的事，但上面两边都没有。每次写一件。": [
+    "Things you really owe someone or are waiting on, but neither side caught. One per entry.",
+    "Hal yang benar-benar Anda utangkan atau tunggu, tapi tidak tertangkap di kedua sisi. Satu per entri."
+  ],
+  "例如：等 Hendri 发 9 月运单明细": [
+    "e.g. Waiting for Hendri to send the September waybill details",
+    "mis. Menunggu Hendri mengirim rincian resi September"
+  ],
+  "提交": [
+    "Submit",
+    "Kirim"
+  ],
+  "真实，状态也对": [
+    "Real, status right",
+    "Benar, status tepat"
+  ],
+  "真实，但状态不对": [
+    "Real, status wrong",
+    "Benar, status salah"
+  ],
+  "不是我要管的": [
+    "Not mine to handle",
+    "Bukan urusan saya"
+  ],
+  "我欠": [
+    "I owe",
+    "Saya berutang"
+  ],
+  "对方欠我": [
+    "Owed to me",
+    "Mereka berutang ke saya"
+  ],
+  "截止": [
+    "due",
+    "tenggat"
+  ],
+  "这件事的材料（{count} 条）": [
+    "Materials ({count})",
+    "Materi ({count})"
+  ],
+  "未完成": [
+    "Not done",
+    "Belum selesai"
+  ],
+  "已办完": [
+    "Done",
+    "Selesai"
+  ],
+  "不用办了": [
+    "No longer needed",
+    "Tidak perlu lagi"
+  ],
+  "5 天没动静": [
+    "Quiet for 5 days",
+    "Diam 5 hari"
+  ],
+  "已结束": [
+    "Closed",
+    "Ditutup"
+  ],
+  "未结": [
+    "Open",
+    "Terbuka"
+  ],
+  "保存失败，请重试": [
+    "Couldn't save — please try again",
+    "Gagal menyimpan — coba lagi"
+  ],
+  "新旧链路评估": [
+    "Old vs new pipeline",
+    "Evaluasi alur lama vs baru"
+  ],
+  "每格是“真实率 / 全对率（标注数）”：真实率 = 标为真实的占比，全对率 = 真实且状态也对的占比。内容只有本人看得到。": [
+    "Each cell is “real rate / fully-right rate (labels)”: real rate = share marked real; fully-right = real with the right status. Only each person can see their own content.",
+    "Setiap sel adalah “tingkat benar / tingkat tepat (label)”: tingkat benar = porsi yang ditandai benar; tepat = benar dan statusnya tepat. Isi hanya bisa dilihat pemiliknya."
+  ],
+  "用户": [
+    "User",
+    "Pengguna"
+  ],
+  "新方式": [
+    "New approach",
+    "Cara baru"
+  ],
+  "现在的系统": [
+    "Current system",
+    "Sistem saat ini"
+  ],
+  "漏掉的": [
+    "Missed",
+    "Terlewat"
+  ],
+  "已整理到": [
+    "Updated",
+    "Diperbarui"
+  ],
+  "合计": [
+    "Total",
+    "Total"
+  ],
+  "整理中": [
+    "Processing",
+    "Diproses"
   ]
 };

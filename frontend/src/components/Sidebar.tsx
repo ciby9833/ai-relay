@@ -3,7 +3,7 @@ import type { Conversation, User } from "../api";
 import { relative } from "../format";
 import Icon, { RelayMark } from "./Icon";
 
-export type View = { type: "admin" } | { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
+export type View = { type: "admin" } | { type: "eval" } | { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
 export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations";
 
 const CHANNEL: Record<string, string | null> = { web: null, feishu: "飞书群", task: "定时", home: null };
@@ -46,6 +46,9 @@ export default function Sidebar({
           onClick={() => onNavigate({ type: "chat", id: null })}
         >
           <Icon name="plus" /> {t("新对话")}
+        </button>
+        <button className={`nav-item ${view.type === "eval" ? "active" : ""}`} onClick={() => onNavigate({ type: "eval" })}>
+          <Icon name="check" /> {t("帮 Relay 变聪明")}
         </button>
         {user.is_admin && <button className={`nav-item ${view.type === "admin" ? "active" : ""}`} onClick={() => onNavigate({ type: "admin" })}>
           <Icon name="chart" /> {t("adminTitle")}

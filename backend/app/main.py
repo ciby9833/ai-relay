@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from app.api import assistant, auth, blog, conversations, feishu_events, integrations, missions, proactive
 from app import insights
-from app.api import quality, performance
+from app.api import quality, performance, evaluation
 from app import telemetry
 from app.config import get_settings
 from app.feishu.client import FeishuClient
@@ -66,6 +66,7 @@ app.include_router(integrations.router)
 app.include_router(blog.router)
 app.include_router(quality.router)
 app.include_router(performance.router)
+app.include_router(evaluation.router)
 
 
 @app.get("/api/health")

@@ -3,6 +3,7 @@ import { api, type ClosureReview, type NotificationDay, type NotificationStats, 
 import { t, intlLocale } from "../i18n";
 import Icon from "./Icon";
 import CriterionEvidence from "./CriterionEvidence";
+import { EvalSummary } from "./Evaluation";
 import Performance from "./Performance";
 
 const kinds: (keyof NotificationDay)[] = ["interrupt", "digest", "brief", "meeting", "mission", "other"];
@@ -128,9 +129,10 @@ function Quality() {
 }
 
 export default function Admin() {
-  const [tab, setTab] = useState<"quality" | "performance">("quality");
+  const [tab, setTab] = useState<"quality" | "performance" | "eval">("quality");
   return <><nav className="admin-tabs" aria-label={t("perfAdminNav")}>
     <button className="btn secondary" aria-pressed={tab === "quality"} onClick={() => setTab("quality")}>{t("adminQuality")}</button>
     <button className="btn secondary" aria-pressed={tab === "performance"} onClick={() => setTab("performance")}>{t("perfTitle")}</button>
-  </nav>{tab === "quality" ? <Quality /> : <Performance />}</>;
+    <button className="btn secondary" aria-pressed={tab === "eval"} onClick={() => setTab("eval")}>{t("新旧链路评估")}</button>
+  </nav>{tab === "quality" ? <Quality /> : tab === "performance" ? <Performance /> : <div className="admin-page"><EvalSummary /></div>}</>;
 }

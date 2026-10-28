@@ -47,3 +47,4 @@ htmlcov/
 # Browser test artifacts
 frontend/test-results/
 frontend/playwright-report/
+shadow-results/

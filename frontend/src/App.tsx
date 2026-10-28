@@ -5,6 +5,7 @@ import Icon, { RelayMark } from "./components/Icon";
 import { useLocale } from "./useLocale";
 import Login from "./components/Login";
 import Drawer from "./components/panels/Drawer";
+import Evaluation from "./components/Evaluation";
 import Sidebar, { type PanelKind, type View } from "./components/Sidebar";
 import Admin from "./components/Admin";
 import Missions from "./components/Missions";
@@ -96,6 +97,8 @@ export default function App() {
         )}
         {view.type === "admin" && user.is_admin ? (
           <Admin />
+        ) : view.type === "eval" ? (
+          <Evaluation />
         ) : view.type === "missions" ? (
           <Missions selected={view.id} onSelect={(id) => setView({ type: "missions", id })} />
         ) : (

@@ -483,3 +483,86 @@ class UserDecision(Base):
     seconds_to_decide: Mapped[int | None] = mapped_column(Integer)  # 从事情出现到他处理用了多久
     detail: Mapped[dict] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------- 承诺账本（新链路，评估阶段：只计算、不推送） ----------
+
+
+class LedgerEvent(Base):
+    """进入账本的一条事件（只存引用和摘录）：来自邮件、聊天、审批、邀请、任务等，归到某件事上。"""
+
+    __tablename__ = "ledger_events"
+    __table_args__ = (UniqueConstraint("user_id", "ref", name="uq_ledger_events_user_ref"),
+                      Index("ix_ledger_events_matter", "matter_id"))
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    ref: Mapped[str] = mapped_column(String(160))  # sig:123 / chat:om_xxx / sig:123:state
+    matter_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_matters.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(24))
+    actor: Mapped[str] = mapped_column(String(255))
+    text: Mapped[str] = mapped_column(Text)
+    stream: Mapped[str] = mapped_column(String(255))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    verdict: Mapped[str] = mapped_column(String(16))  # skipped（规则挡掉）| none（和他无关）| attached
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LedgerMatter(Base):
+    """一件事：同一件事的邮件、聊天、审批、会议都归在这里，承诺账本按事整体判断。"""
+
+    __tablename__ = "ledger_matters"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    people: Mapped[list] = mapped_column(JSONB, server_default="[]")
+    summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LedgerCommitment(Base):
+    """账本里的一条承诺：谁欠谁什么、什么时候、办完没有、凭什么。每次对账整体替换这件事的承诺。"""
+
+    __tablename__ = "ledger_commitments"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    matter_id: Mapped[int] = mapped_column(ForeignKey("ledger_matters.id", ondelete="CASCADE"), index=True)
+    owner: Mapped[str] = mapped_column(String(8))  # me | other
+    party: Mapped[str] = mapped_column(String(255))
+    what: Mapped[str] = mapped_column(Text)
+    due: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))  # open | done | dropped | stale
+    evidence: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EvalLabel(Base):
+    """用户本人对一条结果的评价：新链路的承诺（ledger）或现有系统的事项（followup）。"""
+
+    __tablename__ = "eval_labels"
+    __table_args__ = (UniqueConstraint("user_id", "target", "target_key", name="uq_eval_labels_target"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    target: Mapped[str] = mapped_column(String(16))  # ledger | followup
+    # 被评价的对象：承诺用“事项编号:承诺内容”（对账会整体替换承诺行，内容不变就沿用评价），事项用 id
+    target_key: Mapped[str] = mapped_column(String(600))
+    label: Mapped[str] = mapped_column(String(16))  # ok | state | noise
+    snapshot: Mapped[dict] = mapped_column(JSONB, server_default="{}")  # 评价时它长什么样（状态、标题）
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EvalFeedback(Base):
+    """两边都漏掉的事、或其他意见：用户自己写。"""
+
+    __tablename__ = "eval_feedback"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # missed | comment
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
