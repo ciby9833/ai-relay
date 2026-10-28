@@ -175,3 +175,58 @@ async def test_each_person_sees_and_labels_only_their_own():
             await session.execute(delete(User).where(User.id.in_(ids)))
             await session.commit()
         await db_engine.dispose()
+
+
+def test_his_own_questions_count_as_asking_others():
+    def chat(text, from_me=True):
+        return shadow.Event("chat:x", "chat", datetime.now(UTC), "他", text, "chat:oc:群", from_me=from_me)
+
+    for text in ["吉利的有沟通么？", "报价发了吗", "（回复 Lavianna：好的）看完了没有", "sudah dikirim?"]:
+        assert shadow.asks_others(chat(text)), text
+    for text in ["好的", "我在外面 只能你参加了", "发我一下", "嗯？"]:
+        assert not shadow.asks_others(chat(text)), text
+    assert not shadow.asks_others(chat("吉利的有沟通么？", from_me=False))  # 别人问他的，按原来的规则走
+
+
+@db
+async def test_his_question_is_not_dropped_as_unrelated(monkeypatch):
+    """轻量模型把他问别人的短问题判成“无关”，或者干脆漏掉：都要单独成一件，交给对账判断是不是在等答复。"""
+    from sqlalchemy import delete, select
+
+    from app.db import SessionLocal, engine as db_engine
+    from app.models import ChatMessage, LedgerCommitment, LedgerEvent, User
+
+    tag = uuid.uuid4().hex[:8]
+    now = datetime.now(UTC)
+    async with SessionLocal() as session:
+        me = User(feishu_open_id=f"ou_{tag}", name="Xavier(吴川)", timezone="Asia/Jakarta")
+        session.add(me)
+        await session.flush()
+        user_id = me.id
+        for n, text in enumerate(["吉利的有沟通么？", "报价发了吗"]):
+            session.add(ChatMessage(message_id=f"om_{tag}_{n}", chat_id=f"oc_{tag}", chat_name="格力吉利项目", sender_open_id=me.feishu_open_id,
+                                    sender_name="Xavier(吴川)", text=text, mentions=[], created_at=now - timedelta(hours=2, minutes=-n)))
+        await session.commit()
+        try:
+            provider = Scripted([
+                {"assignments": [{"event": f"chat:om_{tag}_0", "matter": "none"}]},  # 第一条判成无关，第二条漏掉
+                {"summary": "他问吉利沟通了没有", "commitments": [{"owner": "other", "party": "Lavianna Teng", "what": "答复吉利沟通进展",
+                                                            "status": "open", "evidence": "他在群里问吉利的有沟通么"}]},
+                {"summary": "他问报价", "commitments": [{"owner": "other", "party": "?", "what": "答复报价是否已发", "status": "open",
+                                                     "evidence": "他问报价发了吗"}]},
+            ])
+            await engine.enroll(session, me, days=1)
+            await engine.advance(session, provider, me, now)
+            assert provider.calls == [shadow.ATTACH_MODEL, shadow.RECONCILE_MODEL, shadow.RECONCILE_MODEL]
+            verdicts = dict((await session.execute(
+                select(LedgerEvent.ref, LedgerEvent.verdict).where(LedgerEvent.user_id == user_id))).all())
+            assert verdicts == {f"chat:om_{tag}_0": "attached", f"chat:om_{tag}_1": "attached"}
+            whats = {c.what for c in (await session.execute(
+                select(LedgerCommitment).where(LedgerCommitment.user_id == user_id))).scalars()}
+            assert whats == {"答复吉利沟通进展", "答复报价是否已发"}
+        finally:
+            await session.rollback()
+            await session.execute(delete(ChatMessage).where(ChatMessage.chat_id == f"oc_{tag}"))
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+            await db_engine.dispose()

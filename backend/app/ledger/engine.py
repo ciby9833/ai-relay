@@ -117,6 +117,9 @@ async def _process_window(session, provider, user, window: list[shadow.Event], t
             continue
         assigned.add(event.id)
         target = str(a.get("matter") or "none").lstrip("#")
+        if target == "none" and shadow.asks_others(event):
+            # 轻量模型常把他自己的短问题（“吉利的有沟通么？”）当成无关；这类单独成一件，交给对账判断是不是在等答复
+            target, a = "new", {"matter": "new"}
         if target == "none":
             session.add(_event_row(user, event, "none", None))
             continue
@@ -124,10 +127,7 @@ async def _process_window(session, provider, user, window: list[shadow.Event], t
             key = a.get("new_key") or event.id
             matter = fresh.get(key)
             if matter is None:
-                matter = LedgerMatter(user_id=user.id, title=(a.get("title") or event.text[:60])[:500],
-                                      people=a.get("people") or [event.actor], created_at=event.at, last_at=event.at)
-                session.add(matter)
-                await session.flush()
+                matter = await _new_matter(session, user, event, a)
                 fresh[key] = known[matter.id] = matter
         else:
             matter = known.get(int(target)) if target.isdigit() else None
@@ -137,14 +137,30 @@ async def _process_window(session, provider, user, window: list[shadow.Event], t
         matter.last_at = max(matter.last_at, event.at)
         session.add(_event_row(user, event, "attached", matter.id))
         touched.add(matter.id)
-    # 模型漏掉的事件也记下（不再重复送去判断）
+    # 模型漏掉的事件也记下（不再重复送去判断）；漏掉的如果是他问别人的问题，同样单独成一件
     for event in window:
-        if event.id not in assigned:
+        if event.id in assigned:
+            continue
+        if shadow.asks_others(event):
+            matter = await _new_matter(session, user, event, {})
+            known[matter.id] = matter
+            session.add(_event_row(user, event, "attached", matter.id))
+            touched.add(matter.id)
+        else:
             session.add(_event_row(user, event, "none", None))
     await session.flush()
     for matter_id in touched:
         await _reconcile(session, provider, user, known[matter_id], now, tz, meter)
     return True
+
+
+async def _new_matter(session, user, event: shadow.Event, a: dict) -> LedgerMatter:
+    people = a.get("people") or ([] if event.from_me else [event.actor])
+    matter = LedgerMatter(user_id=user.id, title=(a.get("title") or event.text[:60])[:500], people=people,
+                          created_at=event.at, last_at=event.at)
+    session.add(matter)
+    await session.flush()
+    return matter
 
 
 async def _reconcile(session, provider, user, matter: LedgerMatter, now: datetime, tz, meter: shadow.Meter) -> None:

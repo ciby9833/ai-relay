@@ -40,6 +40,8 @@ MAX_MATERIAL = 30
 NOISE_SENDER = re.compile(r"no-?reply|notif|mailer|bounce|alert|system|newsletter|do-not-reply", re.I)
 CUE = re.compile(r"[?？]|吗|请|帮|麻烦|能不能|可以.{0,6}吗|确认|安排|跟进|提供|发我|发一下|看一下|看下|处理|尽快|截止|之前|tolong|mohon|bisa|bantu|minta|kirim|please|could you|can you|need|asap|deadline", re.I)
 EVENT_ID = re.compile(r"(?:sig|chat):[^\]\s,，]+")  # sig:123、sig:123:state、chat:om_xxx
+# 句末是问号或“吗/么/呢/没/了没”：他在问别人
+QUESTION = re.compile(r"([?？]|[吗么呢没]|了没有?|apakah.*|sudah\??)\s*[?？]?\s*$", re.I)
 ACK = re.compile(r"^\s*(ok(e|ay)?|好的?|收到|嗯+|noted|siap|baik|thanks?|thank you|谢谢|👍|\[[^\]]{1,6}\])\s*[!！。.]*\s*$", re.I)
 
 
@@ -210,6 +212,14 @@ def screen(events: list[Event]) -> None:
                 e.keep, e.why = e.stream in active_streams and bool(CUE.search(text)), "他参与的群里的请求/问题"
 
 
+def asks_others(e: Event) -> bool:
+    """他在聊天里问别人（“吉利的有沟通么？”）：通常是在等对方答复，哪怕没点名、没上下文，也不能当成无关丢掉。"""
+    if not (e.from_me and e.kind == "chat"):
+        return False
+    text = re.sub(r"（回复[^）]*）", "", e.text).strip()
+    return len(text) >= 3 and bool(QUESTION.search(text))
+
+
 # ---------- 模型调用 ----------
 
 
@@ -246,6 +256,8 @@ ATTACH_SYSTEM = """你在替一位员工（下文称“他”）整理工作。�
 - 属于清单里某件事（同一件事的新进展、追问、答复、补充材料）：matter 写那件事的编号；
 - 是一件新的、和他有关的事（有人要他做/回答/决定，他要别人做，他答应了什么，要他审批或回复邀请）：matter 写 "new"，并给出 title（一句话说清是什么事）和 people（相关的人）；
   同一批里属于同一件新事的几条，new_key 写同一个短标识，好合并成一件；
+- 他自己问别人、催别人的消息（例如“吉利的有沟通么？”“报价发了吗”），哪怕很短、没点名：这是他在等对方答复，
+  找不到对应的事项就写 "new"，不要写 none；
 - 和他要办或在等的事都无关（闲聊、群发通知、和他无关的讨论、纯知会）：matter 写 "none"。
 宁可归到已有事项，也不要把同一件事拆成几件。
 同一类例行的事（不同人提交的同一种审批单、同一个系统发来的同类通知）归成一件，标题写成“需求申请待审批（多张）”这类，
@@ -265,7 +277,8 @@ RECONCILE_SYSTEM = """你在替一位员工（下文称“他”）维护一件�
 整体读完，给出这件事里所有还相关的承诺：谁（他本人 me，或某个别人 other）欠谁一个什么具体的东西（交付物、答复、决定、审批、出席），什么时候，现在状态。
 - status：open 还没办；done 已经办完/给出了要的结果（要有材料作证）；dropped 不用办了（取消、被别人接手、问题已不存在）。
 - 回复了不等于办完：只说“收到/在看/会处理”是 open；答应了时间但没交付也是 open（due 写答应的时间）。
-- 别人只是知会、抄送、闲聊，不算承诺。答复他自己先前问题的消息，是在完成“对方欠他一个答复”。
+- 别人只是知会、抄送、闲聊，不算承诺。他问别人的工作问题（“X 有沟通么？”），是对方（群里或私聊的另一方，能从材料看出是谁就写谁）欠他一个答复；
+  答复他这个问题的消息，就是在完成这条承诺。
 - 会议：他要做的只是回复邀请（接受/拒绝/待定）；“参加会议”本身不算承诺。邀请回复了、或会议已经开始，就没有承诺了。
 - 同一类例行的事（多张同类审批）合成一条承诺，what 写清数量和类型。
 - evidence 写依据：谁在什么时候说了什么、哪个审批/邀请的状态（直接写内容，不要写方括号里的编号）。
@@ -321,11 +334,13 @@ async def replay(session: AsyncSession, provider, user: User, start: datetime, e
             if event is None:
                 continue
             target = str(a.get("matter") or "none").lstrip("#")
+            if target == "none" and asks_others(event):
+                target = "new"  # 他问别人的问题不丢：单独成一件，交给对账判断是不是在等答复
             if target == "none":
                 event.why += "｜无关"
                 continue
             if target == "new":
-                key = a.get("new_key") or event.id
+                key = (a.get("new_key") if a.get("matter") == "new" else None) or event.id
                 if key not in fresh:
                     fresh[key] = matters[next_id] = Matter(next_id, a.get("title") or event.text[:40], a.get("people") or [event.actor], created=event.at)
                     next_id += 1
