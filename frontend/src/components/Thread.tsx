@@ -1,12 +1,13 @@
 import { t } from "../i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sendMessage, type ThreadMessage } from "../api";
 import { greeting, relative } from "../format";
 import Composer from "./Composer";
-import type { TrackerFocus } from "./Tracker";
-import Icon, { RelayMark } from "./Icon";
+
+import { RelayMark } from "./Icon";
 import Message from "./Message";
 
+const QUICK = ["我先处理什么？", "准备下一场会议"];
 const SUGGESTIONS = ["今天有哪些会？", "有哪些邮件需要我回？", "我有什么待审批的？", "帮我搜一下报价相关的文档"];
 
 /** home：主线（Relay 会主动发言）；否则是一段普通对话，conversationId 为空表示新对话 */
@@ -16,13 +17,15 @@ export default function Thread({
   userName,
   onCreated,
   onTurnFinished,
-  onOpenTracker,
-  draft,
-  trackerCount,
+  header,
+  onOpenItems,
+  context,
+  onClearContext,
 }: {
-  onOpenTracker?: (focus: TrackerFocus) => void;
-  draft?: { text: string; n: number } | null;
-  trackerCount?: number;
+  header?: ReactNode;
+  onOpenItems?: (itemIds: number[]) => void;
+  context?: { label: string; ref: string; n: number } | null;
+  onClearContext?: () => void;
   home: boolean;
   conversationId: string | null;
   userName: string;
@@ -109,14 +112,7 @@ export default function Thread({
 
   return (
     <main className="thread">
-      {home && onOpenTracker && (
-        // 窄屏时“Relay 在跟进”收起来：从这里打开
-        <div className="tracker-toggle">
-          <button className="btn secondary small" onClick={() => onOpenTracker({ tab: "todo", n: Date.now() })}>
-            <Icon name="check" size={14} /> {t("跟进")} {trackerCount ? <b>{trackerCount}</b> : null}
-          </button>
-        </div>
-      )}
+      {header}
       <div className="thread-scroll">
         <div className="thread-inner">
           {empty && (
@@ -149,10 +145,9 @@ export default function Thread({
                   {message.created_at && ` · ${relative(message.created_at)}`}
                 </span>
                 {message.notice === "interrupt" && (
-                  <button className="btn ghost small" onClick={() => onOpenTracker?.({
-                    tab: "todo", n: Date.now(),
-                    itemIds: (message.cards ?? []).flatMap((c) => (c.kind === "item" ? [c.item_id] : [])),
-                  })}>
+                  <button className="btn ghost small" onClick={() => onOpenItems?.(
+                    (message.cards ?? []).flatMap((c) => (c.kind === "item" ? [c.item_id] : [])),
+                  )}>
                     {t("看这几件")}
                   </button>
                 )}
@@ -165,15 +160,23 @@ export default function Thread({
         </div>
       </div>
       <div className="thread-composer">
+        {home && !empty && (
+          <div className="quick-asks">
+            {QUICK.map((text) => (
+              <button key={text} className="chip" disabled={busy} onClick={() => send(t(text))}>{t(text)}</button>
+            ))}
+          </div>
+        )}
         <Composer
           busy={busy}
           model={model}
           onModel={setModel}
           onSend={send}
-          draft={draft}
-          placeholder={home ? t("回复 Relay，或让它帮你做点什么…") : t("给 Relay 发消息…")}
+          context={context}
+          onClearContext={onClearContext}
+          placeholder={home ? t("问 Relay，或交给它一件事…") : t("给 Relay 发消息…")}
         />
-        <p className="composer-note">{t("发邮件、回复会议邀请等操作都会先让你确认")}</p>
+        <p className="composer-note">{t("对外发送与审批，都会先让你确认。")}</p>
       </div>
     </main>
   );

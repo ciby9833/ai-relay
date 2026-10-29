@@ -7,7 +7,9 @@ import Login from "./components/Login";
 import Drawer from "./components/panels/Drawer";
 import Evaluation from "./components/Evaluation";
 import Sidebar, { type PanelKind, type View } from "./components/Sidebar";
-import Tracker, { type TrackerFocus } from "./components/Tracker";
+import Inspector, { type AskContext } from "./components/Inspector";
+import WorkDock, { type WorkView } from "./components/WorkDock";
+import { useWork } from "./work";
 import Admin from "./components/Admin";
 import Missions from "./components/Missions";
 import Thread from "./components/Thread";
@@ -17,14 +19,16 @@ export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [view, setView] = useState<View>({ type: "home" });
-  // “Relay 在跟进”：宽屏时固定在对话右边；窄屏时是浮层，从对话顶部或提醒那一行打开
-  const [focus, setFocus] = useState<TrackerFocus | null>(null);
-  const [overlay, setOverlay] = useState(false);
-  const [draft, setDraft] = useState<{ text: string; n: number } | null>(null);
-  const [todoCount, setTodoCount] = useState(0);
-  const openTracker = useCallback((next: TrackerFocus) => {
-    setFocus(next);
-    if (!window.matchMedia("(min-width: 1100px)").matches) setOverlay(true);
+  // 工作区：顶部三个入口（待处理 / 会议 / 进展）打开右侧详情栏；宽屏时详情栏和对话并排，窄屏时盖在对话上
+  const work = useWork(!!user);
+  const wide = () => window.matchMedia("(min-width: 1100px)").matches;
+  const [workView, setWorkView] = useState<WorkView>("todo");
+  const [inspectorOpen, setInspectorOpen] = useState(() => wide());
+  const [focus, setFocus] = useState<{ itemIds: number[]; n: number } | null>(null);
+  const [context, setContext] = useState<(AskContext & { n: number }) | null>(null);
+  const openWork = useCallback((next: WorkView) => {
+    setWorkView(next);
+    setInspectorOpen(true);
   }, []);
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -112,33 +116,36 @@ export default function App() {
         ) : view.type === "missions" ? (
           <Missions selected={view.id} onSelect={(id) => setView({ type: "missions", id })} />
         ) : (
-          <div className={`home-split ${view.type === "home" ? "with-tracker" : ""}`}>
-          <Thread
-            // 新对话拿到 id 时不能重新挂载（流式输出还在进行），所以只按视图类型区分
-            key={view.type}
-            draft={view.type === "home" ? draft : null}
-            onOpenTracker={view.type === "home" ? openTracker : undefined}
-            trackerCount={todoCount}
-            home={view.type === "home"}
-            conversationId={view.type === "chat" ? view.id : null}
-            userName={user.name}
-            onCreated={(id) => setView({ type: "chat", id })}
-            onTurnFinished={refresh}
-          />
-          {view.type === "home" && (
-            <div className={`tracker-wrap ${overlay ? "open" : ""}`}>
-              <Tracker
+          <div className={`home-split ${view.type === "home" && inspectorOpen ? "with-inspector" : ""}`}>
+            <Thread
+              // 新对话拿到 id 时不能重新挂载（流式输出还在进行），所以只按视图类型区分
+              key={view.type}
+              home={view.type === "home"}
+              conversationId={view.type === "chat" ? view.id : null}
+              userName={user.name}
+              onCreated={(id) => setView({ type: "chat", id })}
+              onTurnFinished={refresh}
+              header={view.type === "home" ? (
+                <WorkDock work={work} active={workView} inspectorOpen={inspectorOpen} onOpen={openWork}
+                  onToggle={() => setInspectorOpen((o) => !o)} onPreferences={() => setPanel("settings")} />
+              ) : undefined}
+              onOpenItems={(itemIds) => { setWorkView("todo"); setFocus({ itemIds, n: Date.now() }); setInspectorOpen(true); }}
+              context={view.type === "home" ? context : null}
+              onClearContext={() => setContext(null)}
+            />
+            {view.type === "home" && inspectorOpen && (
+              <Inspector
+                work={work}
+                view={workView}
                 focus={focus}
-                onCounts={setTodoCount}
-                onClose={overlay ? () => setOverlay(false) : undefined}
-                // 带着这件事回到对话：输入框里写上编号和标题，Relay 会读这件事的档案，不用重新解释
-                onAsk={(item) => {
-                  setDraft({ text: t("关于 #{id}《{title}》：", { id: item.id, title: item.title }), n: Date.now() });
-                  setOverlay(false);
+                onClose={() => setInspectorOpen(false)}
+                // 带着它回到对话：输入框上方出现可移除的标签，不自动发送；窄屏时关掉详情栏回到对话
+                onAsk={(ctx) => {
+                  setContext({ ...ctx, n: Date.now() });
+                  if (!wide()) setInspectorOpen(false);
                 }}
               />
-            </div>
-          )}
+            )}
           </div>
         )}
       </div>

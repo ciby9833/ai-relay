@@ -311,6 +311,16 @@ class FeishuClient:
             await self.send_text(open_id, fallback_text)
             return None
 
+    async def send_file(self, open_id: str, data: bytes, filename: str, file_type: str) -> str | None:
+        """把文件发给用户本人（机器人私聊）：先上传拿 file_key，再发文件消息。file_type：xls | ppt | doc | pdf | stream。"""
+        token = await self.tenant_token()
+        uploaded = await self._request("POST", "/im/v1/files", token=token, data={"file_type": file_type, "file_name": filename},
+                                       files={"file": (filename, data)})
+        sent = await self._request("POST", "/im/v1/messages", token=token, params={"receive_id_type": "open_id"},
+                                   json={"receive_id": open_id, "msg_type": "file",
+                                         "content": json.dumps({"file_key": uploaded["file_key"]})})
+        return sent.get("message_id")
+
     async def reply_text(self, message_id: str, text: str) -> None:
         await self._send(f"/im/v1/messages/{message_id}/reply", {}, text)
 

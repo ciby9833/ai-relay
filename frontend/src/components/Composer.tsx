@@ -9,10 +9,12 @@ export default function Composer({
   onSend,
   model,
   onModel,
-  draft,
+  context,
+  onClearContext,
 }: {
-  /** 从“Relay 在跟进”里点“在对话里问”：把这件事带进输入框（n 变了就重新带入） */
-  draft?: { text: string; n: number } | null;
+  /** 从详情栏“带着它问 Relay”：输入框上方显示可移除的标签，发送时附上；不会自动发送，原来的草稿保留 */
+  context?: { label: string; ref: string; n: number } | null;
+  onClearContext?: () => void;
   busy: boolean;
   placeholder: string;
   onSend: (text: string) => void;
@@ -33,10 +35,8 @@ export default function Composer({
   }, []);
 
   useEffect(() => {
-    if (!draft) return;
-    setText(draft.text);
-    area.current?.focus();
-  }, [draft]);
+    if (context) area.current?.focus();
+  }, [context]);
 
   useEffect(() => {
     if (area.current) {
@@ -48,8 +48,9 @@ export default function Composer({
   const submit = () => {
     const value = text.trim();
     if (!value || busy) return;
-    onSend(value);
+    onSend(context ? `${context.ref}${value}` : value);
     setText("");
+    onClearContext?.();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -62,6 +63,14 @@ export default function Composer({
 
   return (
     <div className="composer">
+      {context && (
+        <div className="composer-context">
+          <span className="context-chip" title={context.label}>
+            <Icon name="doc" size={12} /> <span>{context.label}</span>
+            <button className="icon-button" onClick={onClearContext} aria-label={t("移除")}><Icon name="x" size={12} /></button>
+          </span>
+        </div>
+      )}
       <textarea
         ref={area}
         value={text}

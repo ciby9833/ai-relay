@@ -342,13 +342,23 @@ function dueText(value: string | null) {
 
 // “不用跟了”的原因：只结束这一件，并记下来用于评估提醒准不准
 const REASONS: [ItemOutcome, string][] = [
-  ["handled_before", "提醒前就处理了"], ["not_mine", "不归我管"], ["not_worth", "不值得提醒"],
-  ["quieter", "这类以后少提醒"], ["duplicate", "重复了"],
+  ["not_mine", "不归我管"], ["not_worth", "不值得提醒"], ["duplicate", "重复了"],
+  ["paused", "暂时不跟进"], ["quieter", "这类以后少提醒"],
 ];
 
-export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChanged: () => void; compact?: boolean }) {
+export function ItemCard({ item, onChanged, compact, onClosed }: {
+  item: FollowUp; onChanged: () => void; compact?: boolean;
+  /** 他标了已处理 / 不用跟了：交给外层显示“撤销” */
+  onClosed?: (item: FollowUp, message: string) => void;
+}) {
   const { busy, error, run } = useBusy();
-  const [reasons, setReasons] = useState(false);
+  // done：问是提醒后还是提醒前处理的（没提醒过就不问）；stop：不用跟了的原因
+  const [reasons, setReasons] = useState<false | "done" | "stop">(false);
+  const give = (outcome: ItemOutcome) => run(async () => {
+    const result = await api.itemFeedback(item.id, outcome);
+    onClosed?.(item, result.message);
+    onChanged();
+  });
   const [icon, label] = ITEM_KIND[item.kind];
   const action = item.action;
   const closed = item.status !== "open";
@@ -421,12 +431,18 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
             </a>
           )}
           <span className="spacer" />
-          {reasons ? (
+          {reasons === "done" ? (
+            <span className="item-reasons" role="group" aria-label={t("什么时候处理的？")}>
+              <span className="muted small">{t("什么时候处理的？")}</span>
+              <button className="btn secondary small" disabled={busy} onClick={() => give("handled")}>{t("提醒后处理完了")}</button>
+              <button className="btn secondary small" disabled={busy} onClick={() => give("handled_before")}>{t("提醒前就处理了")}</button>
+              <button className="btn ghost small" disabled={busy} onClick={() => setReasons(false)}>{t("返回")}</button>
+            </span>
+          ) : reasons === "stop" ? (
             <span className="item-reasons" role="group" aria-label={t("为什么不用跟了？")}>
               <span className="muted small">{t("为什么不用跟了？")}</span>
               {REASONS.filter(([r]) => r !== "quieter" || item.quieter).map(([outcome, text]) => (
-                <button key={outcome} className="btn secondary small" disabled={busy}
-                  onClick={() => run(async () => { await api.itemFeedback(item.id, outcome); onChanged(); })}>
+                <button key={outcome} className="btn secondary small" disabled={busy} onClick={() => give(outcome)}>
                   {t(text)}
                 </button>
               ))}
@@ -434,10 +450,10 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
             </span>
           ) : (
             <>
-              <button className="btn ghost small" disabled={busy} onClick={() => run(async () => { await api.itemFeedback(item.id, "handled"); onChanged(); })}>
+              <button className="btn ghost small" disabled={busy} onClick={() => (item.announced ? setReasons("done") : give("handled"))}>
                 <Icon name="check" size={14} /> {t("已处理")}
               </button>
-              <button className="btn ghost small" disabled={busy} onClick={() => setReasons(true)}>
+              <button className="btn ghost small" disabled={busy} onClick={() => setReasons("stop")}>
                 {t("不用跟了")}
               </button>
             </>
@@ -681,8 +697,24 @@ export function MissionCard({ mission, onChanged, onOpen }: { mission: MissionDa
   );
 }
 
+/** Relay 生成的文件：下载入口和生成后重新打开核对的结果 */
+function FileCard({ card }: Props<"file">) {
+  const size = card.size > 1024 * 1024 ? `${(card.size / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(card.size / 1024)} KB`;
+  return (
+    <AppCard icon="file" app={card.file_kind === "xlsx" ? "Excel" : "PowerPoint"}
+      meta={<Badge tone={card.verified.ok ? "ok" : card.verified.ok === false ? "urgent" : undefined}>
+        {card.verified.ok ? t("已核对") : card.verified.ok === false ? t("核对不一致") : t("未核对")}</Badge>}
+      footer={<a className="btn primary" href={`/api/files/${card.file_id}`} download={card.filename}><Icon name="download" /> {t("下载")}</a>}>
+      <div className="card-title">{card.filename} <span className="muted small">· {size}</span></div>
+      <p className="muted small">{card.verified.detail}</p>
+    </AppCard>
+  );
+}
+
 export default function InlineCard({ card, onChanged, hasDraft }: { card: Card; onChanged: () => void; hasDraft?: boolean }) {
   switch (card.kind) {
+    case "file":
+      return <FileCard card={card} onChanged={onChanged} />;
     case "mail":
       return <MailCard card={card} onChanged={onChanged} hasDraft={hasDraft} />;
     case "draft":

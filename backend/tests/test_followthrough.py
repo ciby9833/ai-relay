@@ -172,3 +172,44 @@ async def test_one_item_one_card(monkeypatch):
             await session.execute(delete(User).where(User.id == user_id))
             await session.commit()
             await engine.dispose()
+
+
+@db
+async def test_undo_reopens_only_that_item():
+    import httpx
+    from sqlalchemy import delete, select
+
+    from app import deps
+    from app.db import SessionLocal, engine
+    from app.main import app
+    from app.models import ItemFeedback
+
+    tag = uuid.uuid4().hex[:8]
+    async with SessionLocal() as session:
+        user = User(feishu_open_id=f"ou_{tag}", name="Pieter", timezone="Asia/Jakarta")
+        session.add(user)
+        await session.flush()
+        user_id = user.id
+        a = FollowUp(user_id=user_id, key=f"a-{tag}", kind="approval", owner="me", title="Ricky：新功能申请", facets={})
+        b = FollowUp(user_id=user_id, key=f"b-{tag}", kind="approval", owner="me", title="Gray：新功能申请", facets={})
+        session.add_all([a, b])
+        await session.commit()
+        app.dependency_overrides[deps.get_current_user] = lambda: user
+        try:
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://relay") as client:
+                assert (await client.post(f"/api/items/{a.id}/feedback", json={"outcome": "paused"})).status_code == 200
+                assert (await client.post(f"/api/items/{b.id}/undo")).status_code == 409  # 没标记过的不能撤销
+                progress = (await client.get("/api/progress")).json()
+                entry = next(i for d in progress["days"] for i in d["items"] if i["id"] == a.id)
+                assert entry["resolution"] == "你说暂时不跟进" and entry["undoable"] is True
+                assert (await client.post(f"/api/items/{a.id}/undo")).json()["message"] == "已撤销，这件事回到待处理"
+            await session.refresh(a)
+            await session.refresh(b)
+            assert (a.status, b.status) == ("open", "open") and a.announced_at is not None  # 回到待处理，不重新提醒
+            assert (await session.execute(select(ItemFeedback).where(ItemFeedback.user_id == user_id))).scalars().all() == []
+        finally:
+            app.dependency_overrides.pop(deps.get_current_user, None)
+            await session.rollback()
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+            await engine.dispose()

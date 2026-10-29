@@ -129,7 +129,7 @@ test("changing UI language preserves drafts and does not save assistant language
   const writes = await mockApi(page, true, true);
   await page.goto("/");
   await page.getByRole("textbox", { name: "Email draft body" }).fill("My unsent draft");
-  await page.getByRole("textbox", { name: "Reply to Relay or ask for help…" }).fill("My unsent question");
+  await page.getByRole("textbox", { name: "Ask Relay, or hand it something…" }).fill("My unsent question");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
@@ -141,7 +141,7 @@ test("changing UI language preserves drafts and does not save assistant language
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Pengaturan", exact: true })).toBeFocused();
   await expect(page.getByRole("textbox", { name: "Isi draf email" })).toHaveValue("My unsent draft");
-  await expect(page.getByRole("textbox", { name: "Balas Relay atau minta bantuan…" })).toHaveValue("My unsent question");
+  await expect(page.getByRole("textbox", { name: "Tanya Relay, atau serahkan sesuatu…" })).toHaveValue("My unsent question");
   await expect(page.getByText("Diterima", { exact: true })).toBeVisible();
   await expect(page.getByText("Menunggu jawaban Anda", { exact: true })).toBeVisible();
   await page.locator(".steps-toggle").first().click();  // 过程默认收起，展开后看步骤名称

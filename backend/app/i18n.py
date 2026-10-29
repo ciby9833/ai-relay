@@ -80,6 +80,7 @@ _STRINGS = {
     "fb_not_mine": {"zh": "不归我管", "en": "Not mine", "id": "Bukan urusan saya"},
     "fb_not_worth": {"zh": "不值得提醒", "en": "Not worth a reminder", "id": "Tidak perlu diingatkan"},
     "fb_quieter": {"zh": "这类以后少提醒", "en": "Fewer like this", "id": "Kurangi yang seperti ini"},
+    "fb_paused": {"zh": "暂时不跟进", "en": "Pause for now", "id": "Tunda dulu"},
     "fb_duplicate": {"zh": "重复了", "en": "Duplicate", "id": "Duplikat"},
     "approve": {"zh": "批准", "en": "Approve", "id": "Setujui"},
     "reject": {"zh": "驳回", "en": "Reject", "id": "Tolak"},

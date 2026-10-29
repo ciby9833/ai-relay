@@ -97,6 +97,7 @@ export interface MissionData {
 }
 
 export type Card =
+  | { kind: "file"; file_id: string; filename: string; file_kind: "xlsx" | "pptx"; size: number; verified: { ok: boolean | null; detail: string } }
   | {
       kind: "mail";
       signal_id: number;
@@ -220,7 +221,7 @@ export interface EvalItem {
 }
 
 /** 卡片上的反馈：已处理，或“不用跟了”的原因 */
-export type ItemOutcome = "handled" | "handled_before" | "not_mine" | "not_worth" | "quieter" | "duplicate";
+export type ItemOutcome = "handled" | "handled_before" | "not_mine" | "not_worth" | "quieter" | "duplicate" | "paused";
 
 export interface EvalData {
   enrolled: boolean;
@@ -331,7 +332,7 @@ export interface Meeting {
   invitation_item_id: number | null;
 }
 export interface MeetingsData { upcoming: Meeting[]; recent: Meeting[] }
-export interface ProgressItem { id: number; title: string; kind: string; owner: "me" | "others"; status: string; resolution: string | null; closed_at: string }
+export interface ProgressItem { id: number; title: string; kind: string; owner: "me" | "others"; status: string; resolution: string | null; closed_at: string; undoable?: boolean }
 export interface ProgressData {
   days: { date: string; items: ProgressItem[] }[];
   notes: { kind: "digest" | "brief"; text: string; created_at: string }[];
@@ -519,6 +520,7 @@ export const api = {
   itemCase: (id: number) => request<{ refs: CaseRef[] }>(`/items/${id}/case`),
   openCaseRef: (id: number, ref: string) => request<CaseContent>(`/items/${id}/case/open`, json("POST", { ref })),
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
+  undoItem: (id: number) => request<{ message: string }>(`/items/${id}/undo`, { method: "POST" }),
   itemFeedback: (id: number, outcome: ItemOutcome) => request<{ message: string }>(`/items/${id}/feedback`, json("POST", { outcome })),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),
   saveSettings: (settings: Settings) => request("/settings", json("PUT", settings)),

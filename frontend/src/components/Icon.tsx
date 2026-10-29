@@ -26,6 +26,10 @@ const PATHS: Record<string, string> = {
   logout: "M14 4h5v16h-5 M10 8l-4 4 4 4 M6 12h10",
   trash: "M5 7h14 M9 7V4h6v3 M7 7l1 13h8l1-13",
   chevron: "M9 6l6 6-6 6",
+  back: "M15 6l-6 6 6 6",
+  panel: "M4 5h16v14H4z M15 5v14",
+  file: "M7 3h7l5 5v13H7z M14 3v5h5",
+  download: "M12 4v11 M7 10l5 5 5-5 M5 20h14",
 };
 
 export default function Icon({ name, size = 16 }: { name: string; size?: number }) {

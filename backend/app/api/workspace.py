@@ -3,16 +3,19 @@
 “待处理”沿用 /api/board。对话只用来解释、追问和委托，不再承载所有通知。
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import select
 
 from app.deps import FeishuDep, SessionDep, UserDep
 from app.home import home_conversation
 from app.i18n import user_language
-from app.models import FollowUp, Message, Signal
+from app import outputs
+from app.models import FollowUp, GeneratedFile, Message, Signal
 from app.proactive import items, meetings
 from app.proactive.settings import get_settings_row, merged
 
@@ -82,11 +85,17 @@ async def progress(session: SessionDep, user: UserDep):
     closed = (await session.execute(select(FollowUp).where(
         FollowUp.user_id == user.id, FollowUp.status.in_(("done", "dismissed")), FollowUp.closed_at > since,
     ).order_by(FollowUp.closed_at.desc()).limit(200))).scalars().all()
+    from app.models import ItemFeedback
+
+    mine = set((await session.execute(select(ItemFeedback.item_id).where(
+        ItemFeedback.user_id == user.id, ItemFeedback.created_at > datetime.now(UTC) - timedelta(days=1)))).scalars())
     days: dict[str, list] = {}
     for item in closed:
         days.setdefault(item.closed_at.astimezone(tz).date().isoformat(), []).append({
             "id": item.id, "title": item.title, "kind": item.kind, "owner": item.owner, "status": item.status,
             "resolution": item.resolution, "closed_at": item.closed_at.isoformat(),
+            # 他刚标记的（已处理 / 不用跟了）一天内可以撤销；Relay 根据证据结束的、外部已执行的不行
+            "undoable": item.id in mine and item.closed_at > datetime.now(UTC) - timedelta(days=1),
         })
     conversation = await home_conversation(session, user)
     await session.commit()
@@ -103,3 +112,14 @@ async def progress(session: SessionDep, user: UserDep):
             notes.append({"kind": kind, "text": text, "created_at": message.created_at.isoformat()})
             kind = None
     return {"days": [{"date": d, "items": v} for d, v in days.items()], "notes": notes[::-1][:20]}
+
+
+@router.get("/files/{file_id}")
+async def download_file(file_id: uuid.UUID, session: SessionDep, user: UserDep):
+    """Relay 生成的文件：只有他本人能下载。"""
+    record = await session.get(GeneratedFile, file_id)
+    if record is None or record.user_id != user.id:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    media = outputs.XLSX if record.kind == "xlsx" else outputs.PPTX
+    return Response(record.content, media_type=media,
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(record.filename)}"})

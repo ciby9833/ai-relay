@@ -215,7 +215,21 @@ async def _close_item(item_id: int, decision: Literal["done", "dismiss"], sessio
 
 
 class FeedbackBody(BaseModel):
-    outcome: Literal["handled", "handled_before", "not_mine", "not_worth", "quieter", "duplicate"]
+    outcome: Literal["handled", "handled_before", "not_mine", "not_worth", "quieter", "duplicate", "paused"]
+
+
+@router.post("/items/{item_id}/undo")
+async def undo_feedback(item_id: int, session: SessionDep, user: UserDep):
+    """撤销刚才的“已处理 / 不用跟了”。"""
+    item = await session.get(FollowUp, item_id)
+    if item is None or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="事项不存在")
+    try:
+        message = await feedback.undo(session, user, item)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.commit()
+    return {"ok": True, "message": message}
 
 
 @router.post("/items/{item_id}/feedback")

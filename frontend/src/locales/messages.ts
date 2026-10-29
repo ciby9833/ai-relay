@@ -1915,5 +1915,233 @@ export const messages: Record<string, readonly [string, string]> = {
   "Relay 在跟进": [
     "Relay is tracking",
     "Relay sedang memantau"
+  ],
+  "今天的工作": [
+    "Today's work",
+    "Pekerjaan hari ini"
+  ],
+  "今天": [
+    "Today",
+    "Hari ini"
+  ],
+  "收起详情栏": [
+    "Hide details",
+    "Sembunyikan detail"
+  ],
+  "打开详情栏": [
+    "Show details",
+    "Tampilkan detail"
+  ],
+  "需要你 {me} · 在等对方 {others}": [
+    "{me} need you · waiting on {others}",
+    "{me} perlu Anda · menunggu {others}"
+  ],
+  "下一场 {time}": [
+    "Next {time}",
+    "Berikutnya {time}"
+  ],
+  "近期没有会": [
+    "No upcoming meetings",
+    "Tidak ada rapat"
+  ],
+  "安静汇总，不打扰": [
+    "Quiet summary, no interruptions",
+    "Ringkasan tenang, tanpa gangguan"
+  ],
+  "同步失败，显示的是上次的结果": [
+    "Sync failed — showing the last results",
+    "Sinkronisasi gagal — menampilkan hasil terakhir"
+  ],
+  "已同步 · {time}": [
+    "Synced · {time}",
+    "Tersinkron · {time}"
+  ],
+  "正在同步…": [
+    "Syncing…",
+    "Menyinkronkan…"
+  ],
+  "只在需要你时提醒": [
+    "Only notifies when needed",
+    "Hanya memberi tahu saat perlu"
+  ],
+  "待回复邀请": [
+    "Awaiting reply",
+    "Menunggu balasan"
+  ],
+  "简报已就绪": [
+    "Brief ready",
+    "Briefing siap"
+  ],
+  "有纪要": [
+    "Has minutes",
+    "Ada notulen"
+  ],
+  "时间重叠": [
+    "Overlaps",
+    "Bentrok"
+  ],
+  "{count} 人参会": [
+    "{count} attendees",
+    "{count} peserta"
+  ],
+  "和《{title}》时间重叠。": [
+    "Overlaps with \"{title}\".",
+    "Bentrok dengan \"{title}\"."
+  ],
+  "查看另一场": [
+    "See the other",
+    "Lihat yang lain"
+  ],
+  "会前简报": [
+    "Prep",
+    "Persiapan"
+  ],
+  "会后行动": [
+    "Follow-ups",
+    "Tindak lanjut"
+  ],
+  "整理于 {time}，只用会前已有、和这个会确实相关的材料": [
+    "Prepared {time} from material that existed before the meeting and is genuinely related",
+    "Disiapkan {time} dari materi yang sudah ada sebelum rapat dan benar-benar terkait"
+  ],
+  "这个会已经开过了，没有整理会前简报。": [
+    "This meeting has ended; no prep was made.",
+    "Rapat ini sudah selesai; tidak ada persiapan."
+  ],
+  "会前会只用和这个会确实相关的材料整理简报；也可以现在就整理。": [
+    "Before the meeting Relay prepares a brief from genuinely related material only. You can also do it now.",
+    "Sebelum rapat Relay menyiapkan briefing hanya dari materi yang benar-benar terkait. Bisa juga sekarang."
+  ],
+  "没有找到和这个会直接相关的材料。": [
+    "No material directly related to this meeting was found.",
+    "Tidak ditemukan materi yang terkait langsung."
+  ],
+  "会议结束后，Relay 会去找这次会的纪要，找到后提取分给你的行动项。": [
+    "After the meeting Relay looks for the minutes and extracts the actions assigned to you.",
+    "Setelah rapat Relay mencari notulen dan mengambil tindak lanjut untuk Anda."
+  ],
+  "正在找这次会的纪要。": [
+    "Looking for the minutes.",
+    "Sedang mencari notulen."
+  ],
+  "带着这场会议问 Relay": [
+    "Ask Relay about this meeting",
+    "Tanya Relay tentang rapat ini"
+  ],
+  "回复邀请": [
+    "Reply to invite",
+    "Balas undangan"
+  ],
+  "现在整理": [
+    "Prepare now",
+    "Siapkan sekarang"
+  ],
+  "{count} 张申请，每张单独处理": [
+    "{count} requests, each handled separately",
+    "{count} permintaan, masing-masing ditangani terpisah"
+  ],
+  "需要你": [
+    "Needs you",
+    "Perlu Anda"
+  ],
+  "现在没有需要你处理的事。": [
+    "Nothing needs you right now.",
+    "Tidak ada yang perlu Anda tangani."
+  ],
+  "{time} 有会议时间重叠，确认一下参会安排。": [
+    "Meetings overlap at {time} — check which to attend.",
+    "Rapat bentrok pukul {time} — pastikan mana yang dihadiri."
+  ],
+  "{count} 场": [
+    "{count}",
+    "{count}"
+  ],
+  "只用和你及这个会相关、你有权看的材料": [
+    "Only material related to you and the meeting that you can access",
+    "Hanya materi terkait yang bisa Anda akses"
+  ],
+  "这件事已经结束了。": [
+    "This item has ended.",
+    "Hal ini sudah selesai."
+  ],
+  "带着这件事问 Relay": [
+    "Ask Relay about this",
+    "Tanya Relay tentang ini"
+  ],
+  "找不到这个会了（可能已取消）。": [
+    "Meeting not found (it may have been cancelled).",
+    "Rapat tidak ditemukan (mungkin dibatalkan)."
+  ],
+  "为什么相关": [
+    "Why related",
+    "Mengapa terkait"
+  ],
+  "用于会议《{title}》的会前简报": [
+    "Used for the prep of \"{title}\"",
+    "Dipakai untuk persiapan \"{title}\""
+  ],
+  "在飞书打开原文": [
+    "Open in Feishu",
+    "Buka di Feishu"
+  ],
+  "这份材料在会议描述或 Relay 的记录里，没有单独的原文链接。": [
+    "This material comes from the meeting description or Relay's records; there's no separate link.",
+    "Materi ini dari deskripsi rapat atau catatan Relay; tidak ada tautan terpisah."
+  ],
+  "详情栏": [
+    "Details",
+    "Detail"
+  ],
+  "关于会议《{title}》（{when}）：": [
+    "About the meeting \"{title}\" ({when}): ",
+    "Tentang rapat \"{title}\" ({when}): "
+  ],
+  "移除": [
+    "Remove",
+    "Hapus"
+  ],
+  "我先处理什么？": [
+    "What should I do first?",
+    "Apa yang harus saya kerjakan dulu?"
+  ],
+  "准备下一场会议": [
+    "Prepare for my next meeting",
+    "Siapkan rapat berikutnya"
+  ],
+  "问 Relay，或交给它一件事…": [
+    "Ask Relay, or hand it something…",
+    "Tanya Relay, atau serahkan sesuatu…"
+  ],
+  "对外发送与审批，都会先让你确认。": [
+    "Anything sent out or approved asks you first.",
+    "Apa pun yang dikirim atau disetujui akan meminta konfirmasi Anda dulu."
+  ],
+  "什么时候处理的？": [
+    "When was it handled?",
+    "Kapan ditangani?"
+  ],
+  "提醒后处理完了": [
+    "After the reminder",
+    "Setelah pengingat"
+  ],
+  "暂时不跟进": [
+    "Pause for now",
+    "Tunda dulu"
+  ],
+  "已核对": [
+    "Verified",
+    "Terverifikasi"
+  ],
+  "核对不一致": [
+    "Mismatch",
+    "Tidak cocok"
+  ],
+  "未核对": [
+    "Not verified",
+    "Belum diverifikasi"
+  ],
+  "下载": [
+    "Download",
+    "Unduh"
   ]
 };

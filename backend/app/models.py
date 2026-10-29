@@ -593,3 +593,18 @@ class ItemFeedback(Base):
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     seconds_after_push: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GeneratedFile(Base):
+    """Relay 替用户生成的文件（Excel、PPT）。只有他本人能下载；verified 是生成后重新打开逐项核对的结果。"""
+
+    __tablename__ = "generated_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(8))  # xlsx | pptx
+    filename: Mapped[str] = mapped_column(String(255))
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    spec: Mapped[dict] = mapped_column(JSONB)
+    verified: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

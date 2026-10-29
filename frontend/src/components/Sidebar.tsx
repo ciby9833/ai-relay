@@ -35,18 +35,16 @@ export default function Sidebar({
       </div>
 
       <nav className="nav">
+        <button className={`nav-item new-chat ${view.type === "chat" && view.id === null ? "active" : ""}`}
+          onClick={() => onNavigate({ type: "chat", id: null })}>
+          <Icon name="plus" /> {t("新对话")}
+        </button>
         <button className={`nav-item ${view.type === "home" ? "active" : ""}`} aria-current={view.type === "home" ? "page" : undefined}
           onClick={() => onNavigate({ type: "home" })}>
-          <Icon name="home" /> {t("对话")}
+          <Icon name="sun" /> {t("今天")}
         </button>
         <button className={`nav-item ${view.type === "missions" ? "active" : ""}`} onClick={() => onNavigate({ type: "missions", id: null })}>
           <Icon name="clock" /> {t("长期任务")}
-        </button>
-        <button
-          className={`nav-item ${view.type === "chat" && view.id === null ? "active" : ""}`}
-          onClick={() => onNavigate({ type: "chat", id: null })}
-        >
-          <Icon name="plus" /> {t("新对话")}
         </button>
         {user.is_admin && <button className={`nav-item ${view.type === "eval" ? "active" : ""}`} onClick={() => onNavigate({ type: "eval" })}>
           <Icon name="check" /> {t("新旧链路对比")}
