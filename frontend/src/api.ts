@@ -28,7 +28,8 @@ export interface Action {
     | "update_event"
     | "delete_event"
     | "add_attendees"
-    | "base_record";
+    | "base_record"
+    | "forward_mail";
   summary: string;
   status: "pending" | "done" | "cancelled" | "failed";
   result: string | null;
@@ -39,6 +40,11 @@ export interface Action {
   references?: string[];
   reply_all?: boolean;
   others?: string[];
+  /** 回复全部时：原来的其他收件人（仍是收件人）和原来的抄送；以及为什么这样选 */
+  to_extra?: string[];
+  cc?: string[];
+  reply_all_why?: string | null;
+  attachments?: string[] | null;
   start?: string | null;
   due?: string | null;
   link?: string | null;
@@ -97,7 +103,9 @@ export interface MissionData {
 }
 
 export type Card =
-  | { kind: "file"; file_id: string; filename: string; file_kind: "xlsx" | "pptx"; size: number; verified: { ok: boolean | null; detail: string } }
+  | { kind: "file"; file_id: string; filename: string; file_kind: "xlsx" | "pptx" | "docx"; size: number;
+      verified: { ok?: boolean | null; detail?: string }; status?: "queued" | "running" | "done" | "failed"; stage?: string | null;
+      drive?: { url: string; verified?: { ok: boolean; detail: string } } | null; error?: string | null }
   | {
       kind: "mail";
       signal_id: number;
@@ -169,6 +177,10 @@ export interface FollowUp {
   attention?: AttentionLevel | null;
   announced?: boolean;
   quieter?: boolean;
+  /** 邮件：线程往来、附件、正文里的文档、相关会议 */
+  context?: { thread: number; attachments: string[]; links: number; meeting: string | null } | null;
+  mail_id?: number | null;
+  is_mail?: boolean;
 }
 
 export interface CaseRef {
@@ -520,6 +532,10 @@ export const api = {
   itemCase: (id: number) => request<{ refs: CaseRef[] }>(`/items/${id}/case`),
   openCaseRef: (id: number, ref: string) => request<CaseContent>(`/items/${id}/case/open`, json("POST", { ref })),
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
+  fileInfo: (id: string) => request<Extract<Card, { kind: "file" }>>(`/files/${id}/info`),
+  saveFile: (id: string) => request<Extract<Card, { kind: "file" }>>(`/files/${id}/save`, { method: "POST" }),
+  forwardMail: (signalId: number, to: string[], note: string, withAttachments: boolean) =>
+    request<Action>(`/signals/${signalId}/forward`, json("POST", { to, note, with_attachments: withAttachments })),
   undoItem: (id: number) => request<{ message: string }>(`/items/${id}/undo`, { method: "POST" }),
   itemFeedback: (id: number, outcome: ItemOutcome) => request<{ message: string }>(`/items/${id}/feedback`, json("POST", { outcome })),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),

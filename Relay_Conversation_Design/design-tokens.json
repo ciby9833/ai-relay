@@ -1,0 +1,71 @@
+{
+  "name": "Relay conversation workspace",
+  "version": "1.0",
+  "appearance": "light, based on supplied screenshots",
+  "colors": {
+    "canvas": "#FAF9F6",
+    "surface": "#FFFEFA",
+    "sidebar": "#F1EFE8",
+    "text": "#292A26",
+    "secondaryText": "#707766",
+    "border": "#E6E4DC",
+    "brand": "#B55438",
+    "brandSoft": "#F7EBE5",
+    "primaryAction": "#36442E",
+    "ready": "#526849",
+    "readySoft": "#EDF2E8",
+    "attention": "#8A6223",
+    "attentionSoft": "#F6EEDC"
+  },
+  "spacingPx": [
+    4,
+    8,
+    12,
+    16,
+    20,
+    24,
+    32,
+    36,
+    48
+  ],
+  "radiiPx": {
+    "badge": 5,
+    "button": 8,
+    "compactCard": 10,
+    "objectCard": 12,
+    "composer": 15,
+    "dialog": 17
+  },
+  "typography": {
+    "bodyFont": "system sans-serif, PingFang SC, Microsoft YaHei",
+    "displayFont": "Georgia, Songti SC, STSong",
+    "bodyPx": 14,
+    "mobileBodyPx": 14,
+    "secondaryPx": 12,
+    "annotationMinPx": 11,
+    "displayPx": 29,
+    "detailTitlePx": 22
+  },
+  "layout": {
+    "compactMaxPx": 760,
+    "hideGlobalNavMaxPx": 980,
+    "sidebarPx": [
+      174,
+      206,
+      222
+    ],
+    "inspectorPx": [
+      348,
+      376,
+      420
+    ],
+    "conversationMaxWidthPx": 780,
+    "mobileTouchTargetMinPx": 44
+  },
+  "motion": {
+    "hoverPreviewDelayMs": 320,
+    "controlTransitionMs": 150,
+    "panelTransitionMs": 200,
+    "reducedMotion": "disable transitions and animations"
+  }
+}

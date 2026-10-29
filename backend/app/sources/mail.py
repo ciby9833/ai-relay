@@ -248,28 +248,41 @@ async def own_addresses(feishu: FeishuClient, user: User) -> set[str]:
     return addresses
 
 
+def reply_all_split(mail: dict, own: set[str]) -> tuple[list[dict], list[dict]]:
+    """回复全部时其他人各在哪：原来的收件人还是收件人，原来的抄送还是抄送（和邮箱客户端一致）；去掉自己和原发件人，去重。"""
+    sender = (mail.get("reply_to") or mail.get("from_address") or "").lower()
+    seen = {sender, (mail.get("from_address") or "").lower(), *own}
+    split: tuple[list[dict], list[dict]] = ([], [])
+    for bucket, entries in ((0, mail.get("to_addresses") or []), (1, mail.get("cc_addresses") or [])):
+        for entry in entries:
+            address = (entry.get("mail_address") or "").lower()
+            if address and address not in seen:
+                seen.add(address)
+                split[bucket].append({"name": entry.get("name") or "", "mail_address": entry["mail_address"]})
+    return split
+
+
 def reply_all_cc(mail: dict, own: set[str]) -> list[dict]:
-    """回复全部时的抄送：原邮件的收件人和抄送，去掉自己和原发件人，去重。"""
-    sender = (mail.get("from_address") or "").lower()
-    seen, cc = {sender, *own}, []
-    for entry in (mail.get("to_addresses") or []) + (mail.get("cc_addresses") or []):
-        address = (entry.get("mail_address") or "").lower()
-        if address and address not in seen:
-            seen.add(address)
-            cc.append({"name": entry.get("name") or "", "mail_address": entry["mail_address"]})
-    return cc
+    """回复全部时除发件人外的其他人（收件人 + 抄送），用于显示“会发给谁”。"""
+    to, cc = reply_all_split(mail, own)
+    return to + cc
 
 
-def build_reply(user: User, mail: dict, body: str, cc: list[dict] | None = None) -> str:
-    """构造回复邮件的 EML（带 In-Reply-To / References，归入原线程），返回 base64url。cc 非空即“回复全部”。"""
+def _addresses(entries: list[dict]) -> str:
+    return ", ".join(formataddr((c.get("name") or "", c["mail_address"])) for c in entries)
+
+
+def build_reply(user: User, mail: dict, body: str, cc: list[dict] | None = None, to_extra: list[dict] | None = None) -> str:
+    """构造回复邮件的 EML（带 In-Reply-To / References，归入原线程），返回 base64url。
+    回复全部时 to_extra 是原来的其他收件人、cc 是原来的抄送；只回发件人时两者都为空。"""
     message = EmailMessage()
     subject = mail["subject"]
     message["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
     if user.email:
         message["From"] = formataddr((user.name, user.email))
-    message["To"] = mail.get("reply_to") or mail["from_address"]
+    message["To"] = ", ".join([mail.get("reply_to") or mail["from_address"]] + ([_addresses(to_extra)] if to_extra else []))
     if cc:
-        message["Cc"] = ", ".join(formataddr((c["name"], c["mail_address"])) for c in cc)
+        message["Cc"] = _addresses(cc)
     if mail.get("smtp_message_id"):
         original = mail["smtp_message_id"]
         original = original if original.startswith("<") else f"<{original}>"
@@ -280,9 +293,55 @@ def build_reply(user: User, mail: dict, body: str, cc: list[dict] | None = None)
     return base64.urlsafe_b64encode(message.as_bytes(policy=SMTP)).decode()
 
 
-async def create_reply_draft(feishu: FeishuClient, user: User, mail: dict, body: str, cc: list[dict] | None = None) -> str:
-    data = await feishu.user_api(user, "POST", f"{MAILBOX}/drafts", json={"raw": build_reply(user, mail, body, cc)})
+async def create_reply_draft(feishu: FeishuClient, user: User, mail: dict, body: str, cc: list[dict] | None = None,
+                             to_extra: list[dict] | None = None) -> str:
+    data = await feishu.user_api(user, "POST", f"{MAILBOX}/drafts", json={"raw": build_reply(user, mail, body, cc, to_extra)})
     return (data.get("draft") or {})["id"]
+
+
+FORWARD_LIMIT = 20 * 1024 * 1024
+
+
+def build_forward(user: User, mail: dict, to: list[str], note: str, attachments: list[tuple[str, bytes]] | None = None) -> str:
+    """转发：附言 + 原邮件的头信息和正文（+ 原附件），返回 base64url。"""
+    message = EmailMessage()
+    subject = mail["subject"]
+    message["Subject"] = subject if subject.lower().startswith(("fw:", "fwd:")) else f"Fw: {subject}"
+    if user.email:
+        message["From"] = formataddr((user.name, user.email))
+    message["To"] = ", ".join(to)
+    sent = datetime.fromtimestamp(int(mail["internal_date"]) / 1000, UTC).strftime("%Y-%m-%d %H:%M UTC") if mail.get("internal_date") else ""
+    header = "\n".join([
+        "---------- 转发的邮件 / Forwarded message ----------",
+        f"发件人 From: {mail.get('from') or mail.get('from_address')}", f"时间 Date: {sent}",
+        f"主题 Subject: {subject}", f"收件人 To: {', '.join(mail.get('to') or [])}",
+    ] + ([f"抄送 Cc: {', '.join(mail['cc'])}"] if mail.get("cc") else []))
+    message.set_content(f"{note.strip()}\n\n{header}\n\n{mail.get('body') or ''}".lstrip())
+    for filename, data in attachments or []:
+        message.add_attachment(data, maintype="application", subtype="octet-stream", filename=filename)
+    return base64.urlsafe_b64encode(message.as_bytes(policy=SMTP)).decode()
+
+
+async def attachment_bytes(feishu: FeishuClient, user: User, message_id: str, attachments: list[dict]) -> list[tuple[str, bytes]]:
+    """下载原邮件的附件原件（转发时带上），总大小不超过 20MB。"""
+    if not attachments:
+        return []
+    data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages/{message_id}/attachments/download_url",
+                                 params={"attachment_ids": ",".join(a["id"] for a in attachments)})
+    names = {a["id"]: a["filename"] for a in attachments}
+    result, total = [], 0
+    for entry in data.get("download_urls") or []:
+        content, _ = await feishu.download(entry["download_url"])
+        total += len(content)
+        if total > FORWARD_LIMIT:
+            raise FeishuError("附件合计超过 20MB，没法随转发带上")
+        result.append((names.get(entry.get("attachment_id"), "attachment"), content))
+    return result
+
+
+async def send_raw(feishu: FeishuClient, user: User, raw: str) -> None:
+    data = await feishu.user_api(user, "POST", f"{MAILBOX}/drafts", json={"raw": raw})
+    await send_draft(feishu, user, (data.get("draft") or {})["id"])
 
 
 async def send_draft(feishu: FeishuClient, user: User, draft_id: str) -> None:

@@ -88,6 +88,27 @@ async def link_action(session: AsyncSession, user: User, action: PendingAction) 
 # ---------- 信号 → 事项 ----------
 
 
+async def mail_context(session: AsyncSession, user: User, signal: Signal) -> dict:
+    """要他处理的邮件附带哪些上下文（只数数量和名字，原文在详情里按需打开）。"""
+    from app.proactive import casefile
+
+    mail = signal.payload or {}
+    thread = mail.get("thread_id")
+    earlier = await session.scalar(select(func.count(Signal.id)).where(
+        Signal.user_id == user.id, Signal.kind.in_(("mail", "mail_sent")), Signal.id != signal.id,
+        Signal.payload["thread_id"].astext == thread)) if thread else 0
+    subject = (mail.get("subject") or "").lower()
+    meeting = None
+    for m in (await session.execute(select(Signal).where(
+            Signal.user_id == user.id, Signal.kind == "meeting", Signal.occurred_at > datetime.now(UTC) - timedelta(days=14),
+            Signal.occurred_at < datetime.now(UTC) + timedelta(days=7)).order_by(Signal.occurred_at.desc()).limit(40))).scalars():
+        if len((m.title or "").strip()) >= 4 and m.title.strip().lower() in subject:
+            meeting = m.title
+            break
+    return {"thread": earlier or 0, "attachments": [a["filename"] for a in mail.get("attachments") or []][:5],
+            "links": len(casefile._links(mail.get("body"))), "meeting": meeting}
+
+
 async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, signal: Signal, fresh: bool) -> None:
     mail = signal.payload
     sender = mail.get("from_name") or mail.get("from_address") or "对方"
@@ -106,6 +127,7 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             recommendation=("对方回复了你之前的邮件。" if resumed else "") + (signal.reason or ""),
             due_at=_due(mail.get("due"), user),
         )
+        item.facets = {**(item.facets or {}), "context": await mail_context(session, user, signal)}
         if fresh:
             try:
                 action = await actions.prepare_mail_reply(session, feishu, user, signal.id)
@@ -121,7 +143,7 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
         item = await get_item(session, user, key)
         count = len(item.signal_ids) + 1 if item else 1
         subjects = await _subjects(session, (item.signal_ids if item else []) + [signal.id])
-        await upsert(
+        item = await upsert(
             session, user, key, signal, silent=not fresh,
             kind="review", owner="me",
             title=f"{sender} 发来 {count} 封邮件需要你看" if count > 1 else f"看一下 {sender} 的《{signal.title}》",
@@ -130,6 +152,7 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             importance="urgent" if signal.importance == "urgent" else "normal",
             due_at=_due(mail.get("due"), user),
         )
+        item.facets = {**(item.facets or {}), "context": await mail_context(session, user, signal)}
     signal.status = "tracked"
 
 
@@ -943,6 +966,10 @@ async def item_json(session: AsyncSession, item: FollowUp) -> dict:
         "detail": ((last.payload.get("detail") or {}).get("fields") or []) if last and item.kind == "approval" else [],
         # 可以在 Relay 里直接批准/驳回（不需要审批人补填内容）
         "quick_approve": bool(last and item.kind == "approval" and not approval_source.needs_input(last.payload.get("detail"))),
+        # 邮件：这封信的上下文（线程里之前的往来、附件、正文里的文档、相关会议）和它的编号（转发用）
+        "context": (item.facets or {}).get("context"),
+        "mail_id": last.id if last and last.kind == "mail" else None,
+        "is_mail": item.key.startswith(("mail-thread:", "batch:")),
     }
 
 
@@ -955,6 +982,11 @@ def actions_json(action: PendingAction) -> dict:
         "start": p.get("start"), "end": p.get("end"), "due": p.get("due"),
         "reply_all": p.get("reply_all", False),
         "others": [o.get("name") or o.get("mail_address") for o in p.get("others") or []],
+        # 回复全部时原收件人仍是收件人、原抄送仍是抄送；以及为什么这样选
+        "to_extra": [o.get("name") or o.get("mail_address") for o in p.get("to_extra") or []],
+        "cc": [o.get("name") or o.get("mail_address") for o in p.get("cc") or []] if isinstance(p.get("cc"), list) else [],
+        "reply_all_why": p.get("reply_all_why"),
+        "attachments": p.get("attachments") if action.kind == "forward_mail" else None,
         "link": (p.get("task") or {}).get("url") or (p.get("event") or {}).get("app_link"),
         "mission_id": action.mission_id,
         "auto": action.auto, "undone_at": action.undone_at.isoformat() if action.undone_at else None,

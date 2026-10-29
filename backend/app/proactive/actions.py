@@ -18,7 +18,7 @@ from app.feishu.client import FeishuClient, FeishuError, needs_reauth, rich_text
 from app.memory import service as memory_service
 from app.models import PendingAction, Signal, User
 from app.proactive import chats
-from app.proactive.llm import complete_text
+from app.proactive.llm import complete_structured, complete_text
 from app.proactive.prompts import DRAFT_SYSTEM
 from app.proactive.render import RSVP_LABEL
 from app.sources import approval, calendar, cloud, docs, im, mail, scheduling, tasks, sheets, bitable
@@ -58,34 +58,81 @@ def keywords(subject: str) -> list[str]:
     return [w for w in _SPLIT.split(subject) if len(w) >= 2 and not w.isdigit()][:4]
 
 
-async def write_reply(
-    session: AsyncSession, feishu: FeishuClient, user: User, signal: Signal, instructions: str = ""
-) -> tuple[str, list[str]]:
-    """起草回复正文。会先按邮件主题查知识库和相关群聊作为背景，返回 (正文, 参考了什么)。"""
+DRAFT_TOOL = {
+    "name": "draft_reply",
+    "description": "起草回复，并决定回复全部还是只回发件人",
+    "input_schema": {"type": "object", "properties": {
+        "body": {"type": "string", "description": "回复正文"},
+        "reply_all": {"type": "boolean", "description": "是否回复全部"},
+        "why": {"type": "string", "description": "一句话说明为什么回复全部 / 只回发件人（给他看）"}},
+        "required": ["body", "reply_all", "why"], "additionalProperties": False},
+}
+MATERIAL_CHARS = 2500
+
+
+async def _background(session: AsyncSession, feishu: FeishuClient, user: User, signal: Signal, words: list[str]) -> tuple[list[str], list[str]]:
+    """这封信的相关材料：附件原文、正文里的飞书文档、提到这件事的会议纪要、相关群聊、知识库。返回 (给模型看的材料, 给他看的“参考了什么”)。"""
     original = signal.payload
-    words = keywords(original.get("subject") or signal.title)
-    references, background = [], []
-    try:
-        found = await docs.search(feishu, user, " ".join(words) or signal.title, limit=3)
-    except FeishuError:
-        found = []
-    for doc in found:
-        references.append(f"文档《{doc['title']}》")
-        background.append(f"文档《{doc['title']}》：{doc['summary']}")
+    background, references = [], []
+    for attachment in (await mail.attachments_of(feishu, user, signal))[:2]:
+        try:
+            text = await mail.attachment_text(feishu, user, signal.external_id, attachment)
+            background.append(f"附件《{attachment['filename']}》：{text[:MATERIAL_CHARS]}")
+            references.append(f"附件《{attachment['filename']}》")
+        except Exception:  # noqa: BLE001 - 读不了的附件跳过，不影响起草
+            references.append(f"附件《{attachment['filename']}》（没能读取）")
     from app.proactive import casefile
 
-    earlier = await casefile.thread_history(session, user, signal)
+    for url in casefile._links(original.get("body"))[:2]:
+        try:
+            doc = await cloud.read_url(feishu, user, url)
+            background.append(f"邮件里链接的文档《{doc.get('title') or url}》：{str(doc.get('content') or '')[:MATERIAL_CHARS]}")
+            references.append(f"邮件里链接的文档《{doc.get('title') or '文档'}》")
+        except FeishuError:
+            pass
+    subject = (original.get("subject") or "").lower()
+    meetings = (await session.execute(select(Signal).where(
+        Signal.user_id == user.id, Signal.kind == "meeting", Signal.payload["minutes"].isnot(None),
+    ).order_by(Signal.occurred_at.desc()).limit(30))).scalars().all()
+    for meeting in meetings:
+        title = (meeting.title or "").strip()
+        if len(title) >= 4 and title.lower() in subject:
+            background.append(f"会议《{title}》的纪要要点：{(meeting.payload['minutes'].get('summary') or '')[:MATERIAL_CHARS]}")
+            references.append(f"会议《{title}》的纪要")
+            break
+    try:
+        for doc in await docs.search(feishu, user, " ".join(words) or signal.title, limit=3):
+            references.append(f"文档《{doc['title']}》")
+            background.append(f"文档《{doc['title']}》：{doc['summary']}")
+    except FeishuError:
+        pass
     for message in await chats.related(session, words, limit=5):
         references.append(f"群聊里 {message.sender_name or '某人'} 的消息")
         background.append(f"群聊 {message.sender_name or '某人'}（{message.created_at:%m-%d}）：{message.text[:300]}")
+    return background, references
+
+
+async def write_reply(
+    session: AsyncSession, feishu: FeishuClient, user: User, signal: Signal, instructions: str = "",
+) -> tuple[str, list[str], bool, str]:
+    """起草回复正文，并判断该回复全部还是只回发件人。返回 (正文, 参考了什么, 是否回复全部, 理由)。"""
+    original = signal.payload
+    words = keywords(original.get("subject") or signal.title)
+    background, references = await _background(session, feishu, user, signal, words)
+    from app.proactive import casefile
+
+    earlier = await casefile.thread_history(session, user, signal)
+    others = mail.reply_all_cc(original, await mail.own_addresses(feishu, user))
     prompt = (
-        f"关于我（{user.name}）：\n{await _profile(session, user)}\n\n"
+        f"关于我（{user.name}，{user.email or ''}）：\n{await _profile(session, user)}\n\n"
         + (f"<thread>\n这封之前同一线程里的往来（我之前说过的话不能自相矛盾，已经回答过的不要再问）：\n" + "\n".join(earlier) + "\n</thread>\n\n" if earlier else "")
-        + f"<mail>\n发件人：{original.get('from')}\n主题：{original.get('subject')}\n\n{original.get('body')}\n</mail>\n\n"
-        + (f"<background>\n可能相关的公司资料和群聊（只在确实相关时使用）：\n" + "\n".join(background) + "\n</background>\n\n" if background else "")
-        + f"我的要求：{instructions or '按常理回复'}"
+        + f"<mail>\n发件人：{original.get('from')}\n收件人：{'、'.join(original.get('to') or [])}\n抄送：{'、'.join(original.get('cc') or [])}\n"
+        f"主题：{original.get('subject')}\n\n{original.get('body')}\n</mail>\n\n"
+        + (f"<background>\n这件事的相关材料（只在确实相关时使用）：\n" + "\n\n".join(background) + "\n</background>\n\n" if background else "")
+        + f"除发件人外，原邮件还有 {len(others)} 人。\n我的要求：{instructions or '按常理回复'}"
     )
-    return await complete_text(DRAFT_SYSTEM, prompt), references
+    result = await complete_structured(DRAFT_SYSTEM, prompt, DRAFT_TOOL)
+    return result.get("body") or "", references, bool(result.get("reply_all")) and bool(others), result.get("why") or ""
 
 
 async def _with_addresses(session: AsyncSession, feishu: FeishuClient, user: User, signal: Signal) -> dict:
@@ -101,26 +148,53 @@ async def _with_addresses(session: AsyncSession, feishu: FeishuClient, user: Use
 
 async def prepare_mail_reply(
     session: AsyncSession, feishu: FeishuClient, user: User, signal_id: int, instructions: str = "",
-    reply_all: bool = False,
+    reply_all: bool | None = None,
 ) -> PendingAction:
-    """起草回复，先只存在 Relay 里。用户确认发送时才在他的飞书邮箱建草稿并发出。"""
+    """起草回复，先只存在 Relay 里。用户确认发送时才在他的飞书邮箱建草稿并发出。
+
+    reply_all 为 None 时由起草时按内容判断（原邮件发给多人、说的是大家的事 → 回复全部；只问他个人的 → 只回发件人），
+    理由写在草稿上，他可以改。他明确说了就按他说的。"""
     signal = await own_signal(session, user, signal_id, "mail")
     original = await _with_addresses(session, feishu, user, signal)
-    others = mail.reply_all_cc(original, await mail.own_addresses(feishu, user))
-    body, references = await write_reply(session, feishu, user, signal, instructions)
+    to_extra, cc = mail.reply_all_split(original, await mail.own_addresses(feishu, user))
+    body, references, suggested, why = await write_reply(session, feishu, user, signal, instructions)
+    chosen = suggested if reply_all is None else (reply_all and bool(to_extra or cc))
     subject = original.get("subject") or ""
     action = PendingAction(
         user_id=user.id, kind="send_mail", signal_id=signal.id,
         summary=f"回复 {original.get('from_name') or original.get('from_address')}：{subject}",
         payload={
-            "to": original.get("from_address"),
+            "to": original.get("reply_to") or original.get("from_address"),
             "subject": subject if subject.lower().startswith("re:") else f"Re: {subject}",
             "body": body,
             "references": references,
-            # 原邮件里除了发件人和自己之外的人；reply_all 时全部抄送
-            "others": others,
-            "reply_all": reply_all and bool(others),
+            # 原邮件里除了发件人和自己之外的人：回复全部时原收件人仍是收件人、原抄送仍是抄送
+            "others": to_extra + cc, "to_extra": to_extra, "cc": cc,
+            "reply_all": chosen,
+            "reply_all_why": why if reply_all is None else ("你要求回复全部" if reply_all else "你要求只回复发件人"),
         },
+    )
+    session.add(action)
+    await session.flush()
+    return action
+
+
+async def prepare_mail_forward(
+    session: AsyncSession, feishu: FeishuClient, user: User, signal_id: int, to: list[str], note: str = "",
+    with_attachments: bool = True,
+) -> PendingAction:
+    """转发：先只存在 Relay 里，他确认后才发。收件人只用他给的地址。"""
+    signal = await own_signal(session, user, signal_id, "mail")
+    addresses = [a.strip() for a in to if a and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", a.strip())]
+    if not addresses:
+        raise ActionError("请给出要转发给谁的邮箱地址")
+    attachments = await mail.attachments_of(feishu, user, signal) if with_attachments else []
+    subject = signal.payload.get("subject") or signal.title
+    action = PendingAction(
+        user_id=user.id, kind="forward_mail", signal_id=signal.id,
+        summary=f"转发《{subject}》给 {'、'.join(addresses)}",
+        payload={"to": "、".join(addresses), "to_list": addresses, "subject": subject if subject.lower().startswith(("fw:", "fwd:")) else f"Fw: {subject}",
+                 "body": note, "attachments": [a["filename"] for a in attachments], "with_attachments": bool(attachments)},
     )
     session.add(action)
     await session.flush()
@@ -278,10 +352,25 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
             signal = await session.get(Signal, action.signal_id) if action.signal_id else None
             if signal is None:
                 raise ActionError("原邮件已不存在")
-            cc = action.payload.get("others") if action.payload.get("reply_all") else None
-            draft_id = await mail.create_reply_draft(feishu, user, signal.payload, action.payload["body"], cc)
+            p = action.payload
+            if p.get("reply_all"):
+                # 早先起草的草稿没有分开记收件人和抄送：发送前按原邮件重新分
+                to_extra, cc = (p.get("to_extra"), p.get("cc")) if "to_extra" in p else mail.reply_all_split(
+                    await _with_addresses(session, feishu, user, signal), await mail.own_addresses(feishu, user))
+            else:
+                to_extra, cc = None, None
+            draft_id = await mail.create_reply_draft(feishu, user, signal.payload, p["body"], cc, to_extra)
             await mail.send_draft(feishu, user, draft_id)
             result = f"已发送：{action.summary}"
+        elif action.kind == "forward_mail":
+            signal = await session.get(Signal, action.signal_id) if action.signal_id else None
+            if signal is None:
+                raise ActionError("原邮件已不存在")
+            p = action.payload
+            files = await mail.attachment_bytes(feishu, user, signal.external_id,
+                                                await mail.attachments_of(feishu, user, signal)) if p.get("with_attachments") else []
+            await mail.send_raw(feishu, user, mail.build_forward(user, signal.payload, p["to_list"], p.get("body") or "", files))
+            result = f"已{action.summary}" + (f"（带 {len(files)} 个附件）" if files else "")
         elif action.kind == "send_chat":
             p = action.payload
             if p.get("as_user", False):

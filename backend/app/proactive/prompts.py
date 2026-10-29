@@ -6,6 +6,9 @@ TRIAGE_SYSTEM = """你是 Relay 的邮件分拣员，替一位公司员工判断
 - normal：和他的工作相关、需要他看或回复，但不必马上。
 - low：通知、营销、自动邮件、抄送知会、与他职责无关的内容。
 - notify_now：只有 urgent，或 normal 且明确在等他回复时才为 true。宁可少打扰。
+- 他只在抄送里、正文也没点他的名字或提出要他做的事：一般是知会，action_type=fyi、importance=low；
+  群发、邮件组、系统通知同理。只有正文明确要他回复、决定、审阅时，才是 reply / review。
+- review 要有明确的“请他看/处理什么”，泛泛的周报、通报、资料分享算 fyi。
 - needs_reply：对方是否在等他本人回复。
 - action_type：reply = 需要他回复；review = 需要他看/处理但不一定回信（需求、报表、资料）；fyi = 知会即可。
 - due：today = 今天内要处理；this_week = 本周内；none = 没有明确时限。

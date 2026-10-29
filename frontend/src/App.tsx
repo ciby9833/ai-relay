@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type Conversation, type User } from "./api";
 import Icon, { RelayMark } from "./components/Icon";
 import { useLocale } from "./useLocale";
+import { useViewport } from "./useViewport";
 import Login from "./components/Login";
 import Drawer from "./components/panels/Drawer";
 import Evaluation from "./components/Evaluation";
@@ -16,6 +17,7 @@ import Thread from "./components/Thread";
 
 export default function App() {
   useLocale();
+  useViewport();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [view, setView] = useState<View>({ type: "home" });
@@ -32,7 +34,15 @@ export default function App() {
   }, []);
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 821px)");
+    const closeOnDesktop = () => { if (desktop.matches) setMenuOpen(false); };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
 
   const loadUser = useCallback(() => {
     setLoadError(false);
@@ -79,6 +89,7 @@ export default function App() {
         conversations={conversations}
         view={view}
         open={menuOpen}
+        onClose={closeMenu}
         onNavigate={navigate}
         onDelete={async (id) => {
           await api.deleteConversation(id);
@@ -97,7 +108,7 @@ export default function App() {
       {menuOpen && <div className="sidebar-backdrop" onClick={() => setMenuOpen(false)} />}
       <div className="main">
         <div className="mobile-bar">
-          <button className="icon-button" onClick={() => setMenuOpen(true)} aria-label={t("菜单")}>
+          <button className="icon-button" onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); setMenuOpen(true); }} aria-label={t("菜单")} aria-expanded={menuOpen} aria-controls="sidebar">
             <Icon name="menu" />
           </button>
           <RelayMark size={18} />

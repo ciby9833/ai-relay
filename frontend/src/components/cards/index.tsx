@@ -75,12 +75,13 @@ function DraftEditor({ action, onChanged }: { action: Action; onChanged: () => v
     <div className="draft">
       <div className="draft-head">
         <span className="muted">{t("收件人")}</span> {action.to}
-        {action.reply_all && action.others && action.others.length > 0 && (
+        {action.reply_all && (action.to_extra?.length ?? 0) > 0 && <>、{listOf(action.to_extra!)}</>}
+        {action.reply_all && (action.cc?.length || (!action.to_extra && action.others?.length)) ? (
           <>
             <br />
-            <span className="muted">{t("抄送")}</span> {listOf(action.others)}
+            <span className="muted">{t("抄送")}</span> {listOf(action.cc?.length ? action.cc : action.others!)}
           </>
-        )}
+        ) : null}
         {action.subject && (
           <>
             <br />
@@ -98,6 +99,9 @@ function DraftEditor({ action, onChanged }: { action: Action; onChanged: () => v
           />
           <span>{t("replyAllCount", { count: action.others.length })}</span>
         </label>
+      )}
+      {action.others && action.others.length > 0 && action.reply_all_why && (
+        <p className="muted small">{action.reply_all ? t("回复全部") : t("只回复发件人")}：{action.reply_all_why}</p>
       )}
       {action.references && action.references.length > 0 && (
         <p className="next-step">{t("起草时参考了：")}{listOf(action.references)}</p>
@@ -340,6 +344,40 @@ function dueText(value: string | null) {
   return { text: t(overdue ? "overdueAt" : "dueAt", { date: `${dayLabel(value)} ${timeOf(value)}` }), overdue };
 }
 
+/** 邮件的上下文一行：线程里之前几封、附件、正文里的文档、相关会议 */
+function contextLine(c: NonNullable<FollowUp["context"]>): string {
+  return [
+    c.thread ? t("线程里之前 {count} 封往来", { count: c.thread }) : "",
+    c.attachments?.length ? t("附件 {names}", { names: c.attachments.slice(0, 3).join("、") }) : "",
+    c.links ? t("正文里 {count} 个飞书文档", { count: c.links }) : "",
+    c.meeting ? t("相关会议《{title}》", { title: c.meeting }) : "",
+  ].filter(Boolean).join(" · ");
+}
+
+/** 转发：填收件人和附言，Relay 准备好后他确认才发（默认带原附件） */
+function Forward({ mailId, onDone }: { mailId: number; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState("");
+  const [note, setNote] = useState("");
+  const [files, setFiles] = useState(true);
+  const [prepared, setPrepared] = useState<Action | null>(null);
+  const { busy, error, run } = useBusy();
+  if (prepared) return <ActionCard action={prepared} onChanged={() => { setPrepared(null); setOpen(false); onDone(); }} />;
+  if (!open) return <button className="btn ghost small" onClick={() => setOpen(true)}><Icon name="mail" size={14} /> {t("转发")}</button>;
+  return (
+    <form className="forward-form" onSubmit={(e) => { e.preventDefault(); void run(async () => setPrepared(await api.forwardMail(mailId, to.split(/[,，;；\s]+/).filter(Boolean), note, files))); }}>
+      <label>{t("转发给（邮箱，多个用逗号分开）")}<input required value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@company.com" /></label>
+      <label>{t("附言")}<textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></label>
+      <label className="toggle compact"><input type="checkbox" checked={files} onChange={(e) => setFiles(e.target.checked)} /> <span>{t("带上原附件")}</span></label>
+      <span className="forward-actions">
+        <button className="btn primary small" disabled={busy || !to.trim()}>{busy ? t("准备中…") : t("准备转发")}</button>
+        <button type="button" className="btn ghost small" onClick={() => setOpen(false)}>{t("取消")}</button>
+      </span>
+      {error && <span className="card-error">{error}</span>}
+    </form>
+  );
+}
+
 // “不用跟了”的原因：只结束这一件，并记下来用于评估提醒准不准
 const REASONS: [ItemOutcome, string][] = [
   ["not_mine", "不归我管"], ["not_worth", "不值得提醒"], ["duplicate", "重复了"],
@@ -471,6 +509,7 @@ export function ItemCard({ item, onChanged, compact, onClosed }: {
         {localize(item.ask_ui, item.ask)}
       </p>
       {item.summary && <p className="card-text">{item.summary}</p>}
+      {item.context && contextLine(item.context) && <p className="muted small mail-context">📎 {contextLine(item.context)}</p>}
       {item.detail.length > 0 && (
         <details className="detail-fields" open={!compact || item.detail.length <= 5}>
           <summary>{t("申请内容")}</summary>
@@ -492,6 +531,7 @@ export function ItemCard({ item, onChanged, compact, onClosed }: {
 
       {attentionHint(item) && <p className="muted small attention-hint">{attentionHint(item)}</p>}
       {!compact && <Materials itemId={item.id} />}
+      {!compact && item.mail_id && item.owner === "me" && <Forward mailId={item.mail_id} onDone={onChanged} />}
 
       {!compact && action?.kind === "send_mail" && <DraftEditor action={action} onChanged={onChanged} />}
       {compact && action?.kind === "send_mail" && action.status === "pending" && (
@@ -523,6 +563,7 @@ const ACTION_ICON: Record<Action["kind"], string> = {
   delete_event: "calendar",
   add_attendees: "calendar",
   base_record: "doc",
+  forward_mail: "mail",
 };
 
 /** 待确认的操作：说清楚要做什么、对谁，确认后才执行。 */
@@ -697,16 +738,39 @@ export function MissionCard({ mission, onChanged, onOpen }: { mission: MissionDa
   );
 }
 
-/** Relay 生成的文件：下载入口和生成后重新打开核对的结果 */
-function FileCard({ card }: Props<"file">) {
-  const size = card.size > 1024 * 1024 ? `${(card.size / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(card.size / 1024)} KB`;
+const FILE_APP: Record<string, string> = { xlsx: "Excel", pptx: "PowerPoint", docx: "Word" };
+
+/** Relay 生成的文件：进度（后台做的）、下载、核对结果、存进飞书云空间 */
+function FileCard({ card: initial }: Props<"file">) {
+  const [card, setCard] = useState(initial);
+  const { busy, error, run } = useBusy();
+  const working = card.status === "queued" || card.status === "running";
+  useEffect(() => {
+    if (!working) return;
+    const timer = window.setInterval(() => void api.fileInfo(card.file_id).then(setCard).catch(() => undefined), 5000);
+    return () => window.clearInterval(timer);
+  }, [working, card.file_id]);
+  const size = card.size > 1024 * 1024 ? `${(card.size / 1024 / 1024).toFixed(1)} MB` : card.size ? `${Math.ceil(card.size / 1024)} KB` : "";
+  const ok = card.verified?.ok;
+  const drive = card.drive?.url && /^https:\/\//.test(card.drive.url) ? card.drive.url : null;
   return (
-    <AppCard icon="file" app={card.file_kind === "xlsx" ? "Excel" : "PowerPoint"}
-      meta={<Badge tone={card.verified.ok ? "ok" : card.verified.ok === false ? "urgent" : undefined}>
-        {card.verified.ok ? t("已核对") : card.verified.ok === false ? t("核对不一致") : t("未核对")}</Badge>}
-      footer={<a className="btn primary" href={`/api/files/${card.file_id}`} download={card.filename}><Icon name="download" /> {t("下载")}</a>}>
-      <div className="card-title">{card.filename} <span className="muted small">· {size}</span></div>
-      <p className="muted small">{card.verified.detail}</p>
+    <AppCard icon="file" app={FILE_APP[card.file_kind] ?? card.file_kind}
+      meta={working ? <Badge tone="warn">{card.stage ? t(card.stage) : t("处理中")}</Badge>
+        : card.status === "failed" ? <Badge tone="urgent">{t("没做成")}</Badge>
+        : <Badge tone={ok ? "ok" : ok === false ? "urgent" : undefined}>{ok ? t("已核对") : ok === false ? t("核对不一致") : t("未核对")}</Badge>}
+      footer={!working && card.status !== "failed" ? (
+        <>
+          <a className="btn primary" href={`/api/files/${card.file_id}`} download={card.filename}><Icon name="download" /> {t("下载")}</a>
+          {drive ? <a className="btn secondary" href={drive} target="_blank" rel="noreferrer"><Icon name="external" /> {t("在飞书云空间打开")}</a>
+            : <button className="btn secondary" disabled={busy} onClick={() => run(async () => setCard(await api.saveFile(card.file_id)))}>{t("存进飞书云空间")}</button>}
+          {error && <span className="card-error">{error}</span>}
+        </>
+      ) : undefined}>
+      <div className="card-title">{card.filename} {size && <span className="muted small">· {size}</span>}</div>
+      {working && <p className="muted small">{t("在后台做，做完会在飞书里告诉你；可以先去做别的。")}</p>}
+      {card.status === "failed" && <p className="card-error">{card.error}</p>}
+      {card.verified?.detail && <p className="muted small">{card.verified.detail}</p>}
+      {card.drive?.verified?.detail && <p className="muted small">{t("云空间")}：{card.drive.verified.detail}</p>}
     </AppCard>
   );
 }

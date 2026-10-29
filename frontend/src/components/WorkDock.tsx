@@ -1,9 +1,9 @@
 import { intlLocale, t } from "../i18n";
 import { timeOf } from "../format";
-import { sameDay, type Work } from "../work";
+import { isMail, sameDay, type Work } from "../work";
 import Icon from "./Icon";
 
-export type WorkView = "todo" | "meetings" | "progress";
+export type WorkView = "todo" | "mail" | "meetings" | "progress";
 
 /** 对话顶部的三个工作入口：点开右侧详情栏对应的列表；对话、输入框里的草稿都保留。 */
 export default function WorkDock({
@@ -22,16 +22,21 @@ export default function WorkDock({
   onPreferences: () => void;
 }) {
   const today = new Date();
-  const me = work.board?.me.length ?? 0;
-  const others = work.board?.others.length ?? 0;
+  // 邮件单独一个入口：要回的、要看的、在等对方回信的；待处理里只算邮件以外的事
+  const me = work.board?.me.filter((i) => !isMail(i)).length ?? 0;
+  const others = work.board?.others.filter((i) => !isMail(i)).length ?? 0;
+  const mails = [...(work.board?.me ?? []), ...(work.board?.others ?? [])].filter(isMail);
+  const toReply = mails.filter((i) => i.kind === "reply").length;
   const upcoming = work.meetings?.upcoming ?? [];
   const next = upcoming.find((m) => m.start && new Date(m.start).getTime() > Date.now() && m.rsvp !== "decline");
   const meetingsToday = upcoming.filter((m) => sameDay(m.start, today)).length;
   const changes = work.progress?.days.reduce((n, d) => n + d.items.length, 0) ?? 0;
   const loading = !work.board;
-  const tiles: { view: WorkView; icon: "check" | "calendar" | "chart"; label: string; count: number; sub: string }[] = [
+  const tiles: { view: WorkView; icon: "check" | "calendar" | "chart" | "mail"; label: string; count: number; sub: string }[] = [
     { view: "todo", icon: "check", label: t("待处理"), count: me + others,
       sub: t("需要你 {me} · 在等对方 {others}", { me, others }) },
+    { view: "mail", icon: "mail", label: t("邮件"), count: mails.length,
+      sub: mails.length ? t("要回 {reply} · 要看 {review}", { reply: toReply, review: mails.length - toReply }) : t("没有要处理的邮件") },
     { view: "meetings", icon: "calendar", label: t("会议"), count: meetingsToday,
       sub: next?.start ? t("下一场 {time}", { time: sameDay(next.start, today) ? timeOf(next.start) : `${new Date(next.start).toLocaleDateString(intlLocale(), { month: "numeric", day: "numeric" })} ${timeOf(next.start)}` }) : t("近期没有会") },
     { view: "progress", icon: "chart", label: t("进展"), count: changes, sub: t("安静汇总，不打扰") },

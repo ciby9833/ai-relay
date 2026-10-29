@@ -1,0 +1,72 @@
+{
+  "results": [
+    {
+      "name": "默认数量、会议聚合与悬停预览",
+      "passed": true
+    },
+    {
+      "name": "会议 → 关联私聊 → 带资料继续对话",
+      "passed": true
+    },
+    {
+      "name": "完成事项 → 数量与进展同步 → 撤销",
+      "passed": true
+    },
+    {
+      "name": "停止跟踪独立于完成，并支持进展筛选",
+      "passed": true
+    },
+    {
+      "name": "审批分组中逐张确认，未审批项保留",
+      "passed": true
+    },
+    {
+      "name": "单场邀请回复不改变其他会议",
+      "passed": true
+    },
+    {
+      "name": "缺少参会方式 → 起草 → 完整确认 → 演示发送",
+      "passed": true
+    },
+    {
+      "name": "材料不足重新查找，不编造简报",
+      "passed": true
+    },
+    {
+      "name": "加载、空状态、同步失败与重试",
+      "passed": true
+    },
+    {
+      "name": "会后行动加入待处理仅一次，并保留纪要",
+      "passed": true
+    },
+    {
+      "name": "即时提醒只包含需要此刻确认的事项",
+      "passed": true
+    },
+    {
+      "name": "Esc 逐层返回，确认弹窗键盘循环",
+      "passed": true
+    },
+    {
+      "name": "手机触屏详情、上下文返回及断点无横向溢出",
+      "passed": true
+    },
+    {
+      "name": "全流程无浏览器脚本错误、无外网请求",
+      "passed": true
+    },
+    {
+      "name": "切换工作入口保留草稿，会议标签支持方向键",
+      "passed": true
+    },
+    {
+      "name": "清除当前上下文后，旧草稿仍绑定原发送对象",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "external": [],
+  "engine": "Chromium headless 1248",
+  "date": "2026-10-29"
+}

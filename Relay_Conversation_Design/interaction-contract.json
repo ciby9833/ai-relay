@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "status": "Design proposal, map to existing implementation before integration",
+  "entities": {
+    "meeting": ["id","version","startAt","endAt","timezone","organizer","rsvpStatus","prepStatus","sourceRefs","actionItemRefs"],
+    "matter": ["id","version","title","owner","counterparty","dueAtNullable","state","nextAction","sourceRefs","presentationGroupIdNullable"],
+    "source": ["id","type","timestamp","relationEvidence","accessStatus","excerpt"],
+    "notification": ["eventId","entityRef","tier","reason","createdAt","deliveredAtNullable","lastCheckedVersion"],
+    "progressEvent": ["id","entityRef","fromState","toState","reason","actor","timestamp"]
+  },
+  "viewStates": ["list","entityDetail","sourceDetail","contextAttached","confirmation","loading","empty","staleOrError"],
+  "transitions": [
+    {"trigger":"hover/focus dock","result":"read-only preview","delayMs":320,"touchAlternative":"click dock"},
+    {"trigger":"click dock","result":"open corresponding list","preserve":["conversation","draft","chatScroll"]},
+    {"trigger":"click entity","result":"detail in same inspector","preserve":["entityIdentity","listScroll"]},
+    {"trigger":"click source","result":"source subview","return":"entity detail"},
+    {"trigger":"ask Relay","result":"attach entity reference to draft, focus composer","mobile":"close inspector and return to chat","autoSend":false},
+    {"trigger":"mark handled","result":"choose before/after reminder, change tracking state, update progress","reversible":true},
+    {"trigger":"stop tracking","result":"record reason and stop only this tracking entity","businessCompletion":false},
+    {"trigger":"approve child","result":"confirmation then action for child ID only","siblingsUnchanged":true},
+    {"trigger":"reply invitation","result":"confirmation then RSVP for selected meeting only"}
+  ],
+  "invariants": [
+    "Presentation grouping does not merge business identities.",
+    "Reading a private message as context does not automatically create a task.",
+    "Every material association includes evidence; shared attendees alone are insufficient.",
+    "An entity has one authoritative state across chat, lists, details and progress.",
+    "Stopped tracking is distinct from completed.",
+    "Ordinary progress updates do not generate duplicate chat cards.",
+    "Server validates permissions and current versions before external actions.",
+    "Past meeting material is available for preparation; future notes are not.",
+    "UI actions are local simulation in this prototype; no real external calls exist."
+  ],
+  "notificationTiers": {"now":"User action would change if informed now","scheduled":"Important but can be arranged later","digest":"Ordinary results and updates","background":"Context and uncertain candidates, not actionable notifications"},
+  "feedbackReasons": ["handled_after_notification","handled_before_notification","not_my_responsibility","not_worth_tracking","duplicate","stop_for_now"],
+  "integrationRequired": ["persistent drafts and inspector navigation","permission-aware source retrieval","source system deep links","idempotent actions and server state readback","real-time summary updates","action failure and concurrency handling","privacy-preserving analytics","mobile device and screen-reader QA"]
+}

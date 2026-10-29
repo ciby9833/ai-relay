@@ -4,7 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type FollowUp, type Meeting, type MeetingSource } from "../api";
 import { dayLabel, relative, timeOf } from "../format";
-import { approvalGroup, conflicts, isNow, type Work } from "../work";
+import { approvalGroup, conflicts, isMail, isNow, type Work } from "../work";
 import { ItemCard } from "./cards";
 import Icon from "./Icon";
 import type { WorkView } from "./WorkDock";
@@ -196,7 +196,7 @@ export default function Inspector({ work, view, focus, onClose, onAsk }: {
   }, [focus]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector("dialog[open]")) return;
       if (stack.length) back();
       else onClose();
     };
@@ -222,12 +222,14 @@ export default function Inspector({ work, view, focus, onClose, onAsk }: {
     await work.refresh();
   };
   const title = top?.type === "meeting" || top?.type === "source" ? t("会议") : top ? t("待处理")
-    : view === "todo" ? t("待处理") : view === "meetings" ? t("会议") : t("进展");
+    : view === "todo" ? t("待处理") : view === "mail" ? t("邮件") : view === "meetings" ? t("会议") : t("进展");
 
   const todoList = () => {
     if (!board) return null;
+    const me = board.me.filter((i) => !isMail(i));
+    const others = board.others.filter((i) => !isMail(i));
     const sections: [string, FollowUp[]][] = [
-      [t("现在要处理"), board.me.filter(isNow)], [t("需要你"), board.me.filter((i) => !isNow(i))], [t("在等对方"), board.others],
+      [t("现在要处理"), me.filter(isNow)], [t("需要你"), me.filter((i) => !isNow(i))], [t("在等对方"), others],
     ];
     return (
       <>
@@ -252,7 +254,7 @@ export default function Inspector({ work, view, focus, onClose, onAsk }: {
           });
           return <div key={label} className="ws-group"><div className="ws-group-head">{label} <span className="muted">{list.length}</span></div>{rows}</div>;
         })}
-        {board.me.length + board.others.length === 0 && <p className="ws-empty">{t("现在没有需要你处理的事。")}</p>}
+        {me.length + others.length === 0 && <p className="ws-empty">{t("现在没有需要你处理的事。")}</p>}
         {board.relay.length > 0 && (
           <div className="ws-group">
             <div className="ws-group-head">{t("Relay 在盯着")} <span className="muted">{board.relay.length}</span></div>
@@ -264,6 +266,28 @@ export default function Inspector({ work, view, focus, onClose, onAsk }: {
             ))}
           </div>
         )}
+      </>
+    );
+  };
+
+  // 邮件：只有要他回、要他看、在等对方回信的才在这里；每封带上下文，点开有草稿（收件人、回复全部的理由）、相关材料和转发
+  const mailList = () => {
+    if (!board) return null;
+    const mails = [...board.me, ...board.others].filter(isMail);
+    const sections: [string, FollowUp[]][] = [
+      [t("要你回复"), mails.filter((i) => i.owner === "me" && i.kind === "reply")],
+      [t("要你看"), mails.filter((i) => i.owner === "me" && i.kind !== "reply")],
+      [t("在等对方回信"), mails.filter((i) => i.owner === "others")],
+    ];
+    return (
+      <>
+        {sections.map(([label, list]) => list.length > 0 && (
+          <div key={label} className="ws-group">
+            <div className="ws-group-head">{label} <span className="muted">{list.length}</span></div>
+            {list.map((item) => <ItemRow key={item.id} item={item} highlight={highlight.includes(item.id)} onOpen={() => open({ type: "item", id: item.id })} />)}
+          </div>
+        ))}
+        {mails.length === 0 && <p className="ws-empty">{t("没有要你处理的邮件。知会、群发和系统通知不会出现在这里。")}</p>}
       </>
     );
   };
@@ -324,7 +348,7 @@ export default function Inspector({ work, view, focus, onClose, onAsk }: {
   );
 
   const content = () => {
-    if (!top) return view === "todo" ? todoList() : view === "meetings" ? meetingList() : progressList();
+    if (!top) return view === "todo" ? todoList() : view === "mail" ? mailList() : view === "meetings" ? meetingList() : progressList();
     if (top.type === "group") {
       const list = items.filter((i) => approvalGroup(i) === top.name);
       return <div className="ws-group"><div className="ws-group-head">{top.name} <span className="muted">{list.length}</span></div>

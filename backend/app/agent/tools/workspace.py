@@ -186,26 +186,52 @@ async def read_mail_attachment(ctx: ToolContext, args: dict) -> str:
     {
         "mail_id": {"type": "integer"},
         "instructions": {"type": "string", "description": "用户对回复内容的要求"},
-        "reply_all": {"type": "boolean", "description": "回复全部（抄送原邮件的其他收件人）；用户没说时为 false"},
+        "reply_all": {"type": "boolean", "description": "用户明确说了“回复全部 / 只回他”才填；没说就不填，按邮件内容判断（理由会写在草稿上）"},
     },
     ["mail_id"],
 )
 async def draft_mail_reply(ctx: ToolContext, args: dict) -> str:
     try:
         action = await actions.prepare_mail_reply(
-            ctx.session, ctx.feishu, ctx.user, args["mail_id"], args.get("instructions", ""), args.get("reply_all", False),
+            ctx.session, ctx.feishu, ctx.user, args["mail_id"], args.get("instructions", ""), args.get("reply_all"),
         )
     except actions.ActionError as exc:
         raise ToolError(str(exc)) from exc
     await items.link_action(ctx.session, ctx.user, action)
     ctx.cards.append(cards.draft_card(action))
     others = action.payload.get("others") or []
-    scope = (f"回复全部，抄送 {len(others)} 人" if action.payload.get("reply_all")
+    scope = (f"回复全部，另外 {len(others)} 人一起收到" if action.payload.get("reply_all")
              else f"只回复发件人（原邮件还有 {len(others)} 位其他收件人，用户可以在卡片上改成回复全部）" if others else "回复发件人")
+    if others and action.payload.get("reply_all_why"):
+        scope += f"；理由：{action.payload['reply_all_why']}"
     return (
         f"草稿已生成（{scope}，待确认操作 #{action.id}），已作为卡片展示给用户，不用在回复里重复全文。"
         f"用户可以点卡片上的发送，也可以直接说“发吧”或提修改意见。草稿内容：\n{action.payload['body']}"
     )
+
+
+@tool(
+    "draft_mail_forward",
+    "准备把一封邮件转发给别人（默认带上原附件），以卡片展示给用户确认后才发送。to 只用用户给出的邮箱地址，"
+    "不知道地址就先问他或用通讯录查。note 是转发时附的话（可以按他的意思起草）。",
+    {
+        "mail_id": {"type": "integer"},
+        "to": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "收件人邮箱地址"},
+        "note": {"type": "string", "description": "转发附言"},
+        "with_attachments": {"type": "boolean", "description": "是否带上原附件，默认带"},
+    },
+    ["mail_id", "to"],
+)
+async def draft_mail_forward(ctx: ToolContext, args: dict) -> str:
+    try:
+        action = await actions.prepare_mail_forward(ctx.session, ctx.feishu, ctx.user, args["mail_id"], args["to"],
+                                                    args.get("note", ""), args.get("with_attachments", True))
+    except actions.ActionError as exc:
+        raise ToolError(str(exc)) from exc
+    ctx.cards.append({"kind": "action", "action_id": action.id})
+    files = action.payload.get("attachments") or []
+    return (f"转发已准备好（待确认操作 #{action.id}）：{action.summary}" + (f"，带附件 {'、'.join(files)}" if files else "")
+            + "。已作为卡片展示给用户，确认后才发送。")
 
 
 @tool(
@@ -357,7 +383,7 @@ async def revise_draft(ctx: ToolContext, args: dict) -> str:
         signal = await actions.own_signal(ctx.session, ctx.user, action.signal_id, "mail")
         body = None
         if args.get("instructions"):
-            body, _ = await actions.write_reply(
+            body, *_ = await actions.write_reply(
                 ctx.session, ctx.feishu, ctx.user, signal,
                 f"{args['instructions']}\n\n（在这份草稿基础上修改：）\n{action.payload['body']}",
             )

@@ -107,6 +107,23 @@ async def draft_reply(signal_id: int, session: SessionDep, user: UserDep, feishu
     return {"action_id": action.id}
 
 
+class ForwardBody(BaseModel):
+    to: list[str] = Field(min_length=1, max_length=20)
+    note: str = Field(default="", max_length=10_000)
+    with_attachments: bool = True
+
+
+@router.post("/signals/{signal_id}/forward")
+async def forward_mail(signal_id: int, body: ForwardBody, session: SessionDep, user: UserDep, feishu: FeishuDep):
+    """准备转发（不发送）：返回待确认的操作，他确认后才发。"""
+    try:
+        action = await actions.prepare_mail_forward(session, feishu, user, signal_id, body.to, body.note, body.with_attachments)
+    except actions.ActionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await session.commit()
+    return items.actions_json(action)
+
+
 class DraftBody(BaseModel):
     body: str | None = Field(default=None, min_length=1, max_length=50_000)
     reply_all: bool | None = None

@@ -35,7 +35,6 @@ export default function Thread({
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [homeId, setHomeId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [model, setModel] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
   const streaming = useRef(false);
@@ -91,7 +90,7 @@ export default function Thread({
         createdHere.current = id;
         onCreated(id);
       }
-      await sendMessage(id, text, model, (event) => {
+      await sendMessage(id, text, null, (event) => {
         if (event.type === "text") updateLast((m) => ({ ...m, text: m.text + event.delta }));
         else if (event.type === "tool_start") updateLast((m) => ({ ...m, steps: [...(m.steps ?? []), event.name] }));
         else if (event.type === "cards") updateLast((m) => ({ ...m, cards: [...(m.cards ?? []), ...event.cards] }));
@@ -169,8 +168,6 @@ export default function Thread({
         )}
         <Composer
           busy={busy}
-          model={model}
-          onModel={setModel}
           onSend={send}
           context={context}
           onClearContext={onClearContext}

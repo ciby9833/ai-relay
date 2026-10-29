@@ -34,6 +34,20 @@ def _time(value: str | None, timezone: str) -> str:
     return datetime.fromisoformat(value).astimezone(ZoneInfo(timezone)).strftime("%m-%d %H:%M") if value else ""
 
 
+def context_line(context: dict) -> str:
+    """邮件的上下文一行：线程里之前几封、附件、正文里的文档、相关会议。"""
+    parts = []
+    if context.get("thread"):
+        parts.append(f"线程里之前 {context['thread']} 封往来")
+    if context.get("attachments"):
+        parts.append("附件 " + "、".join(context["attachments"][:3]) + ("等" if len(context["attachments"]) > 3 else ""))
+    if context.get("links"):
+        parts.append(f"正文里 {context['links']} 个飞书文档")
+    if context.get("meeting"):
+        parts.append(f"相关会议《{context['meeting']}》")
+    return " · ".join(parts)
+
+
 def panel(header: str, elements: list[dict], expanded: bool = False) -> dict:
     return {
         "tag": "collapsible_panel",
@@ -80,14 +94,22 @@ async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expande
             body.append("\n".join(f"**{esc(f['name'])}**：{esc(str(f['value'])[:120])}" for f in fields))
     if item.recommendation:
         body.append(f"💡 {esc(item.recommendation)}")
+    context = (getattr(item, "facets", None) or {}).get("context")
+    if context and not compact:
+        line = context_line(context)
+        if line:
+            body.append(f"<font color='grey'>📎 {esc(line)}</font>")
     buttons: list[dict] = []
     if action and action.status == "pending":
         if action.kind == "send_mail":
             draft = action.payload["body"] if not compact else action.payload["body"][:200] + ("……" if len(action.payload["body"]) > 200 else "")
             quoted = esc(draft).replace("\n", "\n> ")
             others = action.payload.get("others") or []
-            scope = (f"，抄送 {len(others)} 人" if action.payload.get("reply_all")
+            why = action.payload.get("reply_all_why")
+            scope = (f"，回复全部（另外 {len(others)} 人）" if action.payload.get("reply_all")
                      else f"，只回复发件人（原邮件另有 {len(others)} 人，可在网页改成回复全部）" if others else "")
+            if others and why:
+                scope += f"；{esc(why)}"
             body.append(f"✍️ Relay 已起草（给 {esc(action.payload.get('to'))}{scope}）：\n> {quoted}")
             label = "发送跟进邮件" if action.summary.startswith("跟进") else "发送这封回复"
             buttons += [

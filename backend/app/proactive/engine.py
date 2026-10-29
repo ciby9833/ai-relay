@@ -150,10 +150,15 @@ async def triage(session: AsyncSession, user: User) -> None:
         return
     profile = await _profile(session, user)
     lang = await language_of(session, user)
+    own = {user.email} if user.email else set()  # 不额外调接口：同步邮件时已经知道他的地址
     for signal in signals:
         mail = signal.payload
+        mine = {a.lower() for a in own}
+        position = ("收件人" if any((a.get("mail_address") or "").lower() in mine for a in mail.get("to_addresses") or [])
+                    else "只在抄送里" if any((a.get("mail_address") or "").lower() in mine for a in mail.get("cc_addresses") or [])
+                    else "不在收件人和抄送里（群发 / 邮件组）")
         prompt = (
-            f"用户：{user.name}\n关于用户：\n{profile}\n\n"
+            f"用户：{user.name}（{'、'.join(sorted(own)) or '邮箱未知'}）。这封信里他是：{position}。\n关于用户：\n{profile}\n\n"
             f"<mail>\n发件人：{mail.get('from')}\n收件人：{'、'.join(mail.get('to') or [])}\n"
             f"抄送：{'、'.join(mail.get('cc') or [])}\n主题：{signal.title}\n\n{(signal.body or '')[:6000]}\n</mail>"
         )

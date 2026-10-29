@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.deps import FeishuDep, SessionDep, UserDep
 from app.home import home_conversation
 from app.i18n import user_language
-from app import outputs
+from app import filejobs, outputs
 from app.models import FollowUp, GeneratedFile, Message, Signal
 from app.proactive import items, meetings
 from app.proactive.settings import get_settings_row, merged
@@ -114,12 +114,39 @@ async def progress(session: SessionDep, user: UserDep):
     return {"days": [{"date": d, "items": v} for d, v in days.items()], "notes": notes[::-1][:20]}
 
 
-@router.get("/files/{file_id}")
-async def download_file(file_id: uuid.UUID, session: SessionDep, user: UserDep):
-    """Relay 生成的文件：只有他本人能下载。"""
+async def _own_file(session, user, file_id: uuid.UUID) -> GeneratedFile:
     record = await session.get(GeneratedFile, file_id)
     if record is None or record.user_id != user.id:
         raise HTTPException(status_code=404, detail="文件不存在")
-    media = outputs.XLSX if record.kind == "xlsx" else outputs.PPTX
-    return Response(record.content, media_type=media,
+    return record
+
+
+@router.get("/files/{file_id}")
+async def download_file(file_id: uuid.UUID, session: SessionDep, user: UserDep):
+    """Relay 生成的文件：只有他本人能下载。"""
+    record = await _own_file(session, user, file_id)
+    if record.content is None:
+        raise HTTPException(status_code=409, detail="文件还在生成中")
+    return Response(record.content, media_type=outputs.MEDIA[record.kind],
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(record.filename)}"})
+
+
+@router.get("/files/{file_id}/info")
+async def file_info(file_id: uuid.UUID, session: SessionDep, user: UserDep):
+    """生成 / 上传进行到哪一步（对话里的文件卡片据此更新）。"""
+    record = await _own_file(session, user, file_id)
+    return filejobs.card(record, len(record.content or b""))
+
+
+@router.post("/files/{file_id}/save")
+async def save_to_drive(file_id: uuid.UUID, session: SessionDep, user: UserDep, feishu: FeishuDep):
+    """他在文件卡片上点“存进飞书云空间”：在后台上传到他的“我的空间”，再下载回来比对，完成后在飞书里告诉他。"""
+    record = await _own_file(session, user, file_id)
+    if record.status != "done":
+        raise HTTPException(status_code=409, detail="文件还在处理中")
+    if record.drive:
+        return filejobs.card(record, len(record.content or b""))
+    record.save_to_drive, record.status, record.stage, record.notify = {"folder_token": None}, "queued", "排队中", True
+    await session.commit()
+    filejobs.kick(record.id, feishu)
+    return filejobs.card(record, len(record.content or b""))

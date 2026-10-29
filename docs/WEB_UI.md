@@ -21,6 +21,22 @@ Web 支持英语（en）、简体中文（zh）、印尼语（id）。第一次�
 
 新增固定文案必须提供全部支持语言；避免在组件模块初始化时调用翻译函数并缓存结果。固定状态映射保存文案键，在渲染时翻译。
 
+## 2026-10-29 输入与移动端修复
+
+本轮重新读取 [桌面输入框](https://www.figma.com/design/RRfNMUS8opt9NpLV0Ovdlu/?node-id=24-1794)、[输入焦点状态](https://www.figma.com/design/RRfNMUS8opt9NpLV0Ovdlu/?node-id=26-1764) 与 [移动端输入状态](https://www.figma.com/design/RRfNMUS8opt9NpLV0Ovdlu/?node-id=467-53478) 的设计上下文和截图；按 Relay 的现有图标、主题和业务功能调整。
+
+- 输入框使用整个圆角容器表示焦点，修复全局 `:focus-visible` 覆盖导致的内部方框；保留发送按钮的键盘焦点提示。
+- 删除聊天输入区的模型名称、模型选择器及模型列表请求。发送时传 `model: null`，使用服务端默认模型。
+- 草稿按文字、占位文字及可用宽度变化重新测高；长草稿内部滚动，保留光标位置；中文输入法选词回车不发送，包括 Safari 的 `keyCode=229` 情况。
+- 触摸设备的表单输入字号至少 16px；手机发送按钮为 44px。工作入口在窄屏使用两列，避免印尼语词语被拆开。
+- `useViewport` 根据可视视口适配软键盘高度，限制输入区高度，给内容区保留滚动空间；设置、详情和菜单同时适配。正常手动捏合缩放仍可用，缩放时不根据可视视口反复压缩应用布局。相关浏览器机制见 [VisualViewport](https://developer.mozilla.org/en-US/docs/Web/API/VisualViewport) 与 [viewport meta](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/meta/name/viewport)。
+- 移动端收起的菜单不再获得 Tab 焦点，提供关闭按钮、Escape 和焦点恢复；切回桌面时清理菜单遮罩。设置关闭只影响当前弹层，Safari 下也恢复到正确的入口。
+- 会议详情的长按钮、标签、图片、代码与表格适配窄屏。
+
+新增 `frontend/tests/ui.spec.ts` 覆盖上述输入、语言、窄屏、窗口尺寸变化及模拟软键盘视口行为。使用模拟 API，不发送真实业务消息。WebKit 自动化验证不等于 iPhone 真机验收，仍需在真机上观察键盘动画、地址栏和捏合手势。
+
+验证结果：Chromium 全量 58 项通过；WebKit 输入、国际化及工作区 26 项通过。最后调整两列布局后，两个内核各复测 10 项输入及工作区用例通过；TypeScript 与生产构建通过。本地开发服务已热更新，未发布线上。
+
 ## 2026-10-16 UI / 交互检查
 
 本轮按实际改动区域读取 Figma 的设计上下文与截图，范围包括：

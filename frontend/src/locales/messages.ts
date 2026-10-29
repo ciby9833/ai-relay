@@ -2143,5 +2143,117 @@ export const messages: Record<string, readonly [string, string]> = {
   "下载": [
     "Download",
     "Unduh"
+  ],
+  "要回 {reply} · 要看 {review}": [
+    "{reply} to reply · {review} to read",
+    "{reply} dibalas · {review} dibaca"
+  ],
+  "没有要处理的邮件": [
+    "No mail to handle",
+    "Tidak ada email"
+  ],
+  "要你回复": [
+    "Needs your reply",
+    "Perlu balasan Anda"
+  ],
+  "要你看": [
+    "Needs your review",
+    "Perlu Anda baca"
+  ],
+  "在等对方回信": [
+    "Waiting for a reply",
+    "Menunggu balasan"
+  ],
+  "没有要你处理的邮件。知会、群发和系统通知不会出现在这里。": [
+    "No mail needs you. FYI, mass mail and system notices don't show here.",
+    "Tidak ada email yang perlu Anda tangani. Info, email massal, dan notifikasi sistem tidak muncul di sini."
+  ],
+  "回复全部": [
+    "Reply all",
+    "Balas semua"
+  ],
+  "只回复发件人": [
+    "Reply to sender only",
+    "Hanya balas pengirim"
+  ],
+  "线程里之前 {count} 封往来": [
+    "{count} earlier in thread",
+    "{count} sebelumnya di utas"
+  ],
+  "附件 {names}": [
+    "Attachments {names}",
+    "Lampiran {names}"
+  ],
+  "正文里 {count} 个飞书文档": [
+    "{count} Feishu docs linked",
+    "{count} dokumen Feishu ditautkan"
+  ],
+  "相关会议《{title}》": [
+    "Related meeting \"{title}\"",
+    "Rapat terkait \"{title}\""
+  ],
+  "转发": [
+    "Forward",
+    "Teruskan"
+  ],
+  "转发给（邮箱，多个用逗号分开）": [
+    "Forward to (emails, comma-separated)",
+    "Teruskan ke (email, pisahkan dengan koma)"
+  ],
+  "附言": [
+    "Note",
+    "Catatan"
+  ],
+  "带上原附件": [
+    "Include attachments",
+    "Sertakan lampiran"
+  ],
+  "准备中…": [
+    "Preparing…",
+    "Menyiapkan…"
+  ],
+  "准备转发": [
+    "Prepare forward",
+    "Siapkan penerusan"
+  ],
+  "处理中": [
+    "Working",
+    "Diproses"
+  ],
+  "没做成": [
+    "Failed",
+    "Gagal"
+  ],
+  "在飞书云空间打开": [
+    "Open in Feishu Drive",
+    "Buka di Feishu Drive"
+  ],
+  "存进飞书云空间": [
+    "Save to Feishu Drive",
+    "Simpan ke Feishu Drive"
+  ],
+  "在后台做，做完会在飞书里告诉你；可以先去做别的。": [
+    "Running in the background — you'll get a Feishu message when it's done.",
+    "Berjalan di latar — Anda akan diberi tahu di Feishu."
+  ],
+  "云空间": [
+    "Drive",
+    "Drive"
+  ],
+  "排队中": [
+    "Queued",
+    "Antre"
+  ],
+  "生成文件": [
+    "Generating",
+    "Membuat file"
+  ],
+  "存进飞书云空间中": [
+    "Saving to Drive",
+    "Menyimpan ke Drive"
+  ],
+  "稍后重试": [
+    "Retrying soon",
+    "Coba lagi nanti"
   ]
 };

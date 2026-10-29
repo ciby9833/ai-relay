@@ -12,6 +12,7 @@ import httpx
 from sqlalchemy import select
 
 from app.agent.loop import run_turn_text
+from app import filejobs
 from app.config import get_settings
 from app.db import SessionLocal
 from app.feishu.client import FeishuClient, FeishuError
@@ -149,6 +150,10 @@ async def main() -> None:
                         logger.exception("任务 #%s 执行失败", task_id)
             except Exception:
                 logger.exception("检查定时任务失败")
+            try:
+                await filejobs.run_pending(feishu)  # 没做完的生成文件 / 存云空间任务（含重启前中断的）
+            except Exception:
+                logger.exception("处理文件任务失败")
             await run_proactive(feishu)
             telemetry.cycle_completed()
             await asyncio.sleep(POLL_SECONDS)

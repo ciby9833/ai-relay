@@ -146,7 +146,11 @@ async def test_follow_up_lifecycle(monkeypatch):
         return "您好，报价【待确认：价格】今天内回复。"
 
     monkeypatch.setattr(memory_service, "embed", no_embedding)
+    async def fake_draft(system, prompt, tool):
+        return {"body": "您好，报价【待确认：价格】今天内回复。", "reply_all": False, "why": "只问他个人的报价"}
+
     monkeypatch.setattr(proactive, "complete_structured", fake_structured)
+    monkeypatch.setattr(actions, "complete_structured", fake_draft)
     for module in (proactive, actions, items):
         monkeypatch.setattr(module, "complete_text", fake_text)
     monkeypatch.setattr(items, "in_quiet_hours", lambda settings, tz: False)
@@ -231,7 +235,8 @@ async def test_follow_up_lifecycle(monkeypatch):
         await callbacks.handle_card_action(feishu, open_id, {"relay": "confirm", "action_id": reply.action_id})
         eml = email.message_from_bytes(base64.urlsafe_b64decode(feishu.draft_raw + "=="), policy=email.policy.default)
         assert eml["In-Reply-To"] == "<m2@client.com>" and eml["Subject"] == "Re: 报价确认"
-        assert "bob@client.com" in eml["Cc"] and "lily@co.com" in eml["Cc"] and "me@co.com" not in eml["Cc"]
+        # 回复全部：原来的收件人仍是收件人、原来的抄送仍是抄送，都不含自己
+        assert "bob@client.com" in eml["To"] and "lily@co.com" in eml["Cc"] and "me@co.com" not in f"{eml['To']} {eml['Cc']}"
 
         # 发出后：变成等对方回复
         await run()

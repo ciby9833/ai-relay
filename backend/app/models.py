@@ -596,15 +596,27 @@ class ItemFeedback(Base):
 
 
 class GeneratedFile(Base):
-    """Relay 替用户生成的文件（Excel、PPT）。只有他本人能下载；verified 是生成后重新打开逐项核对的结果。"""
+    """Relay 替用户生成的文件（Excel、PPT、Word）。只有他本人能下载；verified 是生成后重新打开逐项核对的结果。
+
+    生成和存进飞书云空间都可能比较久：按任务记状态（status / stage），worker 接着做，中途重启也不丢；
+    做完（或失败）告诉他。drive 是存进云空间的结果（文件 token、链接、下载回来核对的结果）。
+    """
 
     __tablename__ = "generated_files"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(8))  # xlsx | pptx
+    kind: Mapped[str] = mapped_column(String(8))  # xlsx | pptx | docx
     filename: Mapped[str] = mapped_column(String(255))
-    content: Mapped[bytes] = mapped_column(LargeBinary)
+    content: Mapped[bytes | None] = mapped_column(LargeBinary)
     spec: Mapped[dict] = mapped_column(JSONB)
-    verified: Mapped[dict] = mapped_column(JSONB)
+    verified: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    status: Mapped[str] = mapped_column(String(16), server_default="done")  # queued | running | done | failed
+    stage: Mapped[str | None] = mapped_column(String(64))  # 正在做哪一步（给他看）
+    error: Mapped[str | None] = mapped_column(Text)
+    save_to_drive: Mapped[dict | None] = mapped_column(JSONB)  # 要存进云空间：{"folder_token": ...}；存完清空
+    drive: Mapped[dict | None] = mapped_column(JSONB)  # {"token", "url", "verified": {...}}
+    notify: Mapped[bool] = mapped_column(Boolean, server_default="false")  # 后台做完要告诉他
+    attempts: Mapped[int] = mapped_column(Integer, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

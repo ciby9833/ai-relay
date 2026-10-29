@@ -20,7 +20,12 @@ function Shell({ title, onClose, children }: { title: string; onClose: () => voi
       if (element.open && !element.contains(document.activeElement)) element.querySelector("button")?.focus();
     });
     observer.observe(element, { childList: true, subtree: true });
-    return () => { observer.disconnect(); element.close(); previous?.focus(); };
+    return () => {
+      observer.disconnect();
+      element.close();
+      if (previous?.getClientRects().length && getComputedStyle(previous).visibility !== "hidden") previous.focus();
+      else document.querySelector<HTMLButtonElement>(".mobile-bar button")?.focus();
+    };
   }, []);
   return (
       <dialog ref={dialog} className="drawer" aria-labelledby="drawer-title"

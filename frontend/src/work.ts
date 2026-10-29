@@ -76,3 +76,8 @@ export function approvalGroup(item: FollowUp): string | null {
   const name = item.title.split("：").slice(1).join("：").trim();
   return name || null;
 }
+
+/** 邮件里的事（要回的、要看的、在等对方回信的）：单独放在“邮件”里，不混在待处理 */
+export function isMail(item: FollowUp) {
+  return !!item.is_mail;
+}
