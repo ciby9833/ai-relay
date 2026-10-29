@@ -55,10 +55,13 @@ async def list_meetings(session: SessionDep, user: UserDep):
         Signal.user_id == user.id, Signal.kind == "meeting", Signal.status != "ignored",
         Signal.occurred_at > now - timedelta(days=1), Signal.occurred_at < now + timedelta(days=3),
     ).order_by(Signal.occurred_at))).scalars().all()
-    upcoming, recent = [], []
+    upcoming, recent, shown = [], [], []
+    # 同一个会在日历里有两条记录（例如加了会议室的副本）：只显示一条，优先有准备 / 纪要的那条
+    rows = sorted(rows, key=lambda m: (m.occurred_at, not ((m.payload or {}).get("prep") or (m.payload or {}).get("minutes"))))
     for meeting in rows:
-        if (meeting.payload or {}).get("rsvp") == "decline":
+        if (meeting.payload or {}).get("rsvp") == "decline" or any(meetings.same_meeting(meeting, m) for m in shown):
             continue
+        shown.append(meeting)
         end = (meeting.payload or {}).get("end")
         over = datetime.fromisoformat(end) < now if end else meeting.occurred_at < now - timedelta(hours=1)
         (recent if over else upcoming).append(await _meeting_json(session, user, meeting))

@@ -91,6 +91,7 @@ test("desktop: three entries above the chat open one inspector: list → detail 
   const inspector = page.getByRole("complementary", { name: "详情栏" });
   await expect(inspector).toBeVisible();  // 宽屏默认打开，和对话并排
   await expect(inspector.locator(".ws-group").nth(0)).toContainText("Callesya 让你");  // 今天到期：现在要处理
+  await inspector.screenshot({ path: testInfo.outputPath("todo-list.png") });
   // 同一种审批放在一起看，每张单独处理
   await inspector.getByRole("button", { name: /新功能申请/ }).click();
   await expect(inspector.getByRole("button", { name: /Ricky：新功能申请/ })).toBeVisible();

@@ -2316,3 +2316,14 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .evidence summary { cursor: pointer; color: var(--text-2); }
 .evidence ol { list-style: none; padding: 0; margin: 6px 0; }
 .evidence li { margin: 4px 0; overflow-wrap: anywhere; }
+
+/* 待处理、邮件的每一行：和会议列表一样有分隔线和箭头，一看就能点开 */
+.item-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 12px 6px; border: 0;
+  border-bottom: 1px solid var(--border); background: none; color: var(--text); font: inherit; cursor: pointer; }
+.item-row:hover, .item-row:focus-visible { background: var(--surface-hover); }
+.item-row.active { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
+.item-row.urgent .ws-row-title::before { content: "● "; color: var(--danger); }
+.item-row > svg { margin-left: auto; color: var(--muted); flex-shrink: 0; }
+.item-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ws-group .ws-row.static { border-bottom: 1px solid var(--border); border-radius: 0; padding: 10px 6px; }
+@media (max-width: 760px) { .item-row { min-height: 52px; } }

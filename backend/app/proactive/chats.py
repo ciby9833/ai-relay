@@ -191,10 +191,10 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
             settle_candidate(item, change)
         elif item is not None and item.status == "open" and change.get("verdict") == "same":
             # 又提了一次同一件事（换个渠道、没有新进展）：只记下依据，不另建
-            items.add_evidence(item, "私聊" if owner else "群聊", clean_evidence(change.get("evidence") or ""))
+            items.add_evidence(item, "私聊" if owner else "群聊", clean_evidence(change.get("evidence") or ""), ref=f"chat:{chat_id}")
             item.updated_at = datetime.now(UTC)
         elif item is not None and item.status == "open" and change.get("verdict") != "track":
-            await apply_progress(session, item, change, next((u for u in users.values() if u.id == item.user_id), None))
+            await apply_progress(session, item, change, next((u for u in users.values() if u.id == item.user_id), None), chat_id)
     # 有一件办完了：同一个会话里、同一个人的其他未结事项，再单独对照这些新消息判断一次。
     # 一次回复常常同时回应了好几件内容相近的事，模型一起判断时容易只认其中一件，剩下的就一直挂着
     closed = [by_id[c["item_id"]] for c in changes if c.get("verdict") == "done" and c.get("item_id") in by_id
@@ -218,7 +218,7 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
         for change in again.get("progress") or []:
             item = sibling_ids.get(change.get("item_id"))
             if item is not None and item.status == "open":
-                await apply_progress(session, item, change, next((u for u in users.values() if u.id == item.user_id), None))
+                await apply_progress(session, item, change, next((u for u in users.values() if u.id == item.user_id), None), chat_id)
     where = "私聊" if owner else "群里"
     for task in result.get("tasks") or []:
         if not 0 <= task["message_ref"] < len(new):
@@ -375,10 +375,10 @@ def clean_evidence(text: str) -> str:
     return re.sub(r"\s{2,}", " ", text).strip(" ：:，,")
 
 
-async def apply_progress(session: AsyncSession, item: FollowUp, change: dict, user: User | None) -> None:
+async def apply_progress(session: AsyncSession, item: FollowUp, change: dict, user: User | None, chat_id: str | None = None) -> None:
     """对方有了实质进展：办完了就结束；答应了时间就改成到那个时间再核实。两种都告诉他。"""
     evidence = clean_evidence(change.get("evidence") or "")
-    items.add_evidence(item, "聊天", evidence)
+    items.add_evidence(item, "聊天", evidence, ref=f"chat:{chat_id}" if chat_id else None)
     if change.get("verdict") == "done":
         items.close(item, "done", f"有了结果：{evidence}".rstrip("："))
         note = f"{item.title.removeprefix('等 ')} —— 已有结果：{evidence}"

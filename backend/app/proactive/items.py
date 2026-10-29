@@ -94,9 +94,10 @@ def may_reopen(item: FollowUp, signal: Signal | None) -> bool:
 MAX_EVIDENCE = 12
 
 
-def add_evidence(item: FollowUp, channel: str, text: str, at: datetime | None = None) -> None:
-    """这件事每一次进展的依据（来自哪个渠道、什么时候、谁说了什么），各自保留，不覆盖。"""
-    entry = {"channel": channel, "at": (at or datetime.now(UTC)).isoformat(), "text": (text or "")[:300]}
+def add_evidence(item: FollowUp, channel: str, text: str, at: datetime | None = None, ref: str | None = None) -> None:
+    """这件事每一次进展的依据（来自哪个渠道、什么时候、谁说了什么），各自保留，不覆盖。
+    ref 指向原文（chat:<会话> / mail:<邮件> / doc:<链接>），在“相关材料”里可以打开看。"""
+    entry = {"channel": channel, "at": (at or datetime.now(UTC)).isoformat(), "text": (text or "")[:300], **({"ref": ref} if ref else {})}
     evidence = [e for e in (item.facets or {}).get("evidence") or [] if e != entry]
     item.facets = {**(item.facets or {}), "evidence": (evidence + [entry])[-MAX_EVIDENCE:]}
 
@@ -212,7 +213,8 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             due_at=_due(mail.get("due"), user),
         )
         item.facets = {**(item.facets or {}), "context": await mail_context(session, user, signal)}
-        add_evidence(item, "邮件", f"{mail.get('from_name') or mail.get('from') or ''}：{signal.summary or signal.title}", signal.occurred_at)
+        add_evidence(item, "邮件", f"{mail.get('from_name') or mail.get('from') or ''}：{signal.summary or signal.title}", signal.occurred_at,
+                     ref=f"mail:{signal.id}")
         if fresh:
             try:
                 action = await actions.prepare_mail_reply(session, feishu, user, signal.id)
@@ -239,7 +241,8 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             due_at=_due(mail.get("due"), user),
         )
         item.facets = {**(item.facets or {}), "context": await mail_context(session, user, signal)}
-        add_evidence(item, "邮件", f"{mail.get('from_name') or mail.get('from') or ''}：{signal.summary or signal.title}", signal.occurred_at)
+        add_evidence(item, "邮件", f"{mail.get('from_name') or mail.get('from') or ''}：{signal.summary or signal.title}", signal.occurred_at,
+                     ref=f"mail:{signal.id}")
     signal.status = "tracked"
 
 
@@ -285,7 +288,7 @@ async def apply_mail_progress(session: AsyncSession, user: User, item: FollowUp,
     who = item.waiting_on or "对方"
     if kind == "unrelated":
         return
-    add_evidence(item, "邮件", evidence, signal.occurred_at)
+    add_evidence(item, "邮件", evidence, signal.occurred_at, ref=f"mail:{signal.id}")
     pending = await session.get(PendingAction, item.action_id) if item.action_id else None
     if kind == "done":
         close(item, "done", evidence)

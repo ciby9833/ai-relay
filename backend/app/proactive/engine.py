@@ -224,9 +224,15 @@ async def meeting_briefs(session: AsyncSession, feishu: FeishuClient, user: User
         )
     )
     lang = user_language(settings)
+    handled = list((await session.execute(select(Signal).where(
+        Signal.user_id == user.id, Signal.kind == "meeting", Signal.status == "notified",
+        Signal.occurred_at > now - timedelta(hours=2)))).scalars())
     for meeting in result.scalars():
         payload = meeting.payload or {}
         meeting.status, meeting.notified_at = "notified", now
+        if any(meetings.same_meeting(meeting, m) for m in handled):
+            continue  # 同一个会的另一条日历记录已经准备过了
+        handled.append(meeting)
         if payload.get("all_day") or payload.get("rsvp") == "decline":
             continue
         prep = await meetings.prepare(session, feishu, user, meeting, lang)

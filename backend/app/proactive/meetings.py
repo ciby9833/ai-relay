@@ -241,9 +241,15 @@ async def collect_minutes(session: AsyncSession, feishu: FeishuClient, user: Use
         Signal.user_id == user.id, Signal.kind == "meeting", Signal.occurred_at > now - MINUTES_WINDOW - timedelta(hours=4),
         Signal.occurred_at < now, Signal.payload["minutes"].is_(None), Signal.payload["minutes_missing"].is_(None),
     ))).scalars().all()
-    created = 0
+    created = await merge_duplicate_actions(session, user) and 0
+    recent = list((await session.execute(select(Signal).where(
+        Signal.user_id == user.id, Signal.kind == "meeting", Signal.occurred_at > now - timedelta(days=3)))).scalars())
     for meeting in meetings:
         payload = meeting.payload or {}
+        twin = next((m for m in recent if same_meeting(m, meeting) and (m.payload or {}).get("minutes")), None)
+        if twin is not None:
+            meeting.payload = {**payload, "minutes": twin.payload["minutes"], "duplicate_of": twin.id}  # 同一个会：纪要只处理一次
+            continue
         end = datetime.fromisoformat(payload["end"]) if payload.get("end") else meeting.occurred_at + timedelta(hours=1)
         if payload.get("all_day") or payload.get("rsvp") == "decline" or now < end + timedelta(minutes=20):
             continue
@@ -272,7 +278,7 @@ async def collect_minutes(session: AsyncSession, feishu: FeishuClient, user: Use
             if item is None or item.status != items.OPEN:
                 continue
             evidence = f"会议《{meeting.title}》纪要：{change.get('evidence') or ''}"
-            items.add_evidence(item, "会议纪要", change.get("evidence") or "", meeting.occurred_at)
+            items.add_evidence(item, "会议纪要", change.get("evidence") or "", meeting.occurred_at, ref=f"doc:{found['url']}")
             if change.get("verdict") == "done":
                 items.close(item, "done", evidence[:300])
             else:
@@ -281,7 +287,8 @@ async def collect_minutes(session: AsyncSession, feishu: FeishuClient, user: Use
         for action in actions:
             item = offered.get(action.get("existing_item_id"))
             if item is not None:
-                items.add_evidence(item, "会议纪要", f"纪要分派给 {action.get('owner')}：{action.get('task')}", meeting.occurred_at)
+                items.add_evidence(item, "会议纪要", f"纪要分派给 {action.get('owner')}：{action.get('task')}", meeting.occurred_at,
+                                   ref=f"doc:{found['url']}")
                 action["linked"] = True
         actions_new = [a for a in actions if not a.get("linked")]
         summary = "\n".join(f"- {a.get('owner')}：{a.get('task')}" + (f"（{a['due']}）" if a.get("due") else "") for a in actions)
@@ -331,23 +338,91 @@ def _same_person(name: str, user: User) -> bool:
     return bool(name) and (name == mine or name in parts or any(p and p in name for p in parts if len(p) >= 2))
 
 
+def doc_key(url: str) -> str:
+    return (url or "").rstrip("/").rsplit("/", 1)[-1].split("?")[0][:40]
+
+
+def _norm_text(text: str | None) -> str:
+    return re.sub(r"[\s\W_并和及与]+", "", (text or "").lower())
+
+
+def task_key(owner: str | None, task: str) -> str:
+    import hashlib
+
+    return hashlib.sha1(f"{_norm_text(owner)}|{_norm_text(task)}".encode()).hexdigest()[:12]
+
+
+def base_title(title: str | None) -> str:
+    """去掉末尾的会议室等括号（“需求优先统一 (Nias)” → “需求优先统一”）。"""
+    return re.sub(r"\s*[（(][^（）()]{1,30}[)）]\s*$", "", (title or "").strip())
+
+
+def same_meeting(a: Signal, b: Signal) -> bool:
+    """日历里同一个会的两条记录：同一时间开始、组织者相同、去掉会议室括号后标题相同。"""
+    if a.id == b.id or not a.occurred_at or not b.occurred_at:
+        return False
+    if abs((a.occurred_at - b.occurred_at).total_seconds()) > 60:
+        return False
+    if ((a.payload or {}).get("organizer") or "") != ((b.payload or {}).get("organizer") or ""):
+        return False
+    return _norm_text(base_title(a.title)) == _norm_text(base_title(b.title))
+
+
+def similar(a: str, b: str) -> bool:
+    from difflib import SequenceMatcher
+
+    x, y = _norm_text(a), _norm_text(b)
+    return bool(x and y) and (x == y or SequenceMatcher(None, x, y).ratio() >= 0.85)
+
+
+async def merge_duplicate_actions(session: AsyncSession, user: User) -> int:
+    """以前因为一个会有两条日历记录而重复建的行动项：同一份纪要、内容几乎一样的，留最早那件，其余合并（依据并进去）。"""
+    rows = list((await session.execute(select(FollowUp).where(
+        FollowUp.user_id == user.id, FollowUp.status == items.OPEN, FollowUp.key.like("meeting:%"),
+    ).order_by(FollowUp.id))).scalars())
+    merged = 0
+    kept: list[FollowUp] = []
+    for item in rows:
+        twin = next((k for k in kept if k.url == item.url and k.owner == item.owner and similar(task_of(k), task_of(item))), None)
+        if twin is None:
+            kept.append(item)
+            continue
+        for entry in (item.facets or {}).get("evidence") or []:
+            items.add_evidence(twin, entry["channel"], entry["text"], datetime.fromisoformat(entry["at"]))
+        items.close(item, "dismissed", "和另一件重复（同一份纪要）")
+        merged += 1
+    return merged
+
+
+def task_of(item: FollowUp) -> str:
+    title = item.title.split("：", 1)[-1]
+    return re.sub(r"（会议《.*》）$", "", title)
+
+
 async def _track_actions(session: AsyncSession, user: User, meeting: Signal, minutes: dict, actions: list[dict]) -> int:
     payload = meeting.payload or {}
     organizer = _same_person(payload.get("organizer") or "", user)
     series = payload.get("base_event_id") or payload.get("event_id")
     created = 0
+    existing = list((await session.execute(select(FollowUp).where(
+        FollowUp.user_id == user.id, FollowUp.key.like("meeting:%"), FollowUp.url == minutes["url"],
+        FollowUp.status.in_((items.OPEN, "done", "dismissed"))))).scalars())
     for n, action in enumerate(actions):
         mine = _same_person(action.get("owner") or "", user)
         if not mine and not organizer:
             continue  # 别人的行动项，他也不是组织者：只是背景（纪要在会议页可以看）
-        key = f"meeting:{meeting.external_id}:{n}"
+        twin = next((e for e in existing if e.owner == ("me" if mine else "others") and similar(task_of(e), action["task"])), None)
+        if twin is not None:
+            continue  # 这份纪要里的这条已经建过（可能是从同一个会的另一条日历记录建的）：不重复建
+        # 按“哪份纪要 + 哪条行动项”定归并键：同一个会在日历里有两条记录（例如加了会议室的副本）时，也只建一件
+        key = f"meeting:{doc_key(minutes['url'])}:{task_key(action.get('owner'), action['task'])}"
         fields = dict(
             kind="request" if mine else "waiting", owner="me" if mine else "others",
             title=(f"会议《{meeting.title}》：{action['task']}" if mine else f"等 {action['owner']}：{action['task']}（会议《{meeting.title}》）")[:500],
             summary=f"纪要原话：「{(action.get('evidence') or '')[:200]}」" + (f"\n完成时间：{action['due']}" if action.get("due") else ""),
             next_step="办完后在纪要或群里同步" if mine else "Relay 会在到期时提醒你跟进",
             url=minutes["url"], recommendation=f"来自会议纪要《{minutes['title']}》",
-            facets={"meeting": series, "people": [] if mine else [action.get("owner")]},
+            facets={"meeting": series, "people": [] if mine else [action.get("owner")], "minutes_title": minutes.get("title")},
         )
         if not mine:
             fields.update(waiting_on=action.get("owner"), remind_at=datetime.now(UTC) + timedelta(days=2))

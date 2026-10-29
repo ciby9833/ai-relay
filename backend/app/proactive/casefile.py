@@ -62,6 +62,8 @@ WHY = {
     "case.meetingPerson": "对方组织或参加的会（没有提到这件事）",
     "case.historyTerm": "之前和同一个人的事，也提到「{term}」",
     "case.historyPerson": "之前和同一个人的事（不一定相关）",
+    "case.sourceDoc": "这件事的来源",
+    "case.evidence": "这件事的进展来自这里（{channel}）",
 }
 
 
@@ -150,6 +152,35 @@ async def build(
     terms = _terms(item.title, *(s.title for s in signals)) - name_words
     refs: list[Ref] = []
     texts: list[tuple[dict, str | None]] = [(_why("case.linkSummary"), item.summary)]
+    seen_refs: set[str] = set()
+
+    # 0. 这件事本身的来源文档（例如会议纪要），以及每次进展的出处（聊天、邮件、纪要）：都能打开看原文
+    for url in _links(item.url):
+        kind = LINK_KIND.get(url.split("/")[3] if url.count("/") >= 4 else "", "文档")
+        named = re.search(r"《(.+)》", item.recommendation or "")
+        refs.append(Ref(f"doc:{url}", "doc", (item.facets or {}).get("minutes_title") or (named.group(1) if named else f"飞书{kind}"),
+                        how=f'read_feishu_doc(url="{url}")',
+                        note=url, **_why("case.sourceDoc")))
+        seen_refs.add(f"doc:{url}")
+    for entry in reversed((item.facets or {}).get("evidence") or []):
+        ref = entry.get("ref")
+        if not ref or ref in seen_refs:
+            continue
+        seen_refs.add(ref)
+        kind, _, rest = ref.partition(":")
+        at = datetime.fromisoformat(entry["at"]) if entry.get("at") else None
+        why = _why("case.evidence", channel=entry.get("channel") or "")
+        if kind == "chat":
+            refs.append(Ref(ref, "chat", entry.get("channel") or "聊天", at=at, note=entry.get("text"),
+                            how=f'read_chat_messages(chat_id="{rest}", hours=168)', **why))
+        elif kind == "mail" and rest.isdigit():
+            signal = await session.get(Signal, int(rest))
+            if signal is not None and signal.user_id == user.id:
+                refs.append(Ref(ref, "mail", signal.title, who=(signal.payload or {}).get("from_name"), at=signal.occurred_at,
+                                how=f"read_mail(mail_id={signal.id})", note=entry.get("text"), **why))
+        elif kind == "doc":
+            refs.append(Ref(ref, "doc", "会议纪要" if entry.get("channel") == "会议纪要" else "飞书文档", at=at, note=entry.get("text"),
+                            how=f'read_feishu_doc(url="{rest}")', **why))
 
     # 1. 同一个邮件线程：双方的往来、附件
     threads = {(s.payload or {}).get("thread_id") for s in signals if s.kind in ("mail", "mail_sent")} - {None}
@@ -163,6 +194,8 @@ async def build(
         if mail.kind == "mail_sent":
             refs.append(Ref(f"sent:{mail.id}", "sent", mail.title, who="你", at=mail.occurred_at,
                             note=(mail.body or "")[:160], **_why("case.threadSent")))
+        elif f"mail:{mail.id}" in seen_refs:
+            pass
         else:
             sender = p.get("from_name") or p.get("from")
             refs.append(Ref(f"mail:{mail.id}", "mail", mail.title, who=sender, at=mail.occurred_at,
@@ -216,6 +249,8 @@ async def build(
         if not private and not await _in_group(session, feishu, user, message.chat_id, membership):
             continue  # 他不在这个群：群里的话不给他看
         ref = chats.get(message.chat_id)
+        if ref is None and f"chat:{message.chat_id}" in seen_refs:
+            continue  # 已经作为进展出处列出来了
         if ref is None:
             if len(chats) >= MAX_CHATS:
                 continue
@@ -231,7 +266,7 @@ async def build(
         texts.append((_why("case.linkChat", who=message.sender_name or "?", chat=ref.title), message.text))
 
     # 4. 链接到的飞书文档
-    seen = set()
+    seen = set(r[4:] for r in seen_refs if r.startswith("doc:"))
     for where, text in texts:
         for url in _links(text):
             if url in seen:
@@ -247,7 +282,13 @@ async def build(
         .order_by(Signal.occurred_at).limit(200)
     )).scalars())
     lowered = {n.lower() for n in names}
+    from app.proactive.meetings import same_meeting
+
+    listed: list[Signal] = []
     for meeting in meetings:
+        if any(same_meeting(meeting, m) for m in listed):
+            continue  # 同一个会的另一条日历记录
+        listed.append(meeting)
         p = meeting.payload or {}
         attendees = {str(a).lower() for a in (p.get("attendees") or [])} | {str(p.get("organizer") or "").lower()}
         term = _matched(f"{meeting.title} {p.get('description') or ''}", terms)

@@ -114,6 +114,10 @@ async def test_mail_then_private_chat_then_minutes_update_one_matter(monkeypatch
             assert f"[#{quote.id}]（来自邮件）" in minutes_prompts[0]
             assert quote.status == "done" and "会议《Medan 周会》纪要" in quote.resolution
             assert [e["channel"] for e in quote.facets["evidence"]] == ["邮件", "聊天", "会议纪要"]
+            # 每次进展的出处都在“相关材料”里，能打开原文（私聊、纪要）
+            from app.proactive import casefile
+            refs = {r.ref for r in await casefile.build(session, user, quote, None)}
+            assert f"chat:{chat}" in refs and "doc:https://x.feishu.cn/docx/MIN" in refs
             assert roster.status == "open"
             assert len((await session.execute(select(FollowUp).where(FollowUp.user_id == user_id))).scalars().all()) == 2
             meeting = (await session.execute(select(Signal).where(Signal.user_id == user_id, Signal.kind == "meeting"))).scalars().one()

@@ -173,3 +173,70 @@ async def test_actions_come_from_the_actual_minutes(monkeypatch):
             await session.execute(delete(User).where(User.id == user_id))
             await session.commit()
             await engine.dispose()
+
+
+@db
+async def test_one_meeting_with_two_calendar_entries_gives_one_item(monkeypatch):
+    """生产复盘：日历里“需求优先统一”和“需求优先统一 (Nias)”是同一个会的两条记录，同一份纪要被提取了两次，一件事变成两件。"""
+    from sqlalchemy import delete, select
+
+    from app.api.workspace import list_meetings
+    from app.db import SessionLocal, engine
+    from app.models import FollowUp, Signal, User
+    from app.proactive import casefile, items, meetings
+    from app.sources.base import add_signal
+
+    calls = []
+
+    async def extract(system, prompt, tool):
+        calls.append(prompt)
+        return {"actions": [{"owner": "吴川", "task": "将所有人手中的需求统一汇总，整理完成后安排排期，推动后续执行", "evidence": "需求汇总整理 @吴川"}]}
+
+    monkeypatch.setattr(meetings, "complete_structured", extract)
+    tag = uuid.uuid4().hex[:8]
+    async with SessionLocal() as session:
+        user = User(feishu_open_id=f"ou_{tag}", name="Xavier(吴川)", timezone="Asia/Jakarta")
+        session.add(user)
+        await session.flush()
+        user_id = user.id
+        try:
+            start = datetime.now(UTC) - timedelta(hours=3)
+            for n, title in enumerate(["需求优先统一", "需求优先统一 (Nias)"]):
+                await add_signal(session, user, "calendar", f"ev{n}_{tag}@1", kind="meeting", title=title, occurred_at=start,
+                                 payload={"event_id": f"ev{n}_{tag}", "end": (start + timedelta(hours=1)).isoformat(), "organizer": "Felix Alvin Juandra"},
+                                 status="notified")
+            # 以前已经重复建出来的两件（内容只差一个“并”字）
+            url = "https://x.feishu.cn/docx/MIN"
+            for n, task in enumerate(["将所有人手中的需求统一汇总，整理完成后安排排期，推动后续执行",
+                                      "将所有人手中的需求统一汇总，整理完成后安排排期并推动后续执行"]):
+                session.add(FollowUp(user_id=user_id, key=f"meeting:old{n}_{tag}:0", kind="request", owner="me",
+                                     title=f"会议《需求优先统一{' (Nias)' if n else ''}》：{task}", url=url,
+                                     recommendation="来自会议纪要《智能纪要：需求优先统一 (Nias) 2026年10月28日》", facets={}))
+            await session.commit()
+            feishu = Feishu(docs=[{"title": "智能纪要：需求优先统一 (Nias) 2026年10月28日", "url": url,
+                                   "updated": int(datetime.now(UTC).timestamp())}], contents={"MIN": "需求汇总整理 @吴川"})
+            await meetings.collect_minutes(session, feishu, user)
+            await session.commit()
+            open_items = (await session.execute(select(FollowUp).where(FollowUp.user_id == user_id, FollowUp.status == "open"))).scalars().all()
+            assert len(open_items) == 1 and len(calls) == 1  # 纪要只读一次；旧的重复合并掉；新提取的和留下的那件是同一件
+            merged = (await session.execute(select(FollowUp).where(FollowUp.user_id == user_id, FollowUp.status == "dismissed"))).scalars().all()
+            assert [m.resolution for m in merged] == ["和另一件重复（同一份纪要）"]
+            rows = (await session.execute(select(Signal).where(Signal.user_id == user_id, Signal.kind == "meeting"))).scalars().all()
+            assert all((r.payload or {}).get("minutes") for r in rows)
+
+            # 会议列表里只显示一条
+            listed = await list_meetings(session, user)
+            assert len(listed["recent"]) == 1
+
+            # 打开这件事：来源纪要在相关材料里，能读原文；同一个会只列一次
+            item = open_items[0]
+            refs = await casefile.build(session, user, item, None)
+            assert refs[0].ref == f"doc:{url}" and refs[0].title == "智能纪要：需求优先统一 (Nias) 2026年10月28日"
+            assert sum(1 for r in refs if r.kind == "meeting") == 1
+            opened = await casefile.open_ref(session, feishu, user, item, f"doc:{url}")
+            assert "需求汇总整理" in opened["content"]
+        finally:
+            await session.rollback()
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+            await engine.dispose()

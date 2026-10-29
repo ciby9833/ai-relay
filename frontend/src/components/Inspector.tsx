@@ -37,13 +37,16 @@ function itemContext(item: FollowUp): AskContext {
 function ItemRow({ item, onOpen, highlight }: { item: FollowUp; onOpen: () => void; highlight?: boolean }) {
   const overdue = item.due_at && new Date(item.due_at).getTime() < Date.now();
   return (
-    <button className={`ws-row ${highlight ? "active" : ""} ${item.importance === "urgent" ? "urgent" : ""}`} onClick={onOpen}>
-      <span className="ws-row-title">{item.title}</span>
-      <span className="ws-row-sub">
-        {isMail(item) && <span className="row-tag">{t("邮件")}</span>}
-        {item.due_at && <span className={overdue ? "due overdue" : "due"}>{dayLabel(item.due_at)} {timeOf(item.due_at)}</span>}
-        {localize(item.ask_ui, item.ask)}
+    <button className={`item-row ${highlight ? "active" : ""} ${item.importance === "urgent" ? "urgent" : ""}`} onClick={onOpen}>
+      <span className="item-row-main">
+        <span className="ws-row-title">{item.title}</span>
+        <span className="ws-row-sub">
+          {isMail(item) && <span className="row-tag">{t("邮件")}</span>}
+          {item.due_at && <span className={overdue ? "due overdue" : "due"}>{dayLabel(item.due_at)} {timeOf(item.due_at)}</span>}
+          {localize(item.ask_ui, item.ask)}
+        </span>
       </span>
+      <Icon name="chevron" size={14} />
     </button>
   );
 }
@@ -248,9 +251,12 @@ export default function Inspector({ work, view, focus, onClose, onAsk }: {
               if (seen.has(name)) return [];
               seen.add(name);
               return [(
-                <button key={`g-${name}`} className="ws-row" onClick={() => open({ type: "group", name })}>
-                  <span className="ws-row-title">{name}</span>
-                  <span className="ws-row-sub">{t("{count} 张申请，每张单独处理", { count: same.length })}</span>
+                <button key={`g-${name}`} className="item-row" onClick={() => open({ type: "group", name })}>
+                  <span className="item-row-main">
+                    <span className="ws-row-title">{name}</span>
+                    <span className="ws-row-sub">{t("{count} 张申请，每张单独处理", { count: same.length })}</span>
+                  </span>
+                  <Icon name="chevron" size={14} />
                 </button>
               )];
             }
