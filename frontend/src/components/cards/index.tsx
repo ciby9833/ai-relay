@@ -1,6 +1,6 @@
 import { localize, t } from "../../i18n";
 import { useEffect, useRef, useState } from "react";
-import { api, type Action, type Card, type FollowUp, type MissionData } from "../../api";
+import { api, type Action, type Card, type FollowUp, type ItemOutcome, type MissionData } from "../../api";
 import { dayLabel, timeOf, monthOf, listOf } from "../../format";
 import Icon, { RelayMark } from "../Icon";
 import AppCard, { Badge } from "./AppCard";
@@ -340,8 +340,15 @@ function dueText(value: string | null) {
   return { text: t(overdue ? "overdueAt" : "dueAt", { date: `${dayLabel(value)} ${timeOf(value)}` }), overdue };
 }
 
+// “不用跟了”的原因：只结束这一件，并记下来用于评估提醒准不准
+const REASONS: [ItemOutcome, string][] = [
+  ["handled_before", "提醒前就处理了"], ["not_mine", "不归我管"], ["not_worth", "不值得提醒"],
+  ["quieter", "这类以后少提醒"], ["duplicate", "重复了"],
+];
+
 export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChanged: () => void; compact?: boolean }) {
   const { busy, error, run } = useBusy();
+  const [reasons, setReasons] = useState(false);
   const [icon, label] = ITEM_KIND[item.kind];
   const action = item.action;
   const closed = item.status !== "open";
@@ -413,23 +420,28 @@ export function ItemCard({ item, onChanged, compact }: { item: FollowUp; onChang
               <Icon name="external" /> {t("在飞书查看")}
             </a>
           )}
-          {item.quieter && (
-            <button
-              className="btn ghost small"
-              disabled={busy}
-              title={t("以后这一类（同一种审批 / 同一个发件人 / 同一个群）只放进早上的简报，可在提醒设置里改")}
-              onClick={() => run(async () => { await api.quieter(item.id, "brief"); onChanged(); })}
-            >
-              <Icon name="bell" size={14} /> {t("少提醒这类")}
-            </button>
-          )}
           <span className="spacer" />
-          <button className="btn ghost small" disabled={busy} onClick={() => run(async () => { await api.closeItem(item.id, "done"); onChanged(); })}>
-            <Icon name="check" size={14} /> {t("我已处理")}
-          </button>
-          <button className="btn ghost small" disabled={busy} onClick={() => run(async () => { await api.closeItem(item.id, "dismiss"); onChanged(); })}>
-            {t("不用跟了")}
-          </button>
+          {reasons ? (
+            <span className="item-reasons" role="group" aria-label={t("为什么不用跟了？")}>
+              <span className="muted small">{t("为什么不用跟了？")}</span>
+              {REASONS.filter(([r]) => r !== "quieter" || item.quieter).map(([outcome, text]) => (
+                <button key={outcome} className="btn secondary small" disabled={busy}
+                  onClick={() => run(async () => { await api.itemFeedback(item.id, outcome); onChanged(); })}>
+                  {t(text)}
+                </button>
+              ))}
+              <button className="btn ghost small" disabled={busy} onClick={() => setReasons(false)}>{t("返回")}</button>
+            </span>
+          ) : (
+            <>
+              <button className="btn ghost small" disabled={busy} onClick={() => run(async () => { await api.itemFeedback(item.id, "handled"); onChanged(); })}>
+                <Icon name="check" size={14} /> {t("已处理")}
+              </button>
+              <button className="btn ghost small" disabled={busy} onClick={() => setReasons(true)}>
+                {t("不用跟了")}
+              </button>
+            </>
+          )}
           {error && <span className="card-error">{error}</span>}
         </>
       }

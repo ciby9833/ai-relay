@@ -10,12 +10,13 @@ async function mockApi(page: Page, initial: Record<string, unknown>) {
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path === "/api/auth/me") return route.fulfill({ json: { id: "test", name: "Ellis", is_admin: false, email: null, avatar_url: null } });
+    if (path === "/api/auth/me") return route.fulfill({ json: { id: "test", name: "Ellis", is_admin: true, email: null, avatar_url: null } });
     if (path === "/api/auth/config") return route.fulfill({ json: { dev_login: false } });
     if (path === "/api/home") return route.fulfill({ json: { conversation: { id: "home" }, messages: [], status: { source_errors: 0, last_synced_at: now } } });
     if (path === "/api/board") return route.fulfill({ json: { me: [], others: [], relay: [] } });
     if (path === "/api/models") return route.fulfill({ json: { models: ["test:model"], default: "test:model" } });
     if (path === "/api/conversations") return route.fulfill({ json: [] });
+    if (path === "/api/home") return route.fulfill({ json: { conversation: { id: "home" }, messages: [], status: { source_errors: 0, last_synced_at: now } } });
     if (path === "/api/eval/enroll") {
       enrolls.push(request.postDataJSON());
       await new Promise((r) => setTimeout(r, 300));
@@ -36,7 +37,7 @@ async function openEval(page: Page) {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
   await page.locator(".mobile-bar button").click();
-  await page.getByRole("button", { name: /帮 Relay 变聪明/ }).click();
+  await page.getByRole("button", { name: /新旧链路对比/ }).click();
 }
 
 test("evaluation starts once with a fixed range", async ({ page }) => {

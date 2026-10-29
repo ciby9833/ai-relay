@@ -16,7 +16,7 @@ from app.llm.base import LLMError
 from app.models import FeishuCard, FollowUp, User, ScheduledTask
 from app import automation, i18n, insights
 from app.proactive.settings import language_of
-from app.proactive import actions, attention, items
+from app.proactive import actions, attention, feedback, items
 from app.proactive.push import render
 
 logger = logging.getLogger("relay.callbacks")
@@ -75,22 +75,20 @@ async def handle_card_action(
                 action = await actions.own_action(session, user, int(value["action_id"]))
                 message = actions.cancel(action)
                 await insights.record(session, user, "cancel", action=action)
-            elif kind == "item_done":
+            elif kind in ("item_feedback", "item_done", "quieter"):
+                # 已处理 / 不用跟了的原因（item_done、quieter 是旧卡片上的按钮）
                 item = await session.get(FollowUp, int(value["item_id"]))
                 if item is None or item.user_id != user.id:
                     raise actions.ActionError("找不到这件事")
-                items.close(item, "done", "你标记为已处理")
-                await insights.record(session, user, "done", item=item)
-            elif kind == "quieter":
-                # “少提醒这类”：按这件事的类别（审批类型 / 发件人 / 群）记成规则，以后只放进早上的简报
-                item = await session.get(FollowUp, int(value["item_id"]))
-                if item is None or item.user_id != user.id:
-                    raise actions.ActionError("找不到这件事")
+                outcome = {"item_done": "handled", "quieter": "quieter"}.get(kind) or str(value.get("outcome"))
                 try:
-                    message = await attention.quieter(session, user, item)
+                    message = await feedback.give(session, user, item, outcome, "feishu_card")
                 except ValueError as exc:
                     raise actions.ActionError(str(exc)) from exc
-                await insights.record(session, user, "mute", item=item)
+                await _set_asking(session, user, message_id, item.id, False)
+            elif kind == "item_reasons":
+                # 点了“不用跟了”：这张卡片上这件事的按钮换成原因（点“返回”换回来），只是换显示，不改事项
+                await _set_asking(session, user, message_id, int(value["item_id"]), not value.get("off"))
             elif kind in ("rule_accept", "rule_reject"):
                 # 候选提醒规则：他确认了才生效
                 try:
@@ -126,6 +124,15 @@ async def handle_card_action(
             if record and record.user_id == user.id:
                 card, _ = await render(session, user, record.title, record.text, record.sections)
         return {"ok": ok, "message": message, "card": card, "open_id": open_id}
+
+
+async def _set_asking(session, user: User, message_id: str | None, item_id: int, asking: bool) -> None:
+    record = await session.get(FeishuCard, message_id) if message_id else None
+    if record is None or record.user_id != user.id:
+        return
+    sections = [[label, [({**c, "asking": asking} if c.get("kind") == "item" and c.get("item_id") == item_id else c) for c in group]]
+                for label, group in record.sections]
+    record.sections = sections  # 整体赋值，JSONB 才会被保存
 
 
 async def deferred_update(feishu: FeishuClient, message_id: str | None, result: dict | None, update_token: str | None = None) -> None:

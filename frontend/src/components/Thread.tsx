@@ -1,9 +1,9 @@
 import { t } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, sendMessage, type Board as BoardData, type HomeStatus, type ThreadMessage } from "../api";
-import { greeting } from "../format";
-import Board from "./Board";
+import { api, sendMessage, type ThreadMessage } from "../api";
+import { greeting, relative } from "../format";
 import Composer from "./Composer";
+import type { View } from "./Sidebar";
 import { RelayMark } from "./Icon";
 import Message from "./Message";
 
@@ -16,7 +16,11 @@ export default function Thread({
   userName,
   onCreated,
   onTurnFinished,
+  onNavigate,
+  draft,
 }: {
+  onNavigate?: (view: View) => void;
+  draft?: string;
   home: boolean;
   conversationId: string | null;
   userName: string;
@@ -24,8 +28,6 @@ export default function Thread({
   onTurnFinished: () => void;
 }) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
-  const [status, setStatus] = useState<HomeStatus | null>(null);
-  const [board, setBoard] = useState<BoardData | null>(null);
   const [homeId, setHomeId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<string | null>(null);
@@ -37,11 +39,9 @@ export default function Thread({
   const load = useCallback(async () => {
     if (streaming.current) return;
     if (home) {
-      const [data, boardData] = await Promise.all([api.home(), api.board()]);
+      const data = await api.home();
       setHomeId(data.conversation.id);
       setMessages(data.messages);
-      setStatus(data.status);
-      setBoard(boardData);
     } else if (conversationId) {
       setMessages(await api.messages(conversationId));
     } else {
@@ -107,7 +107,6 @@ export default function Thread({
 
   return (
     <main className="thread">
-      {home && board && <Board board={board} status={status} onChanged={load} />}
       <div className="thread-scroll">
         <div className="thread-inner">
           {empty && (
@@ -130,9 +129,23 @@ export default function Thread({
               </div>
             </div>
           )}
-          {messages.map((message) => (
-            <Message key={message.id} message={message} onChanged={load} />
-          ))}
+          {messages.map((message) =>
+            message.notice && message.role === "assistant" ? (
+              // 主动提醒、汇总、简报：内容在待处理 / 进展里，对话里只留一行，追问时 Relay 仍然知道说过什么
+              <div key={message.id} className="notice-line">
+                <span className="muted small">
+                  {message.notice === "brief" ? t("Relay 发了一份简报") : message.notice === "digest" ? t("Relay 发了一份汇总")
+                    : t("Relay 提醒了你 {count} 件事", { count: (message.cards ?? []).filter((c) => c.kind === "item").length || 1 })}
+                  {message.created_at && ` · ${relative(message.created_at)}`}
+                </span>
+                <button className="btn ghost small" onClick={() => onNavigate?.({ type: message.notice === "interrupt" ? "inbox" : "progress" })}>
+                  {message.notice === "interrupt" ? t("去待处理") : t("看进展")}
+                </button>
+              </div>
+            ) : (
+              <Message key={message.id} message={message} onChanged={load} />
+            ),
+          )}
           <div ref={bottom} />
         </div>
       </div>
@@ -142,6 +155,7 @@ export default function Thread({
           model={model}
           onModel={setModel}
           onSend={send}
+          draft={draft}
           placeholder={home ? t("回复 Relay，或让它帮你做点什么…") : t("给 Relay 发消息…")}
         />
         <p className="composer-note">{t("发邮件、回复会议邀请等操作都会先让你确认")}</p>

@@ -43,6 +43,13 @@ async function systemLanguage(page: Page, language: string) {
   }, language);
 }
 
+/** 对话不再是首页（首页是“待处理”）：手机上点底部标签，电脑上点左侧导航 */
+async function openChat(page: Page) {
+  const tab = page.locator(".tabbar button").nth(3);
+  if (await tab.isVisible()) await tab.click();
+  else await page.locator(".nav .nav-item").nth(3).click();
+}
+
 async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 }
@@ -126,6 +133,7 @@ test("changing UI language preserves drafts and does not save assistant language
   await systemLanguage(page, "en-US");
   const writes = await mockApi(page, true, true);
   await page.goto("/");
+  await openChat(page);
   await page.getByRole("textbox", { name: "Email draft body" }).fill("My unsent draft");
   await page.getByRole("textbox", { name: "Reply to Relay or ask for help…" }).fill("My unsent question");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -202,8 +210,8 @@ for (const language of ["en-US", "id-ID"]) {
     await page.setViewportSize({ width: 320, height: 740 });
     await mockApi(page, true, true);
     await page.goto("/");
+    await openChat(page);
     await expect(page.locator(".draft-body")).toBeVisible();
-    await expect(page.locator(".board-toggle")).toHaveAttribute("aria-expanded", "false");
     await noOverflow(page);
     for (const card of await page.locator(".app-card").all()) {
       expect(await card.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);

@@ -47,7 +47,7 @@ async def home_conversation(session: AsyncSession, user: User) -> Conversation:
 
 
 async def post(
-    session: AsyncSession, user: User, *, event: str, text: str, cards: list[dict] | None = None
+    session: AsyncSession, user: User, *, event: str, text: str, cards: list[dict] | None = None, notice: str | None = None,
 ) -> Message:
     """Relay 主动发言：先写一条隐藏的“事件”消息说明起因，再写助手消息。
 
@@ -61,7 +61,8 @@ async def post(
     session.add(
         Message(
             conversation_id=conversation.id, role="user",
-            content=[{"type": "text", "text": f"<event>{event}</event>", "meta": "event"}],
+            # notice：interrupt 打断他的提醒 | digest 汇总 | brief 简报。网页对话里只显示成一行，内容在待处理 / 进展里
+            content=[{"type": "text", "text": f"<event>{event}</event>", "meta": "event", **({"notice": notice} if notice else {})}],
         )
     )
     message = Message(

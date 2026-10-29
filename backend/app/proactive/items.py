@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.feishu.client import FeishuClient, FeishuError
 from app.home import ConversationBusy, post
 from app.llm.base import LLMError
-from app.models import FollowUp, PendingAction, Signal, User
+from app.models import ChatMessage, FollowUp, PendingAction, Signal, User
 from app.proactive import actions, attention, cards
 from app.proactive.llm import complete_text
 from app.proactive.prompts import APPROVAL_SUMMARY_SYSTEM, FOLLOWUP_SYSTEM, NARRATE_SYSTEM, PROGRESS_SYSTEM, REPLY_STATE_SYSTEM
@@ -33,6 +33,9 @@ APPROVAL_REMIND = timedelta(days=2)
 WAITING_REMIND = timedelta(days=3)
 MAX_NUDGES = 2
 OPEN = "open"
+# 候选：拿不准要不要跟的（私聊里一句没头没尾的问话……），先留在后台，不上看板、不推送；有新证据再定，2 天没有就作废（expired）
+CANDIDATE, EXPIRED = "candidate", "expired"
+HIDDEN = (CANDIDATE, EXPIRED)
 
 
 def local_day(moment: datetime, user: User) -> str:
@@ -683,6 +686,21 @@ async def _refresh_last_card(session: AsyncSession, feishu: FeishuClient, user: 
         logger.warning("原地更新卡片失败 #%s", item.id)
 
 
+async def unread_context(session: AsyncSession, pending: list[FollowUp]) -> set[int]:
+    """推送前复查：聊天里来的事，如果那段会话还有没读过的新消息（可能就是答复或结论），先不说，等读完再判断。"""
+    held = set()
+    for item in pending:
+        if not item.key.startswith(("chat:", "mention:")) or not item.url or "openChatId=" not in item.url:
+            continue
+        chat_id = item.url.split("openChatId=", 1)[1]
+        newer = await session.scalar(select(ChatMessage.id).where(
+            ChatMessage.chat_id == chat_id, ChatMessage.processed.is_(False), ChatMessage.created_at >= item.created_at - timedelta(hours=1),
+        ).limit(1))
+        if newer is not None:
+            held.add(item.id)
+    return held
+
+
 async def announce(
     session: AsyncSession, feishu: FeishuClient, user: User, settings: dict,
     reminders: list[tuple[FollowUp, str]] | None = None,
@@ -700,6 +718,8 @@ async def announce(
         select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status == OPEN, FollowUp.announced_at.is_(None))
         .order_by(FollowUp.id)
     )).scalars())
+    held_for_context = await unread_context(session, pending)
+    pending = [i for i in pending if i.id not in held_for_context]
     for item in [i for i in pending if attention.is_repeat(i, now)]:
         item.announced_at = now
         await _refresh_last_card(session, feishu, user, item)
@@ -723,18 +743,19 @@ async def announce(
     riding = [] if quiet else later  # 打扰他的时候，手上攒着的不急的事一起给他，省得过会儿再打断一次
     head = interrupt if interrupt else held + later  # 到了汇总时间：等名额的也一起说
     shown = head + (riding if interrupt else [])
-    results = [] if quiet else await result_facts(session, user)
+    # 有了结果、只需告诉一声的事放进汇总；打断他的这张卡片只说要他处理的事（标题的数量和正文说的是同一批）
+    results = [] if quiet or interrupt else await result_facts(session, user)
     if not shown and not results:
         if digest:
             await attention.note_digest(session, user, now)
         await session.commit()
         return
     by_item = {item.id: fact for item, fact in reminders or []}
-    facts = results + [by_item.get(i.id) or describe(i, await session.get(PendingAction, i.action_id) if i.action_id else None)
-                       for i in shown]
+    about = [by_item.get(i.id) or describe(i, await session.get(PendingAction, i.action_id) if i.action_id else None) for i in head]
+    facts = results + about
     lang = i18n.user_language(settings)
-    if len(shown) == 1 and not results:
-        text = ""  # 只有一件事：卡片已经说清楚了，不再加一句复述
+    if len(head) <= 1 and not results:
+        text = ""  # 只有一件事：卡片已经说清楚了，不再加一句复述（顺带的不急的事在下面单独一组，不用说）
     else:
         try:
             text = await complete_text(NARRATE_SYSTEM, f"用户：{user.name}\n\n发生的事：\n" + "\n".join(f"- {f}" for f in facts)
@@ -750,7 +771,8 @@ async def announce(
         sections.append(["", [{"kind": "note", "text": f"还有 {overflow} 件在网页看板里"}]])
     flat = [card for _, group in sections for card in group]
     try:
-        await post(session, user, event="Relay 告诉用户：\n" + "\n".join(facts), text=text, cards=flat)
+        await post(session, user, event="Relay 告诉用户：\n" + "\n".join(facts), text=text, cards=flat,
+                   notice="interrupt" if interrupt else "digest")
     except ConversationBusy:
         await session.rollback()
         return
@@ -764,7 +786,7 @@ async def announce(
     await session.commit()
     try:
         title = (i18n.t(lang, "things_to_know", n=len(interrupt)) if interrupt
-                 else i18n.t(lang, "digest", n=len(head)) if head else i18n.t(lang, "update"))
+                 else i18n.t(lang, "digest", n=len(head) + len(results)) if head or results else i18n.t(lang, "update"))
         await push(session, feishu, user, title, text, sections=sections)
     except FeishuError:
         logger.exception("推送到飞书失败")

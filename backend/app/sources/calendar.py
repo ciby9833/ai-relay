@@ -3,7 +3,8 @@
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import update
+from sqlalchemy import cast, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.feishu.client import FeishuClient, FeishuError
@@ -95,7 +96,8 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
         await session.execute(
             update(Signal)
             .where(Signal.user_id == user.id, Signal.source == "calendar", Signal.external_id == external_id)
-            .values(title=event["summary"], payload=payload)
+            # 合并而不是覆盖：会前准备、纪要等 Relay 记在会上的内容要留着
+            .values(title=event["summary"], payload=Signal.payload.op("||")(cast(payload, JSONB)))
         )
         if event["rsvp"] == "needs_action" and event["start"] > now:
             created += await add_signal(

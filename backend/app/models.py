@@ -570,3 +570,25 @@ class EvalFeedback(Base):
     kind: Mapped[str] = mapped_column(String(16))  # missed | comment
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ItemFeedback(Base):
+    """用户在真实卡片上对一件事的反馈（飞书卡片和网页共用）。
+
+    outcome：handled_after 提醒后处理了 | handled 没提醒过、他自己标了已处理 | handled_before 提醒前就处理了 |
+    not_mine 不归我 | not_worth 不值得提醒 | quieter 这类以后少提醒 | duplicate 重复了。
+    pushed_at 记下反馈时这件事有没有被推送过、什么时候，用来算提醒准确率和迟到率。
+    """
+
+    __tablename__ = "item_feedback"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("follow_ups.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    source: Mapped[str] = mapped_column(String(16))  # p2p | group | mail | approval | invitation | …（来源类别，只有类别没有内容）
+    outcome: Mapped[str] = mapped_column(String(32))
+    via: Mapped[str] = mapped_column(String(16))
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    seconds_after_push: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

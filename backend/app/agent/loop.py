@@ -181,7 +181,7 @@ async def build_context(
         lines.append(f"#{item.id}《{item.title}》的档案（材料清单，需要时按箭头后的工具读原文）：")
         lines.append(casefile.render(await casefile.build(session, user, item, feishu), user.timezone))
     closed = (await session.execute(
-        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status != "open",
+        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status.in_(("done", "dismissed")),
                                FollowUp.closed_at > datetime.now(UTC) - timedelta(days=1))
         .order_by(FollowUp.closed_at.desc()).limit(5)
     )).scalars().all()

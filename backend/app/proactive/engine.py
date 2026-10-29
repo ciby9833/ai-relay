@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -14,7 +14,7 @@ from app.llm.base import LLMError
 from app.memory import service as memory_service
 from app.models import FollowUp, Signal, SourceState, User
 from app.feishu.cards import esc
-from app.proactive import attention, cards, items
+from app.proactive import attention, cards, items, meetings
 from app.proactive.llm import complete_structured, complete_text
 from app.proactive.push import push
 from app.proactive.prompts import BRIEF_SYSTEM, TEAM_DIGEST_SYSTEM, TRIAGE_SYSTEM
@@ -22,7 +22,7 @@ from app import i18n
 from app.sources import approval as approval_source
 from app.i18n import user_language
 from app.proactive.settings import language_of, get_settings_row, is_workday, merged
-from app.sources import REQUIRED_SCOPES, SYNCERS, calendar, docs
+from app.sources import REQUIRED_SCOPES, SYNCERS
 from app.sources import unavailable as source_unavailable
 
 logger = logging.getLogger("relay.proactive")
@@ -196,6 +196,7 @@ def _local(moment: datetime, user: User) -> str:
 
 
 async def meeting_briefs(session: AsyncSession, feishu: FeishuClient, user: User, settings: dict) -> None:
+    """会前准备（见 meetings）：只用确实相关的材料；有值得看的才推送，其余只放在“会议”页面。"""
     now = datetime.now(UTC)
     lead = timedelta(minutes=settings["meeting_brief_minutes"])
     result = await session.execute(
@@ -204,49 +205,19 @@ async def meeting_briefs(session: AsyncSession, feishu: FeishuClient, user: User
             Signal.occurred_at > now, Signal.occurred_at <= now + lead,
         )
     )
+    lang = user_language(settings)
     for meeting in result.scalars():
-        payload = meeting.payload
-        meeting.status = "notified"
+        payload = meeting.payload or {}
+        meeting.status, meeting.notified_at = "notified", now
         if payload.get("all_day") or payload.get("rsvp") == "decline":
             continue
-        attendees = payload.get("attendees") or [
-            a["name"] for a in await calendar.attendees_for(feishu, user, payload) if a["open_id"] != user.feishu_open_id
-        ]
-        mails = (await session.execute(
-            select(Signal).where(
-                Signal.user_id == user.id, Signal.source == "mail",
-                Signal.occurred_at > now - timedelta(days=14),
-                or_(
-                    Signal.title.ilike(f"%{meeting.title[:20]}%"),
-                    *[Signal.payload["from_name"].astext == name for name in attendees],
-                ),
-            ).order_by(Signal.occurred_at.desc()).limit(5)
-        )).scalars().all()
-        try:
-            related_docs = await docs.search(feishu, user, meeting.title, limit=3)
-        except FeishuError:
-            related_docs = []
-        material = (
-            f"会议：{meeting.title}\n时间：{_local(meeting.occurred_at, user)}\n"
-            f"组织者：{payload.get('organizer')}\n参会人：{'、'.join(attendees)}\n地点：{payload.get('location') or '-'}\n"
-            f"议程/描述：{payload.get('description') or '-'}\n\n"
-            "相关邮件：\n" + ("\n".join(f"- {m.payload.get('from')}《{m.title}》：{m.summary or (m.body or '')[:200]}" for m in mails) or "无") +
-            "\n\n相关文档：\n" + ("\n".join(f"- {d['title']}：{d['summary']}" for d in related_docs) or "无")
-        )
-        try:
-            text = await complete_text(BRIEF_SYSTEM, f"写一份会前准备（这个会 {_local(meeting.occurred_at, user)} 开始）。{i18n.instruction(user_language(settings))}\n\n{material}")
-        except LLMError:
-            text = material
-        message_cards = [cards.event_card(meeting)] + [cards.mail_card(m) for m in mails[:3]]
-        try:
-            await post(session, user, event=f"会议《{meeting.title}》即将开始，给用户发会前准备", text=text, cards=message_cards)
-        except ConversationBusy:
-            await session.rollback()
-            return
-        meeting.status, meeting.notified_at = "notified", now
+        prep = await meetings.prepare(session, feishu, user, meeting, lang)
         await session.commit()
+        if not prep["worth_pushing"]:
+            continue  # 没找到值得看的材料：飞书日历自己会提醒开会，Relay 不再多说一遍
         try:
-            await push(session, feishu, user, f"🗓 {_local(meeting.occurred_at, user)} {meeting.title}", text, message_cards[:1])
+            await push(session, feishu, user, f"🗓 {_local(meeting.occurred_at, user)} {meeting.title}", prep["text"],
+                       [cards.event_card(meeting)])
         except FeishuError:
             logger.exception("会前准备推送失败")
         await session.commit()
@@ -322,7 +293,7 @@ async def morning_brief(session: AsyncSession, feishu: FeishuClient, user: User,
     message_cards = ids(decide) + ids(handle) + [cards.event_card(m) for m in meetings[:4]]
     note = f"\n\n**团队动态**\n{team_digest}" if team_digest else ""
     try:
-        await post(session, user, event="用户要一份简报", text=text + note, cards=message_cards)
+        await post(session, user, event="用户要一份简报", text=text + note, cards=message_cards, notice="brief")
     except ConversationBusy:
         await session.rollback()
         return False
@@ -380,5 +351,9 @@ async def run_for_user(session: AsyncSession, feishu: FeishuClient, user: User) 
     reminders = await items.due_reminders(session, feishu, user)
     await items.announce(session, feishu, user, settings, reminders)
     await meeting_briefs(session, feishu, user, settings)
+    try:
+        await meetings.collect_minutes(session, feishu, user)
+    except FeishuError:
+        logger.exception("找会议纪要失败")
     if settings["brief_enabled"]:
         await morning_brief(session, feishu, user, settings)

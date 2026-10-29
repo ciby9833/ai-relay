@@ -15,6 +15,10 @@ async function setup(page: Page, admin = true, failOnce = false, language = "zh"
     if (path === "/api/conversations") return route.fulfill({ json: [] });
     if (path === "/api/home") return route.fulfill({ json: { conversation: { id: "home" }, messages: [], status: { source_errors: 0 } } });
     if (path === "/api/board") return route.fulfill({ json: { me: [], others: [], relay: [] } });
+    if (path === "/api/insights/reminders") return route.fulfill({ json: { days: 7,
+      total: { feedback: { handled_after: 3, handled_before: 1 }, accuracy: 0.75, late: 0.25, judged: 4, pushed: 9, no_response: 5, candidates: 12 },
+      by_source: { p2p: { feedback: { handled_before: 1 }, accuracy: 0, late: 1, judged: 1 } },
+      users: [{ user: "Hendri", pushed: 9, no_response: 5, candidates: 12, promoted: 2, feedback: {}, created: { p2p: 3, mail: 2 }, accuracy: 0.75, late: 0.25, judged: 4 }] } });
     if (path === "/api/models") return route.fulfill({ json: { models: [] } });
     if (path === "/api/insights/notifications") return route.fulfill({ json: [{ user_id: "h", user: "Hendri", timezone: "Asia/Jakarta", days, observed_days: 7, pushes_per_day: url.searchParams.get("offset") === "0" ? 0.29 : 4 }] });
     if (path === "/api/insights/quality") {
@@ -37,8 +41,11 @@ test("admin baseline, daily detail, filters and review", async ({ page }) => {
   await page.getByRole("button", { name: "运行质量", exact: true }).click();
   await expect(page.getByRole("heading", { name: "任务质量", exact: true })).toBeVisible();
   await expect(page.getByText("暂无样本", { exact: true })).toBeVisible();
+  // 提醒准不准：来自真实卡片上的反馈，只有数字
+  await expect(page.getByRole("heading", { name: "提醒准不准" })).toBeVisible();
+  await expect(page.getByText("75%", { exact: true }).first()).toBeVisible();
   await page.locator(".admin-person summary").click();
-  await expect(page.getByRole("table")).toBeVisible();
+  await expect(page.locator(".admin-person").getByRole("table")).toBeVisible();
   await expect(page.getByText("7 天共 2 条推送", { exact: false })).toBeVisible();
   await page.getByLabel("查找用户").fill("nobody");
   await expect(page.getByText("没有匹配的用户数据。")).toBeVisible();
@@ -71,7 +78,7 @@ test("admin error retries without stale metrics", async ({ page }) => {
 test("admin desktop and phone layouts", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1100 }); await setup(page);
   await page.getByRole("button", { name: "运行质量", exact: true }).click();
-  await expect(page.locator(".admin-metric")).toHaveCount(7);
+  await expect(page.locator(".admin-metric")).toHaveCount(11);  // 任务质量 7 项 + 提醒准不准 4 项
   await page.screenshot({ path: "/tmp/relay-admin-overview.png", fullPage: true, animations: "disabled" });
   await page.locator(".admin-person summary").click();
   await page.screenshot({ path: "/tmp/relay-admin-desktop.png", fullPage: true, animations: "disabled" });
@@ -112,7 +119,7 @@ for (const [language, title] of [["en", "Operations quality"], ["id", "Kualitas 
     // Navigate at desktop width, then check the existing mobile shell.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByRole("button", { name: title, exact: true }).click();
-    await expect(page.locator(".admin-metric")).toHaveCount(7);
+    await expect(page.locator(".admin-metric")).toHaveCount(11);  // 任务质量 7 项 + 提醒准不准 4 项
     await expect(page.getByRole("button", { name: language === "en" ? "Refresh" : "Muat ulang", exact: true })).toBeVisible();
     await page.setViewportSize({ width: 320, height: 812 });
     const definitions = page.locator(".admin-definitions summary");
@@ -123,7 +130,7 @@ for (const [language, title] of [["en", "Operations quality"], ["id", "Kualitas 
     const person = page.locator(".admin-person summary");
     await person.focus();
     await page.keyboard.press("Space");
-    await expect(page.getByRole("table")).toBeVisible();
+    await expect(page.locator(".admin-person").getByRole("table")).toBeVisible();
     await page.locator(".admin-review summary").click();
     await expect(page.locator(".admin-review textarea")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

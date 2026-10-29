@@ -263,7 +263,7 @@ async def build(
     # 6. 之前的事：同一个人，提到同样关键词的算强关联
     if names:
         earlier = list((await session.execute(
-            select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.id != item.id, FollowUp.status != "open",
+            select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.id != item.id, FollowUp.status.in_(("done", "dismissed")),
                                    FollowUp.closed_at > now - timedelta(days=60),
                                    or_(*[FollowUp.title.ilike(f"%{n}%") for n in names]))
             .order_by(FollowUp.closed_at.desc()).limit(5)

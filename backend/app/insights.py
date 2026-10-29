@@ -128,7 +128,7 @@ async def summary(session: AsyncSession, user: User, days: int = 7) -> dict:
     seconds = sorted(r.seconds_to_decide for r in handled if r.seconds_to_decide is not None and r.via != "auto")
     ignored = await session.scalar(
         select(func.count(FollowUp.id)).where(
-            FollowUp.user_id == user.id, FollowUp.created_at >= since, FollowUp.status != "open",
+            FollowUp.user_id == user.id, FollowUp.created_at >= since, FollowUp.status.in_(("done", "dismissed")),
             FollowUp.announced_at.isnot(None), FollowUp.id.notin_(handled_items | {0}),
         )
     )

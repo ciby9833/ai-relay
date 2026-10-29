@@ -117,9 +117,6 @@ async def _process_window(session, provider, user, window: list[shadow.Event], t
             continue
         assigned.add(event.id)
         target = str(a.get("matter") or "none").lstrip("#")
-        if target == "none" and shadow.asks_others(event):
-            # 轻量模型常把他自己的短问题（“吉利的有沟通么？”）当成无关；这类单独成一件，交给对账判断是不是在等答复
-            target, a = "new", {"matter": "new"}
         if target == "none":
             session.add(_event_row(user, event, "none", None))
             continue
@@ -137,16 +134,9 @@ async def _process_window(session, provider, user, window: list[shadow.Event], t
         matter.last_at = max(matter.last_at, event.at)
         session.add(_event_row(user, event, "attached", matter.id))
         touched.add(matter.id)
-    # 模型漏掉的事件也记下（不再重复送去判断）；漏掉的如果是他问别人的问题，同样单独成一件
+    # 模型漏掉的事件也记下（不再重复送去判断）
     for event in window:
-        if event.id in assigned:
-            continue
-        if shadow.asks_others(event):
-            matter = await _new_matter(session, user, event, {})
-            known[matter.id] = matter
-            session.add(_event_row(user, event, "attached", matter.id))
-            touched.add(matter.id)
-        else:
+        if event.id not in assigned:
             session.add(_event_row(user, event, "none", None))
     await session.flush()
     for matter_id in touched:

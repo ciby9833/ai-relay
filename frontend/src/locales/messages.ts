@@ -1639,5 +1639,261 @@ export const messages: Record<string, readonly [string, string]> = {
   "这段时间没有整理出要跟进的事。": [
     "Nothing to follow up on in this period.",
     "Tidak ada yang perlu ditindaklanjuti dalam periode ini."
+  ],
+  "已处理": [
+    "Done",
+    "Sudah ditangani"
+  ],
+  "为什么不用跟了？": [
+    "Why stop tracking?",
+    "Kenapa tidak perlu dipantau?"
+  ],
+  "提醒前就处理了": [
+    "Already handled before",
+    "Sudah ditangani sebelumnya"
+  ],
+  "不归我管": [
+    "Not mine",
+    "Bukan urusan saya"
+  ],
+  "不值得提醒": [
+    "Not worth a reminder",
+    "Tidak perlu diingatkan"
+  ],
+  "这类以后少提醒": [
+    "Fewer like this",
+    "Kurangi yang seperti ini"
+  ],
+  "返回": [
+    "Back",
+    "Kembali"
+  ],
+  "待处理": [
+    "To do",
+    "Perlu ditangani"
+  ],
+  "进展": [
+    "Progress",
+    "Perkembangan"
+  ],
+  "对话": [
+    "Chat",
+    "Obrolan"
+  ],
+  "新旧链路对比": [
+    "Pipeline comparison",
+    "Perbandingan alur"
+  ],
+  "主要入口": [
+    "Main sections",
+    "Bagian utama"
+  ],
+  "关于 #{id}《{title}》：": [
+    "About #{id} \"{title}\": ",
+    "Tentang #{id} \"{title}\": "
+  ],
+  "现在要处理": [
+    "Needs you now",
+    "Perlu Anda sekarang"
+  ],
+  "在等别人": [
+    "Waiting on others",
+    "Menunggu orang lain"
+  ],
+  "现在没有要你马上处理的事": [
+    "Nothing needs you right now",
+    "Tidak ada yang perlu segera Anda tangani"
+  ],
+  "Relay 在盯着": [
+    "Relay is watching",
+    "Relay sedang memantau"
+  ],
+  "详情": [
+    "Details",
+    "Detail"
+  ],
+  "返回列表": [
+    "Back to list",
+    "Kembali ke daftar"
+  ],
+  "问 Relay": [
+    "Ask Relay",
+    "Tanya Relay"
+  ],
+  "选一件事，看发生了什么、依据和准备好的下一步。": [
+    "Pick an item to see what happened, the evidence, and the next step Relay prepared.",
+    "Pilih satu hal untuk melihat apa yang terjadi, buktinya, dan langkah berikutnya yang sudah disiapkan."
+  ],
+  "未回复邀请": [
+    "Not responded",
+    "Belum dibalas"
+  ],
+  "议程": [
+    "Agenda",
+    "Agenda"
+  ],
+  "文档": [
+    "Doc",
+    "Dokumen"
+  ],
+  "纪要": [
+    "Minutes",
+    "Notulen"
+  ],
+  "行动项": [
+    "Action items",
+    "Tindak lanjut"
+  ],
+  "组织者：{name}": [
+    "Organizer: {name}",
+    "Penyelenggara: {name}"
+  ],
+  "依据（{count} 份材料）": [
+    "Evidence ({count} sources)",
+    "Bukti ({count} sumber)"
+  ],
+  "会前 Relay 会只用和这个会确实相关的材料整理准备；也可以现在就整理。": [
+    "Before the meeting, Relay prepares notes using only material genuinely related to it. You can also do it now.",
+    "Sebelum rapat, Relay menyiapkan catatan hanya dari materi yang benar-benar terkait. Bisa juga sekarang."
+  ],
+  "纪要里有 {count} 个行动项": [
+    "{count} action items in the minutes",
+    "{count} tindak lanjut di notulen"
+  ],
+  "没有找到这次会的纪要，没有提取行动项。": [
+    "No minutes found for this meeting, so no action items were extracted.",
+    "Notulen rapat ini tidak ditemukan, jadi tidak ada tindak lanjut yang diambil."
+  ],
+  "会后会去找这次会的纪要，找到后提取行动项。": [
+    "After the meeting Relay looks for the minutes and extracts action items.",
+    "Setelah rapat, Relay mencari notulen dan mengambil tindak lanjutnya."
+  ],
+  "整理中…": [
+    "Preparing…",
+    "Menyiapkan…"
+  ],
+  "重新整理": [
+    "Prepare again",
+    "Siapkan ulang"
+  ],
+  "现在整理会前准备": [
+    "Prepare now",
+    "Siapkan sekarang"
+  ],
+  "接下来": [
+    "Upcoming",
+    "Mendatang"
+  ],
+  "接下来 3 天没有会。": [
+    "No meetings in the next 3 days.",
+    "Tidak ada rapat dalam 3 hari ke depan."
+  ],
+  "刚开过的": [
+    "Just ended",
+    "Baru selesai"
+  ],
+  "最近 7 天还没有结果。": [
+    "No results in the last 7 days.",
+    "Belum ada hasil dalam 7 hari terakhir."
+  ],
+  "汇总和简报": [
+    "Digests and briefs",
+    "Ringkasan dan briefing"
+  ],
+  "汇总": [
+    "Digest",
+    "Ringkasan"
+  ],
+  "Relay 发了一份简报": [
+    "Relay sent a brief",
+    "Relay mengirim briefing"
+  ],
+  "Relay 发了一份汇总": [
+    "Relay sent a digest",
+    "Relay mengirim ringkasan"
+  ],
+  "Relay 提醒了你 {count} 件事": [
+    "Relay reminded you of {count} items",
+    "Relay mengingatkan {count} hal"
+  ],
+  "去待处理": [
+    "Open To do",
+    "Buka Perlu ditangani"
+  ],
+  "看进展": [
+    "See progress",
+    "Lihat perkembangan"
+  ],
+  "提醒准不准": [
+    "Are reminders accurate?",
+    "Seberapa tepat pengingat?"
+  ],
+  "来自真实卡片上的反馈：提醒后处理算准，提醒前已处理 / 不归我 / 不值得 / 重复算不准；没反应的单独统计。": [
+    "From feedback on real cards: handled after the reminder counts as accurate; already handled, not mine, not worth it or duplicate count as inaccurate. No response is counted separately.",
+    "Dari umpan balik pada kartu nyata: ditangani setelah pengingat dihitung tepat; sudah ditangani, bukan urusan saya, tidak perlu, atau duplikat dihitung tidak tepat. Tanpa respons dihitung terpisah."
+  ],
+  "提醒准确率": [
+    "Reminder accuracy",
+    "Ketepatan pengingat"
+  ],
+  "{count} 件有反馈": [
+    "{count} with feedback",
+    "{count} dengan umpan balik"
+  ],
+  "迟到率": [
+    "Late rate",
+    "Tingkat terlambat"
+  ],
+  "推送的事": [
+    "Items pushed",
+    "Hal yang dikirim"
+  ],
+  "{count} 件没反应": [
+    "{count} no response",
+    "{count} tanpa respons"
+  ],
+  "先放后台的候选": [
+    "Held as candidates",
+    "Ditahan sebagai kandidat"
+  ],
+  "拿不准、没有打扰用户": [
+    "Unclear, user not disturbed",
+    "Belum jelas, tidak mengganggu pengguna"
+  ],
+  "按来源": [
+    "By source",
+    "Per sumber"
+  ],
+  "来源": [
+    "Source",
+    "Sumber"
+  ],
+  "有反馈": [
+    "With feedback",
+    "Dengan umpan balik"
+  ],
+  "按人": [
+    "By person",
+    "Per orang"
+  ],
+  "没反应": [
+    "No response",
+    "Tanpa respons"
+  ],
+  "新建（私聊）": [
+    "Created (private chat)",
+    "Dibuat (obrolan pribadi)"
+  ],
+  "私聊": [
+    "Private chat",
+    "Obrolan pribadi"
+  ],
+  "群聊": [
+    "Group chat",
+    "Obrolan grup"
+  ],
+  "会议纪要": [
+    "Meeting minutes",
+    "Notulen rapat"
   ]
 };

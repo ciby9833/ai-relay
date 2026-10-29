@@ -45,8 +45,13 @@ TASKS_TOOL = {
                         "assignee": {"type": "string", "description": "要去做这件事的人名"},
                         "task": {"type": "string", "description": "要做什么，一句话，可独立读懂"},
                         "due": {"type": "string", "enum": ["today", "this_week", "none"]},
+                        "basis": {"type": "string", "enum": ["commitment", "open_request", "blocking_wait", "asked_to_watch", "unclear"],
+                                  "description": "为什么值得跟：commitment 明确答应了要做；open_request 明确的请求、要交付物/决定/答复、对方在等、还没解决；"
+                                                 "blocking_wait 他在等的东西影响他接下来的工作；asked_to_watch 他明确说要盯着/提醒他；"
+                                                 "unclear 像是请求但前后文不够，拿不准"},
+                        "why": {"type": "string", "description": "一句话依据：谁说了什么、为什么要跟（给用户看，不写消息编号）"},
                     },
-                    "required": ["message_ref", "requester", "assignee", "task", "due"],
+                    "required": ["message_ref", "requester", "assignee", "task", "due", "basis", "why"],
                     "additionalProperties": False,
                 },
             },
@@ -71,8 +76,9 @@ TASKS_TOOL = {
                     "type": "object",
                     "properties": {
                         "item_id": {"type": "integer"},
-                        "verdict": {"type": "string", "enum": ["done", "committed"],
-                                    "description": "done=已经办完/给出了这件事要的结果；committed=答应了、给了完成时间但还没办完"},
+                        "verdict": {"type": "string", "enum": ["done", "committed", "track"],
+                                    "description": "done=已经办完/给出了这件事要的结果（或者不需要了）；committed=答应了、给了完成时间但还没办完；"
+                                                   "track=只用于标了（候选）的事：新消息表明这确实是要跟进的事"},
                         "evidence": {"type": "string", "description": "哪条消息、说了什么，一句话"},
                         "due": {"type": "string", "description": "committed 时：答应的完成时间，ISO 8601（按 <now> 换算）；说不出具体时间就留空"},
                     },
@@ -97,6 +103,9 @@ async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[
     群聊：待办归到相关的每位 Relay 用户。私聊：只归到读取它的那位用户（owner_user_id），不碰别人。
     """
     await session.execute(delete(ChatMessage).where(ChatMessage.created_at < datetime.now(UTC) - RETENTION))
+    # 候选 2 天没有新证据：作废，不打扰任何人
+    await session.execute(update(FollowUp).where(FollowUp.status == items.CANDIDATE, FollowUp.remind_at < datetime.now(UTC)).values(
+        status=items.EXPIRED, resolution="候选：没有新进展，没有进入跟踪", closed_at=datetime.now(UTC)))
     pending = select(ChatMessage.chat_id, ChatMessage.owner_user_id).where(ChatMessage.processed.is_(False)).distinct()
     if only_chats is not None:
         pending = pending.where(ChatMessage.chat_id.in_(only_chats))
@@ -118,7 +127,7 @@ async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[
         for message in new:
             message.processed = True
         # 这个会话里还没结的事（等别人回复、别人让他做的事）：新消息可能就是进展，要一起判断
-        open_query = select(FollowUp).where(FollowUp.status == "open", FollowUp.url == chat_link(chat_id),
+        open_query = select(FollowUp).where(FollowUp.status.in_((items.OPEN, items.CANDIDATE)), FollowUp.url == chat_link(chat_id),
                                             or_(FollowUp.key.like("chat:%"), FollowUp.key.like("mention:%")))
         if owner is not None:
             open_query = open_query.where(FollowUp.user_id == owner.id)
@@ -136,7 +145,8 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
     lines = [f"（之前）{m.sender_name or '某人'}{replied.get(m.message_id, '')}：{m.text}" for m in earlier]
     lines += [f"[{i}] {m.created_at.astimezone(tz):%m-%d %H:%M} {m.sender_name or '某人'}{replied.get(m.message_id, '')}：{m.text}"
               for i, m in enumerate(new)]
-    pending = "\n".join(f"[#{i.id}] {i.title}" + (f"（{i.summary}）" if i.summary else "") for i in open_items)
+    pending = "\n".join(f"[#{i.id}]" + ("（候选）" if i.status == items.CANDIDATE else "") + f" {i.title}"
+                        + (f"（{i.summary}）" if i.summary else "") for i in open_items)
     if owner:
         # 私聊只有两个人：告诉模型是谁和谁，否则“你帮我……”里的“你”对应不到人名
         other = next((m.chat_name for m in new + earlier if m.chat_name), "") .removeprefix("和 ").removesuffix(" 的私聊") or "对方"
@@ -167,11 +177,14 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
     changes = result.get("progress") or []
     for change in changes:
         item = by_id.get(change.get("item_id"))
-        if item is not None and item.status == "open":
+        if item is not None and item.status == items.CANDIDATE:
+            settle_candidate(item, change)
+        elif item is not None and item.status == "open" and change.get("verdict") != "track":
             await apply_progress(session, item, change, next((u for u in users.values() if u.id == item.user_id), None))
     # 有一件办完了：同一个会话里、同一个人的其他未结事项，再单独对照这些新消息判断一次。
     # 一次回复常常同时回应了好几件内容相近的事，模型一起判断时容易只认其中一件，剩下的就一直挂着
-    closed = [by_id[c["item_id"]] for c in changes if c.get("verdict") == "done" and c.get("item_id") in by_id]
+    closed = [by_id[c["item_id"]] for c in changes if c.get("verdict") == "done" and c.get("item_id") in by_id
+              and by_id[c["item_id"]].status != items.EXPIRED]
     judged = {c.get("item_id") for c in changes}
     siblings = [i for i in open_items if i.status == "open" and i.id not in judged
                 and any(_counterpart(i) == _counterpart(x) and i.user_id == x.user_id for x in closed)]
@@ -205,31 +218,41 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
             assignee = owner if assignee == owner else None
             requester = owner if requester == owner else None
         due = items._due(task["due"], assignee or requester) if (assignee or requester) else None
+        # 拿不准的先作候选：不上看板、不推送；同一段对话有新消息时再判断，2 天没有新证据就作废
+        candidate = task.get("basis") == "unclear"
+        why = clean_evidence(task.get("why") or "")
+        private = owner is not None
         chat_name = next((m.chat_name for m in new + earlier if m.chat_name), None) if owner is None else None
         if assignee and assignee != requester and not await _merge_same_ask(
-                session, assignee, chat_id, "me", task["requester"], task["task"], source.text):
-            await items.upsert(
-                session, assignee, f"chat:{source.message_id}:{assignee.id}", None, silent=False,
+                session, assignee, chat_id, "me", task["requester"], task["task"], source.text, candidate):
+            item = await items.upsert(
+                session, assignee, f"chat:{source.message_id}:{assignee.id}", None, silent=candidate,
                 kind="request", owner="me", title=f"{task['requester']} 让你：{task['task']}",
-                summary=f"「{source.text[:200]}」", next_step=f"完成后在{where}回复对方",
+                summary=f"「{source.text[:200]}」", next_step=f"完成后在{where}回复对方", recommendation=why or None,
                 url=chat_link(chat_id), due_at=due,
-                facets={"people": [task["requester"]], "open_ids": [source.sender_open_id], "chat": chat_name},
+                facets={"people": [task["requester"]], "open_ids": [source.sender_open_id], "chat": chat_name,
+                        "private": private, "basis": task.get("basis")},
             )
-            # 同一条消息已经建成待办，不再单独提醒“@你没回”
-            await session.execute(
-                update(Signal).where(Signal.user_id == assignee.id, Signal.kind == "mention",
-                                     Signal.external_id == source.message_id).values(status="done")
-            )
+            if candidate:
+                _as_candidate(item)
+            else:
+                # 同一条消息已经建成待办，不再单独提醒“@你没回”
+                await session.execute(
+                    update(Signal).where(Signal.user_id == assignee.id, Signal.kind == "mention",
+                                         Signal.external_id == source.message_id).values(status="done")
+                )
         if requester and requester != assignee and not await _merge_same_ask(
-                session, requester, chat_id, "others", task["assignee"], task["task"], source.text):
-            await items.upsert(
+                session, requester, chat_id, "others", task["assignee"], task["task"], source.text, candidate):
+            item = await items.upsert(
                 session, requester, f"chat:{source.message_id}:{requester.id}", None, silent=True,
                 kind="waiting", owner="others", title=f"等 {task['assignee']}：{task['task']}",
-                summary=f"「{source.text[:200]}」", waiting_on=task["assignee"],
+                summary=f"「{source.text[:200]}」", waiting_on=task["assignee"], recommendation=why or None,
                 next_step="Relay 会在到期时提醒你跟进", url=chat_link(chat_id),
                 due_at=due, remind_at=due or datetime.now(UTC) + WAITING_DEFAULT,
-                facets={"people": [task["assignee"]], "chat": chat_name},
+                facets={"people": [task["assignee"]], "chat": chat_name, "private": private, "basis": task.get("basis")},
             )
+            if candidate:
+                _as_candidate(item)
 
     if owner is None:
         await _settle_mentions(session, new, result, users, by_name)
@@ -286,13 +309,37 @@ def _counterpart(item: FollowUp) -> str | None:
     return item.waiting_on if item.owner == "others" else ((item.facets or {}).get("people") or [None])[0]
 
 
-async def _merge_same_ask(session, user: User, chat_id: str, owner: str, counterpart: str, task: str, text: str) -> bool:
+CANDIDATE_TTL = timedelta(days=2)
+
+
+def _as_candidate(item: FollowUp) -> None:
+    item.status, item.announced_at = items.CANDIDATE, datetime.now(UTC)
+    item.remind_at = datetime.now(UTC) + CANDIDATE_TTL  # 候选的作废时间
+
+
+def settle_candidate(item: FollowUp, change: dict) -> None:
+    """候选有了新证据：确实要跟（或对方答应了）→ 转成正式事项，进入看板和提醒；已经有结论 → 安静作废。"""
+    verdict = change.get("verdict")
+    now = datetime.now(UTC)
+    if verdict in ("track", "committed"):
+        item.status, item.announced_at, item.updated_at = items.OPEN, None, now
+        item.remind_at = (item.due_at or now + WAITING_DEFAULT) if item.owner == "others" else None
+        evidence = clean_evidence(change.get("evidence") or "")
+        if evidence:
+            item.recommendation = evidence
+    elif verdict == "done":
+        item.status, item.resolution, item.closed_at, item.updated_at = items.EXPIRED, "候选：已有结论，没有进入跟踪", now, now
+
+
+async def _merge_same_ask(session, user: User, chat_id: str, owner: str, counterpart: str, task: str, text: str,
+                          candidate: bool = False) -> bool:
     """同一个会话里、同一对人之间，10 分钟内连着提的要求，并进刚建的那件事，而不是拆成好几件。
 
     拆开的后果：对方一次回复把几件都答了，往往只有其中一件被判为办完，剩下的永远挂着（例如“三段码”那两件）。
     """
     recent = (await session.execute(
-        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status == "open", FollowUp.owner == owner,
+        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.status == (items.CANDIDATE if candidate else items.OPEN),
+                               FollowUp.owner == owner,
                                FollowUp.url == chat_link(chat_id), FollowUp.key.like("chat:%"),
                                FollowUp.created_at > datetime.now(UTC) - MERGE_WINDOW)
         .order_by(FollowUp.id.desc())

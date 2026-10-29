@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ClosureReview, type NotificationDay, type NotificationStats, type QualityRate, type QualityStats, type ReviewVerdict } from "../api";
+import { api, type ReminderQuality, type ClosureReview, type NotificationDay, type NotificationStats, type QualityRate, type QualityStats, type ReviewVerdict } from "../api";
 import { t, intlLocale } from "../i18n";
 import Icon from "./Icon";
 import CriterionEvidence from "./CriterionEvidence";
@@ -63,6 +63,38 @@ function Review({ closure, onSaved }: { closure: ClosureReview; onSaved: () => v
   </details>;
 }
 
+const pct = (v: number | null) => v === null ? "—" : (v * 100).toLocaleString(intlLocale(), { maximumFractionDigits: 1 }) + "%";
+const SOURCES: Record<string, string> = { p2p: "私聊", group: "群聊", mail: "邮件", approval: "审批", invitation: "会议邀请", task: "飞书任务", attendance: "考勤", meeting: "会议纪要" };
+
+/** 提醒准不准：来自真实卡片上的“已处理 / 不用跟了（原因）”。只有数字。 */
+function Reminders({ days }: { days: number }) {
+  const [data, setData] = useState<ReminderQuality | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => { setData(null); void api.reminderQuality(days).then(setData).catch(() => setError(true)); }, [days]);
+  if (error) return <p className="error-text">{t("操作失败")}</p>;
+  if (!data) return <p role="status" className="muted">{t("loading")}</p>;
+  const tile = (label: string, value: string, note: string) => <article className="admin-metric"><h3>{t(label)}</h3>
+    <div className="admin-metric-value"><strong>{value}</strong><span className="muted small">{note}</span></div></article>;
+  return <section aria-labelledby="admin-reminders-title">
+    <div className="admin-section-head"><div><h2 id="admin-reminders-title">{t("提醒准不准")}</h2>
+      <p className="muted small">{t("来自真实卡片上的反馈：提醒后处理算准，提醒前已处理 / 不归我 / 不值得 / 重复算不准；没反应的单独统计。")}</p></div></div>
+    <div className="admin-metrics">
+      {tile("提醒准确率", pct(data.total.accuracy), t("{count} 件有反馈", { count: data.total.judged }))}
+      {tile("迟到率", pct(data.total.late), t("提醒前就处理了"))}
+      {tile("推送的事", String(data.total.pushed), t("{count} 件没反应", { count: data.total.no_response }))}
+      {tile("先放后台的候选", String(data.total.candidates), t("拿不准、没有打扰用户"))}
+    </div>
+    {Object.keys(data.by_source).length > 0 && <div className="admin-table-wrap" tabIndex={0} role="region" aria-label={t("按来源")}><table>
+      <thead><tr><th>{t("来源")}</th><th>{t("提醒准确率")}</th><th>{t("迟到率")}</th><th>{t("有反馈")}</th></tr></thead>
+      <tbody>{Object.entries(data.by_source).map(([source, r]) => <tr key={source}><th scope="row">{t(SOURCES[source] ?? source)}</th>
+        <td>{pct(r.accuracy)}</td><td>{pct(r.late)}</td><td>{r.judged}</td></tr>)}</tbody></table></div>}
+    {data.users.length > 0 && <div className="admin-table-wrap" tabIndex={0} role="region" aria-label={t("按人")}><table>
+      <thead><tr><th>{t("用户")}</th><th>{t("推送的事")}</th><th>{t("提醒准确率")}</th><th>{t("迟到率")}</th><th>{t("没反应")}</th><th>{t("新建（私聊）")}</th><th>{t("先放后台的候选")}</th></tr></thead>
+      <tbody>{data.users.map(r => <tr key={r.user}><th scope="row">{r.user}</th><td>{r.pushed}</td><td>{pct(r.accuracy)}</td><td>{pct(r.late)}</td>
+        <td>{r.no_response}</td><td>{Object.values(r.created).reduce((a, b) => a + b, 0)}（{r.created.p2p ?? 0}）</td><td>{r.candidates}</td></tr>)}</tbody></table></div>}
+  </section>;
+}
+
 function Quality() {
   const [days, setDays] = useState(7);
   const [revision, setRevision] = useState(0);
@@ -97,6 +129,7 @@ function Quality() {
               <p className="muted small">{t("adminCollectionStart")}: {data.quality.coverage_start ? new Date(data.quality.coverage_start).toLocaleString(intlLocale()) : t("adminNoSample")}</p>
             </details></div>
         </section>
+        <Reminders days={days} />
         <section aria-labelledby="admin-notifications-title"><div className="admin-section-head"><div><h2 id="admin-notifications-title">{t("adminNotifications")}</h2><p className="muted small">{t("adminNotificationWindow")}</p></div>
           <input className="admin-search" type="search" aria-label={t("adminFindUser")} placeholder={t("adminFindUser")} value={search} onChange={e => setSearch(e.target.value)} /></div>
           <div className="admin-list">{!rows.length ? <p className="empty-note">{t("adminNoRows")}</p> : rows.map(row => {

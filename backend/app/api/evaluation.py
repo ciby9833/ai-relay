@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from app.api.quality import require_admin
 from app.deps import SessionDep, UserDep
 from app.ledger import engine
+from app.proactive.items import HIDDEN
 from app.models import (EvalFeedback, EvalLabel, FollowUp, LedgerCommitment, LedgerEvent, LedgerMatter, SourceState, User)
 
 router = APIRouter(prefix="/api", tags=["evaluation"])
@@ -79,7 +80,8 @@ async def evaluation(session: SessionDep, user: UserDep):
                            "what": c.what, "due": c.due, "status": c.status, "evidence": readable(c.evidence), "last_at": m.last_at.isoformat(),
                            "materials": materials.get(m.id, [])[::-1], "feedback": labels.get(("ledger", key))})
     items = (await session.execute(
-        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.created_at >= since).order_by(FollowUp.created_at.desc())
+        select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.created_at >= since,
+                               FollowUp.status.notin_(HIDDEN)).order_by(FollowUp.created_at.desc())
     )).scalars().all()
     current = [{"key": str(i.id), "title": i.title, "kind": i.kind, "status": i.status, "resolution": i.resolution,
                 "summary": (i.summary or "")[:300], "created_at": i.created_at.isoformat(), "feedback": labels.get(("followup", str(i.id)))}
@@ -189,3 +191,72 @@ async def eval_overview(session: SessionDep, user: UserDep):
     total = {t: rates(merged(t)) for t in ("ledger", "followup")}
     return {"users": sorted(rows, key=lambda r: -(r["ledger"]["labeled"] + r["current"]["labeled"])),
             "total": {"ledger": total["ledger"], "current": total["followup"]}}
+
+
+NEGATIVE = ("handled_before", "not_mine", "not_worth", "quieter", "duplicate")
+
+
+@router.get("/insights/reminders")
+async def reminder_quality(session: SessionDep, user: UserDep, days: int = 7):
+    """（管理员）提醒准不准：来自真实卡片上的反馈，只有数字。
+
+    准确率 = 提醒后处理 ÷（提醒后处理 + 提醒前已处理 + 不归我 + 不值得 + 少提醒 + 重复）；没反应的单独统计，不计入。
+    另外看每个来源新建了多少件事、多少先作为候选没有打扰（私聊过度跟踪有没有收住）。
+    """
+    from app.models import ItemFeedback
+    from app.proactive.feedback import source_of
+
+    require_admin(user)
+    days = max(1, min(days, 30))
+    since = datetime.now(UTC) - timedelta(days=days)
+    names = {u.id: u.name for u in (await session.execute(select(User))).scalars()}
+    per_user: dict = {}
+
+    def row(uid):
+        return per_user.setdefault(uid, {"user": names.get(uid, str(uid)), "pushed": 0, "feedback": {}, "no_response": 0,
+                                         "created": {}, "candidates": 0, "promoted": 0})
+
+    fb_items: set[int] = set()
+    by_source: dict = {}
+    for f in (await session.execute(select(ItemFeedback).where(ItemFeedback.created_at > since))).scalars():
+        r = row(f.user_id)
+        r["feedback"][f.outcome] = r["feedback"].get(f.outcome, 0) + 1
+        by_source.setdefault(f.source, {}).setdefault(f.outcome, 0)
+        by_source[f.source][f.outcome] += 1
+        fb_items.add(f.item_id)
+    created = (await session.execute(select(FollowUp).where(FollowUp.created_at > since))).scalars().all()
+    for item in created:
+        r = row(item.user_id)
+        source = await source_of(session, item)
+        if item.status in HIDDEN or (item.facets or {}).get("basis") == "unclear":
+            r["candidates"] += 1
+            if item.status not in HIDDEN:
+                r["promoted"] += 1  # 候选后来有了证据，转成正式事项
+            continue
+        r["created"][source] = r["created"].get(source, 0) + 1
+    pushed = (await session.execute(select(FollowUp.user_id, FollowUp.id).where(FollowUp.pushed_at > since))).all()
+    for uid, item_id in pushed:
+        r = row(uid)
+        r["pushed"] += 1
+        if item_id not in fb_items:
+            r["no_response"] += 1
+
+    def rates(counts: dict) -> dict:
+        after = counts.get("handled_after", 0)
+        negative = sum(counts.get(k, 0) for k in NEGATIVE)
+        judged = after + negative
+        return {"accuracy": round(after / judged, 3) if judged else None,
+                "late": round(counts.get("handled_before", 0) / judged, 3) if judged else None, "judged": judged}
+
+    users = [{**r, **rates(r["feedback"])} for r in per_user.values()]
+    total: dict = {}
+    for r in per_user.values():
+        for k, v in r["feedback"].items():
+            total[k] = total.get(k, 0) + v
+    return {
+        "days": days,
+        "total": {"feedback": total, **rates(total), "pushed": sum(r["pushed"] for r in users),
+                  "no_response": sum(r["no_response"] for r in users), "candidates": sum(r["candidates"] for r in users)},
+        "by_source": {s: {"feedback": c, **rates(c)} for s, c in by_source.items()},
+        "users": sorted(users, key=lambda r: -r["pushed"]),
+    }

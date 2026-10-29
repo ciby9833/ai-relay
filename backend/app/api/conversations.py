@@ -90,12 +90,14 @@ async def serialize_messages(session: AsyncSession, messages: list[Message]) -> 
                 items.append({"id": message.id, "role": "user", "text": text, "created_at": message.created_at.isoformat()})
             elif any(b.get("meta") == "event" for b in blocks):
                 # 后台事件：结束上一条助手消息的合并，让主动发言单独成条
-                items.append({"id": message.id, "role": "event"})
+                notice = next((b.get("notice") for b in blocks if b.get("meta") == "event"), None)
+                items.append({"id": message.id, "role": "event", "notice": notice})
             continue
         if not items or items[-1]["role"] != "assistant":
             items.append({
                 "id": message.id, "role": "assistant", "text": "", "steps": [], "cards": [],
                 "created_at": message.created_at.isoformat(), "proactive": bool(items) and items[-1]["role"] == "event",
+                "notice": items[-1].get("notice") if items and items[-1]["role"] == "event" else None,
             })
         item = items[-1]
         text = "\n\n".join(b["text"] for b in blocks if b["type"] == "text" and b["text"])

@@ -219,6 +219,9 @@ export interface EvalItem {
   feedback: EvalFeedbackValue | null;
 }
 
+/** 卡片上的反馈：已处理，或“不用跟了”的原因 */
+export type ItemOutcome = "handled" | "handled_before" | "not_mine" | "not_worth" | "quieter" | "duplicate";
+
 export interface EvalData {
   enrolled: boolean;
   status: "not_started" | "queued" | "running" | "live";
@@ -292,9 +295,46 @@ export interface ThreadMessage {
   steps?: string[];
   cards?: Card[];
   proactive?: boolean;
+  /** Relay 主动发的提醒（interrupt）、汇总（digest）、简报（brief）：对话里只显示一行，内容在待处理 / 进展 */
+  notice?: "interrupt" | "digest" | "brief" | null;
   created_at?: string;
   error?: string;
   pending?: boolean;
+}
+
+export interface ReminderRates { accuracy: number | null; late: number | null; judged: number }
+export interface ReminderQuality {
+  days: number;
+  total: ReminderRates & { feedback: Record<string, number>; pushed: number; no_response: number; candidates: number };
+  by_source: Record<string, ReminderRates & { feedback: Record<string, number> }>;
+  users: (ReminderRates & { user: string; pushed: number; no_response: number; candidates: number; promoted: number;
+    feedback: Record<string, number>; created: Record<string, number> })[];
+}
+
+export interface MeetingSource { kind: string; title: string; url: string | null; why: string }
+export interface Meeting {
+  id: number;
+  title: string;
+  start: string | null;
+  end: string | null;
+  all_day: boolean;
+  location: string | null;
+  meeting_url: string | null;
+  url: string | null;
+  rsvp: string | null;
+  organizer: string | null;
+  attendees: string[];
+  prep: { text: string; sources: MeetingSource[]; generated_at: string; worth_pushing: boolean } | null;
+  minutes: { url: string; title: string; summary: string; actions: number } | null;
+  minutes_missing: boolean;
+  actions: { id: number; title: string; owner: "me" | "others"; status: string; resolution: string | null }[];
+  invitation_item_id: number | null;
+}
+export interface MeetingsData { upcoming: Meeting[]; recent: Meeting[] }
+export interface ProgressItem { id: number; title: string; kind: string; owner: "me" | "others"; status: string; resolution: string | null; closed_at: string }
+export interface ProgressData {
+  days: { date: string; items: ProgressItem[] }[];
+  notes: { kind: "digest" | "brief"; text: string; created_at: string }[];
 }
 
 export interface HomeStatus {
@@ -457,6 +497,10 @@ export const api = {
   rsvp: (signalId: number, status: "accept" | "tentative" | "decline") =>
     request<{ message: string; status: Action["status"] }>(`/signals/${signalId}/rsvp`, json("POST", { status })),
   board: () => request<Board>("/board"),
+  meetings: () => request<MeetingsData>("/meetings"),
+  prepareMeeting: (id: number) => request<Meeting>(`/meetings/${id}/prep`, { method: "POST" }),
+  progress: () => request<ProgressData>("/progress"),
+  reminderQuality: (days = 7) => request<ReminderQuality>(`/insights/reminders?days=${days}`),
   integrations: () => request<Integration[]>("/integrations"),
   createIntegration: (name: string, description: string | null) =>
     request<Integration>("/integrations", json("POST", { name, description })),
@@ -475,6 +519,7 @@ export const api = {
   itemCase: (id: number) => request<{ refs: CaseRef[] }>(`/items/${id}/case`),
   openCaseRef: (id: number, ref: string) => request<CaseContent>(`/items/${id}/case/open`, json("POST", { ref })),
   closeItem: (id: number, decision: "done" | "dismiss") => request(`/items/${id}/${decision}`, { method: "POST" }),
+  itemFeedback: (id: number, outcome: ItemOutcome) => request<{ message: string }>(`/items/${id}/feedback`, json("POST", { outcome })),
   settings: () => request<{ settings: Settings; sources: Record<string, SourceStatus> }>("/settings"),
   saveSettings: (settings: Settings) => request("/settings", json("PUT", settings)),
   evaluation: () => request<EvalData>("/eval"),

@@ -18,7 +18,7 @@ from app.feishu.client import FeishuClient
 from app.models import AttentionRule, FeishuCard, FollowUp, Mission, PendingAction, Signal, User
 from app import i18n, insights
 from app.proactive.settings import language_of
-from app.proactive import attention
+from app.proactive import attention, feedback
 from app.proactive.cards import ask
 from app.proactive.render import RSVP_LABEL
 from app.sources import approval
@@ -52,8 +52,10 @@ def panel(header: str, elements: list[dict], expanded: bool = False) -> dict:
     }
 
 
-async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expanded: bool, compact: bool = False) -> tuple[dict, str]:
-    """compact：卡片超过 30 KB 时用，只留标题、要他做什么和按钮（明细去网页或飞书看）。"""
+async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expanded: bool, compact: bool = False,
+                      asking: bool = False) -> tuple[dict, str]:
+    """compact：卡片超过 30 KB 时用，只留标题、要他做什么和按钮（明细去网页或飞书看）。
+    asking：他点了“不用跟了”，这件事的按钮换成原因选项。"""
     icon = KIND_ICON.get(item.kind, "•")
     if item.status != "open":
         line = f"✅ ~~{esc(item.title)}~~　<font color='grey'>{esc(item.resolution)}</font>"
@@ -108,11 +110,20 @@ async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expande
             fc.link("去飞书审批", insights.open_link(item, "feishu"), "primary") if native_approval
             else fc.link("在飞书查看", insights.open_link(item, "feishu"))
         )
-    buttons.append(fc.callback(i18n.ui("done"), "item_done", item_id=item.id))
-    if item.owner == "me" and attention.quieter_match(item, signal) is not None and item.attention not in ("brief", "mute"):
-        buttons.append(fc.callback(i18n.ui("quieter"), "quieter", item_id=item.id))
+    buttons.append(fc.callback(i18n.ui("done"), "item_feedback", item_id=item.id, outcome="handled"))
+    buttons.append(fc.callback(i18n.ui("no_follow"), "item_reasons", item_id=item.id))
     elements = [fc.markdown("\n\n".join(body))] if body else []
-    elements.append(fc.button_row(buttons))
+    if asking:
+        # 原因各自独立：只结束这一件，同一张卡片上的其他事不受影响
+        quieter_ok = item.owner == "me" and attention.quieter_match(item, signal) is not None
+        reasons = [r for r in feedback.REASONS if r != "quieter" or quieter_ok]
+        elements.append(fc.markdown(f"<font color='grey'>{i18n.ui('why_no_follow')}</font>"))
+        elements.append(fc.button_row(
+            [fc.callback(feedback.label(r), "item_feedback", item_id=item.id, outcome=r) for r in reasons]
+            + [fc.callback(i18n.ui("back"), "item_reasons", item_id=item.id, off=True)]))
+        expanded = True
+    else:
+        elements.append(fc.button_row(buttons))
     return panel(header, elements, expanded), f"{header}\n" + "\n".join(body)
 
 
@@ -214,7 +225,8 @@ async def _render(
                 item = await session.get(FollowUp, card["item_id"])
                 if item is None:
                     continue
-                element, line = await _item_panel(session, item, user, expanded=total_items == 1 and not compact, compact=compact)
+                element, line = await _item_panel(session, item, user, expanded=total_items == 1 and not compact, compact=compact,
+                                                  asking=bool(card.get("asking")))
             elif card["kind"] == "event":
                 url = card.get("meeting_url")
                 join = f"　[加入会议]({url})" if url and fc._safe_host(url, hosts) else ""

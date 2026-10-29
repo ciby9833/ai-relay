@@ -15,7 +15,7 @@ from app.deps import FeishuDep, SessionDep, UserDep
 from app.home import post
 from app.llm.base import LLMError
 from app.models import AttentionRule, FollowUp, PendingAction, ScheduledTask, Signal, SourceState, User
-from app.proactive import actions, attention, cards, casefile, items
+from app.proactive import actions, attention, cards, casefile, items, feedback
 from app.proactive.engine import morning_brief, sync_sources
 from app.proactive.settings import get_settings_row, language_of, merged
 
@@ -156,20 +156,8 @@ async def board(session: SessionDep, user: UserDep):
     day_end = local_now.replace(hour=23, minute=59).astimezone(UTC)
     settings = merged((await get_settings_row(session, user)).data)
     await session.commit()
-    # Relay 在办：它接下来会主动替你做的准备和盯梢
+    # Relay 在办：它在替你盯着的事（会前准备在“会议”页面）
     relay = []
-    meetings = (await session.execute(
-        select(Signal).where(Signal.user_id == user.id, Signal.kind == "meeting", Signal.status == "scheduled",
-                             Signal.occurred_at.between(now, day_end)).order_by(Signal.occurred_at)
-    )).scalars().all()
-    for meeting in meetings:
-        if (meeting.payload or {}).get("rsvp") == "decline" or (meeting.payload or {}).get("all_day"):
-            continue
-        prep_at = meeting.occurred_at - timedelta(minutes=settings["meeting_brief_minutes"])
-        relay.append({"kind": "meeting_prep", "title": f"准备《{meeting.title}》的会前资料",
-                      "detail": f"{prep_at.astimezone(ZoneInfo(user.timezone)):%H:%M} 发给你", "at": prep_at.isoformat(),
-                      "title_ui": {"key": "board.prepare", "values": {"title": meeting.title}},
-                      "detail_ui": {"key": "board.preparedAt", "values": {"time": f"{prep_at.astimezone(ZoneInfo(user.timezone)):%H:%M}"}}})
     watching = (await session.execute(
         select(Signal).where(Signal.user_id == user.id, Signal.kind == "mention", Signal.status == "watching")
     )).scalars().all()
@@ -211,10 +199,12 @@ async def dismiss_item(item_id: int, session: SessionDep, user: UserDep):
 
 
 async def _close_item(item_id: int, decision: Literal["done", "dismiss"], session, user):
+    if decision == "done":
+        return await item_feedback(item_id, FeedbackBody(outcome="handled"), session, user)
     item = await session.get(FollowUp, item_id)
     if item is None or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="事项不存在")
-    items.close(item, "done" if decision == "done" else "dismissed", "你标记为已处理" if decision == "done" else "你说不用再跟了")
+    items.close(item, "dismissed", "你说不用再跟了")
     await insights.record(session, user, decision, item=item)
     if item.action_id:
         action = await session.get(PendingAction, item.action_id)
@@ -222,6 +212,23 @@ async def _close_item(item_id: int, decision: Literal["done", "dismiss"], sessio
             actions.cancel(action)
     await session.commit()
     return {"ok": True}
+
+
+class FeedbackBody(BaseModel):
+    outcome: Literal["handled", "handled_before", "not_mine", "not_worth", "quieter", "duplicate"]
+
+
+@router.post("/items/{item_id}/feedback")
+async def item_feedback(item_id: int, body: FeedbackBody, session: SessionDep, user: UserDep):
+    """卡片上的“已处理 / 不用跟了（原因）”：只结束这一件，记下反馈。"""
+    item = await session.get(FollowUp, item_id)
+    if item is None or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="事项不存在")
+    i18n.current.set(await language_of(session, user))
+    insights.via.set("web")
+    message = await feedback.give(session, user, item, body.outcome, "web")
+    await session.commit()
+    return {"ok": True, "message": message}
 
 
 class ApprovalBody(BaseModel):

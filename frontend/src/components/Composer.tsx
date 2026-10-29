@@ -9,14 +9,16 @@ export default function Composer({
   onSend,
   model,
   onModel,
+  draft,
 }: {
+  draft?: string;
   busy: boolean;
   placeholder: string;
   onSend: (text: string) => void;
   model: string | null;
   onModel: (model: string) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(draft ?? "");
   const [models, setModels] = useState<string[]>([]);
   const area = useRef<HTMLTextAreaElement>(null);
 

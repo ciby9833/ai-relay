@@ -6,7 +6,10 @@ import { useLocale } from "./useLocale";
 import Login from "./components/Login";
 import Drawer from "./components/panels/Drawer";
 import Evaluation from "./components/Evaluation";
-import Sidebar, { type PanelKind, type View } from "./components/Sidebar";
+import Sidebar, { PRIMARY, type PanelKind, type View } from "./components/Sidebar";
+import Inbox from "./components/Inbox";
+import MeetingsPage from "./components/MeetingsPage";
+import Progress from "./components/Progress";
 import Admin from "./components/Admin";
 import Missions from "./components/Missions";
 import Thread from "./components/Thread";
@@ -15,7 +18,7 @@ export default function App() {
   useLocale();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [view, setView] = useState<View>({ type: "home" });
+  const [view, setView] = useState<View>({ type: "inbox" });
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -95,16 +98,25 @@ export default function App() {
             <a className="btn primary" href="/api/auth/feishu/login">{t("重新登录")}</a>
           </div>
         )}
-        {view.type === "admin" && user.is_admin ? (
+        {view.type === "inbox" ? (
+          // 从事项“问 Relay”：开一段新对话，输入框里带上这件事的编号，Relay 会自动读这件事的档案，不用他重新解释
+          <Inbox onAsk={(item) => navigate({ type: "chat", id: null, draft: t("关于 #{id}《{title}》：", { id: item.id, title: item.title }) })} />
+        ) : view.type === "meetings" ? (
+          <MeetingsPage />
+        ) : view.type === "progress" ? (
+          <Progress />
+        ) : view.type === "admin" && user.is_admin ? (
           <Admin />
-        ) : view.type === "eval" ? (
+        ) : view.type === "eval" && user.is_admin ? (
           <Evaluation />
         ) : view.type === "missions" ? (
           <Missions selected={view.id} onSelect={(id) => setView({ type: "missions", id })} />
         ) : (
           <Thread
-            // 新对话拿到 id 时不能重新挂载（流式输出还在进行），所以只按视图类型区分
-            key={view.type}
+            // 新对话拿到 id 时不能重新挂载（流式输出还在进行），所以只按视图类型（和带进来的事项）区分
+            key={view.type + (view.type === "chat" ? view.draft ?? "" : "")}
+            draft={view.type === "chat" ? view.draft : undefined}
+            onNavigate={navigate}
             home={view.type === "home"}
             conversationId={view.type === "chat" ? view.id : null}
             userName={user.name}
@@ -113,6 +125,15 @@ export default function App() {
           />
         )}
       </div>
+      <nav className="tabbar" aria-label={t("主要入口")}>
+        {PRIMARY.map((entry) => (
+          <button key={entry.type} className={view.type === entry.type ? "active" : ""} aria-current={view.type === entry.type ? "page" : undefined}
+            onClick={() => navigate({ type: entry.type })}>
+            <Icon name={entry.icon as "home"} size={18} />
+            <span>{t(entry.label)}</span>
+          </button>
+        ))}
+      </nav>
       {panel && <Drawer kind={panel} onClose={() => setPanel(null)} />}
     </div>
   );

@@ -192,7 +192,12 @@ async def test_follow_up_lifecycle(monkeypatch):
         replied = (await all_items())["mail-thread:th-m1"]
         assert (replied.kind, replied.owner) == ("waiting", "others")
         assert "采购申请" in str(feishu.cards) and "客户评审" in str(feishu.cards)
-        assert any("周会" in c["header"]["title"]["content"] for c in feishu.cards)  # 会前准备
+        # 会前准备：这个周会没有议程、纪要或相关材料 → 不推送（飞书日历自己会提醒开会），准备内容记在会上，会议页能看到
+        assert not any("周会" in c["header"]["title"]["content"] for c in feishu.cards)
+        async with SessionLocal() as session:
+            weekly = (await session.execute(select(Signal).where(Signal.user_id == user_id, Signal.kind == "meeting",
+                                                                 Signal.title == "周会"))).scalars().first()
+            assert weekly.status == "notified" and "没有找到" in weekly.payload["prep"]["text"]
 
         # 新邮件：先起草，再告诉他；卡片上的按钮对应这封邮件的发送
         feishu.mail_ids = ["m2", "m1"]
