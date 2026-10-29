@@ -98,53 +98,104 @@ def chat_link(chat_id: str) -> str:
     return f"https://applink.feishu.cn/client/chat/open?openChatId={chat_id}"
 
 
-async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[str] | None = None) -> None:
-    """处理群聊和私聊里还没看过的新消息：提出新待办、判断未结事项的进展。worker 每轮调用一次。
-
-    群聊：待办归到相关的每位 Relay 用户。私聊：只归到读取它的那位用户（owner_user_id），不碰别人。
-    """
+async def housekeeping(session: AsyncSession) -> None:
     await session.execute(delete(ChatMessage).where(ChatMessage.created_at < datetime.now(UTC) - RETENTION))
     # 候选 2 天没有新证据：作废，不打扰任何人
     await session.execute(update(FollowUp).where(FollowUp.status == items.CANDIDATE, FollowUp.remind_at < datetime.now(UTC)).values(
         status=items.EXPIRED, resolution="候选：没有新进展，没有进入跟踪", closed_at=datetime.now(UTC)))
+    await session.commit()
+
+
+async def pending_batches(session: AsyncSession, only_chats: list[str] | None = None) -> list[tuple]:
+    """有未处理新消息的会话（群聊按群，私聊按“群 + 读取它的人”）。"""
     pending = select(ChatMessage.chat_id, ChatMessage.owner_user_id).where(ChatMessage.processed.is_(False)).distinct()
     if only_chats is not None:
         pending = pending.where(ChatMessage.chat_id.in_(only_chats))
-    batches = list((await session.execute(pending)).all())
+    return list((await session.execute(pending)).all())
+
+
+async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[str] | None = None) -> int:
+    """处理群聊和私聊里还没看过的新消息：提出新待办、判断未结事项的进展。按会话一批一批处理，每批单独提交。
+
+    群聊：待办归到相关的每位 Relay 用户。私聊：只归到读取它的那位用户（owner_user_id），不碰别人。
+    """
+    await housekeeping(session)
     users = {u.feishu_open_id: u for u in (await session.execute(select(User))).scalars()}
+    done = 0
+    for chat_id, owner_id in await pending_batches(session, only_chats):
+        done += await extract_one(session, chat_id, owner_id, users)
+    return done
+
+
+async def extract_parallel(feishu: FeishuClient, concurrency: int = 3) -> int:
+    """worker 的聊天提取循环用：多个会话并行处理，每个会话一个独立的数据库会话。返回处理了几批。"""
+    import asyncio
+
+    from app.db import SessionLocal
+
+    async with SessionLocal() as session:
+        await housekeeping(session)
+        batches = await pending_batches(session)
+    gate = asyncio.Semaphore(concurrency)
+
+    async def one(chat_id, owner_id) -> int:
+        async with gate, SessionLocal() as session:
+            try:
+                users = {u.feishu_open_id: u for u in (await session.execute(select(User))).scalars()}
+                return await extract_one(session, chat_id, owner_id, users)
+            except Exception:  # noqa: BLE001 - 一个会话出错不影响别的会话
+                logger.exception("提取聊天内容失败 %s", chat_id)
+                await session.rollback()
+                return 0
+
+    return sum(await asyncio.gather(*(one(c, o) for c, o in batches)))
+
+
+async def extract_one(session: AsyncSession, chat_id: str, owner_id, users: dict) -> int:
+    """处理一个会话的一批新消息并提交。涉及的人的主流程正在跑时先跳过（返回 0，消息保持未处理，下一轮再来）。"""
+    from app import locks
+
     by_name = {u.name: u for u in users.values()}
-    for chat_id, owner_id in batches:
-        owner = next((u for u in users.values() if u.id == owner_id), None) if owner_id else None
-        same_chat = (ChatMessage.chat_id == chat_id) & (
-            ChatMessage.owner_user_id == owner_id if owner_id else ChatMessage.owner_user_id.is_(None))
-        new = list((await session.execute(
-            select(ChatMessage).where(same_chat, ChatMessage.processed.is_(False))
-            .order_by(ChatMessage.created_at, ChatMessage.id).limit(BATCH)
-        )).scalars())
-        earlier = list((await session.execute(
-            select(ChatMessage).where(same_chat, ChatMessage.processed.is_(True))
-            .order_by(ChatMessage.created_at.desc()).limit(CONTEXT)
-        )).scalars())[::-1]
-        for message in new:
-            message.processed = True
-        # 这个会话里还没结的事（等别人回复、别人让他做的事）：新消息可能就是进展，要一起判断
-        open_query = select(FollowUp).where(FollowUp.status.in_((items.OPEN, items.CANDIDATE)), FollowUp.url == chat_link(chat_id),
-                                            or_(FollowUp.key.like("chat:%"), FollowUp.key.like("mention:%")))
-        if owner is not None:
-            open_query = open_query.where(FollowUp.user_id == owner.id)
-        open_items = list((await session.execute(open_query)).scalars())
-        involved = {m.sender_open_id for m in new} | {x.get("open_id") for m in new for x in m.mentions}
-        if owner is None and not involved & set(users) and not open_items:
-            continue  # 群里这段新消息和任何 Relay 用户都无关，也没有在等这个群里的答复
-        # 同一件事可能是在别的渠道提起的（邮件里要他确认的事，私聊里补充进展）：同一个人、说到同样的事的未结事项也拿来对照
-        text = "\n".join(m.text for m in new)
-        speakers = {m.sender_name for m in new if m.sender_name} | {m.chat_name.removeprefix("和 ").removesuffix(" 的私聊")
-                                                                   for m in new if owner and m.chat_name}
-        for person in ([owner] if owner else [u for u in users.values() if u.feishu_open_id in involved]):
-            open_items += await items.related_open_items(session, person, text, speakers - {person.name},
-                                                         exclude={i.id for i in open_items}, limit=3)
-        await _process(session, chat_id, new, earlier, open_items, users, by_name, owner)
+    owner = next((u for u in users.values() if u.id == owner_id), None) if owner_id else None
+    same_chat = (ChatMessage.chat_id == chat_id) & (
+        ChatMessage.owner_user_id == owner_id if owner_id else ChatMessage.owner_user_id.is_(None))
+    new = list((await session.execute(
+        select(ChatMessage).where(same_chat, ChatMessage.processed.is_(False))
+        .order_by(ChatMessage.created_at, ChatMessage.id).limit(BATCH)
+    )).scalars())
+    if not new:
+        return 0
+    earlier = list((await session.execute(
+        select(ChatMessage).where(same_chat, ChatMessage.processed.is_(True))
+        .order_by(ChatMessage.created_at.desc()).limit(CONTEXT)
+    )).scalars())[::-1]
+    # 这个会话里还没结的事（等别人回复、别人让他做的事）：新消息可能就是进展，要一起判断
+    open_query = select(FollowUp).where(FollowUp.status.in_((items.OPEN, items.CANDIDATE)), FollowUp.url == chat_link(chat_id),
+                                        or_(FollowUp.key.like("chat:%"), FollowUp.key.like("mention:%")))
+    if owner is not None:
+        open_query = open_query.where(FollowUp.user_id == owner.id)
+    open_items = list((await session.execute(open_query)).scalars())
+    involved = {m.sender_open_id for m in new} | {x.get("open_id") for m in new for x in m.mentions}
+    people = [owner] if owner else [u for u in users.values() if u.feishu_open_id in involved]
+    # 涉及的人的事项可能正被他的主流程改：拿不到锁就先不处理这批
+    if not await locks.try_users_in_transaction(session, [p.id for p in people] + [i.user_id for i in open_items]):
+        await session.rollback()
+        return 0
+    for message in new:
+        message.processed = True
+    if owner is None and not involved & set(users) and not open_items:
+        await session.commit()
+        return 1  # 群里这段新消息和任何 Relay 用户都无关，也没有在等这个群里的答复
+    # 同一件事可能是在别的渠道提起的（邮件里要他确认的事，私聊里补充进展）：同一个人、说到同样的事的未结事项也拿来对照
+    text = "\n".join(m.text for m in new)
+    speakers = {m.sender_name for m in new if m.sender_name} | {m.chat_name.removeprefix("和 ").removesuffix(" 的私聊")
+                                                               for m in new if owner and m.chat_name}
+    for person in people:
+        open_items += await items.related_open_items(session, person, text, speakers - {person.name},
+                                                     exclude={i.id for i in open_items}, limit=3)
+    await _process(session, chat_id, new, earlier, open_items, users, by_name, owner)
     await session.commit()
+    return 1
 
 
 async def _process(session, chat_id, new, earlier, open_items, users, by_name, owner) -> None:

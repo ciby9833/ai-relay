@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     triage_model: str = ""
     # 轻量模型：读附件、文件后提取要点这类量大但简单的活；留空且配了 Gemini 时用 gemini-3.5-flash-lite，否则用主动流程的模型
     light_model: str = ""
+    # worker 并行度：同时跑几个用户的主流程、几个会话的聊天提取（受模型限流和数据库连接数约束）
+    worker_concurrency: int = 6
+    chat_concurrency: int = 3
+    db_pool_size: int = 10
+    db_max_overflow: int = 10  # 4 个进程各最多 20 条，合计 80，低于 Postgres 默认的 100
 
     # Optional observability; no dependency on the monitoring stack for business requests.
     monitoring_enabled: bool = False
