@@ -11,6 +11,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.feishu.client import FeishuClient, FeishuError
@@ -110,12 +111,13 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
             if exists:
                 continue
             name = user.name if m["sender"] == user.feishu_open_id else (await feishu.user_name(m["sender"]) or "对方")
-            session.add(ChatMessage(
+            # 两个 Relay 用户互相私聊时，两边的同步可能同时读到同一条：已经存在就跳过（并行时先查再插不够，要靠数据库去重）
+            inserted = await session.execute(insert(ChatMessage).values(
                 message_id=m["message_id"], chat_id=chat_id, chat_name=f"和 {await feishu.user_name(other) or '同事'} 的私聊",
                 sender_open_id=m["sender"], sender_name=name, text=m["text"][:4000], mentions=m.get("mentions") or [],
-                owner_user_id=user.id, created_at=m["at"], parent_message_id=m.get("parent_id"),
-            ))
-            created += 1
+                owner_user_id=user.id, created_at=m["at"], parent_message_id=m.get("parent_id"), processed=False,
+            ).on_conflict_do_nothing(index_elements=["message_id"]))
+            created += inserted.rowcount or 0
         seen[chat_id] = newest.isoformat()
     cursor["seen"] = seen
     state.cursor = cursor
