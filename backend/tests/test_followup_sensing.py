@@ -58,7 +58,7 @@ async def test_reply_that_settles_it_closes_the_item(monkeypatch):
 
     async def settled(system, prompt, tool):
         assert "Joining now" in prompt and "Will you be attending" in prompt
-        return {"needs_response": False, "summary": "你确认了现在参会"}
+        return {"state": "done", "summary": "你确认了现在参会"}
 
     monkeypatch.setattr(llm, "complete_structured", settled)
     async with SessionLocal() as session:
@@ -95,7 +95,7 @@ async def test_reply_that_asks_back_waits_then_only_a_real_answer_closes_it(monk
     from app.proactive import items, llm
 
     judge = Judge(
-        {"needs_response": True, "summary": "等 Zorvan 确认改到周三"},  # 他问能不能改期
+        {"state": "waiting", "summary": "等 Zorvan 确认改到周三"},  # 他问能不能改期
         {"verdict": "unrelated", "evidence": "Zorvan 发来的是周报，和改期无关"},  # 另一个线程：无关
         {"verdict": "committed", "evidence": "Zorvan 说明天上午确认", "due": "2026-10-21T10:00:00"},
         {"verdict": "done", "evidence": "Zorvan 发来周三的会议邀请"},

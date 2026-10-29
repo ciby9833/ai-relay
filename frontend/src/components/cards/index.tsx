@@ -1,7 +1,7 @@
 import { localize, t } from "../../i18n";
 import { useEffect, useRef, useState } from "react";
 import { api, type Action, type Card, type FollowUp, type ItemOutcome, type MissionData } from "../../api";
-import { dayLabel, timeOf, monthOf, listOf } from "../../format";
+import { dayLabel, timeOf, monthOf, listOf, relative } from "../../format";
 import Icon, { RelayMark } from "../Icon";
 import AppCard, { Badge } from "./AppCard";
 import Materials from "./Materials";
@@ -510,6 +510,16 @@ export function ItemCard({ item, onChanged, compact, onClosed }: {
       </p>
       {item.summary && <p className="card-text">{item.summary}</p>}
       {item.context && contextLine(item.context) && <p className="muted small mail-context">📎 {contextLine(item.context)}</p>}
+      {!compact && (item.evidence?.length ?? 0) > 1 && (
+        <details className="evidence">
+          <summary>{t("进展依据（{count} 条）", { count: item.evidence!.length })}</summary>
+          <ol>
+            {item.evidence!.map((e, n) => (
+              <li key={n}><span className="badge">{t(e.channel)}</span> <span className="muted small">{relative(e.at)}</span> {e.text}</li>
+            ))}
+          </ol>
+        </details>
+      )}
       {item.detail.length > 0 && (
         <details className="detail-fields" open={!compact || item.detail.length <= 5}>
           <summary>{t("申请内容")}</summary>
@@ -770,6 +780,9 @@ function FileCard({ card: initial }: Props<"file">) {
       {working && <p className="muted small">{t("在后台做，做完会在飞书里告诉你；可以先去做别的。")}</p>}
       {card.status === "failed" && <p className="card-error">{card.error}</p>}
       {card.verified?.detail && <p className="muted small">{card.verified.detail}</p>}
+      {!working && card.status !== "failed" && (card.sources?.length
+        ? <p className="muted small">{t("数据来源")}：{card.sources.join("；")}</p>
+        : card.sources && <p className="muted small">{t("没有注明数据来源：数据和结论还没有核实")}</p>)}
       {card.drive?.verified?.detail && <p className="muted small">{t("云空间")}：{card.drive.verified.detail}</p>}
     </AppCard>
   );

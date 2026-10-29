@@ -218,12 +218,26 @@ def decide(
     return Decision("batch")
 
 
+def pushed_state(item: FollowUp) -> dict:
+    """推送时这件事的状态快照：之后据此判断是“同一状态又有动静”（原地更新）还是“状态变了要再说”。"""
+    return {"owner": item.owner, "kind": item.kind, "importance": item.importance,
+            "due": item.due_at.isoformat() if item.due_at else None}
+
+
 def is_repeat(item: FollowUp, now: datetime | None = None) -> bool:
-    """为这件事发过卡片、又有了新动静（对方又来一封、事件又更新）：原地更新那张卡片就够了。升级成紧急的除外。"""
+    """为这件事发过卡片、又有了新动静（对方又来一封、事件又更新）：原地更新那张卡片就够了。
+    状态真的变了要再说：升级成紧急 / 新的阻塞，从“等对方”变回“要你处理”，截止时间提前了。"""
     now = now or datetime.now(UTC)
     if item.pushed_at is None or now - item.pushed_at >= REPEAT_COOLDOWN:
         return False
-    return not (item.importance == "urgent" and item.pushed_importance != "urgent")
+    if item.importance == "urgent" and item.pushed_importance != "urgent":
+        return False
+    before = (item.facets or {}).get("pushed_state") or {}
+    if before.get("owner") == "others" and item.owner == "me":
+        return False  # 球回到他这里了（对方回了、要他确认）
+    if item.due_at and before.get("due") and item.due_at < datetime.fromisoformat(before["due"]):
+        return False  # 截止时间提前了
+    return True
 
 
 async def rules_for(session: AsyncSession, user: User, status: str | None = "active") -> list[AttentionRule]:

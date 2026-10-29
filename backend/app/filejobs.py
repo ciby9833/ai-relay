@@ -30,7 +30,7 @@ UPLOAD_LIMIT = 20 * 1024 * 1024  # 飞书一次上传的上限
 def card(record: GeneratedFile, size: int | None = None) -> dict:
     return {"kind": "file", "file_id": str(record.id), "filename": record.filename, "file_kind": record.kind,
             "size": size or 0, "verified": record.verified or {}, "status": record.status, "stage": record.stage,
-            "drive": record.drive, "error": record.error}
+            "drive": record.drive, "error": record.error, "sources": (record.spec or {}).get("sources") or []}
 
 
 async def start(session: AsyncSession, feishu: FeishuClient, user: User, kind: str, filename: str, spec: dict,

@@ -140,7 +140,8 @@ async def test_follow_up_lifecycle(monkeypatch):
 
     async def fake_structured(system, prompt, tool):
         return {"importance": "urgent", "notify_now": True, "needs_reply": True, "action_type": "reply",
-                "due": "today", "summary": "客户要求今天确认报价", "reason": "客户催办且与你负责的线路相关"}
+                "due": "today", "summary": "客户要求今天确认报价", "reason": "客户催办且与你负责的线路相关",
+                "why_me": "客户直接问他负责的线路报价", "ask": "确认报价并回复客户", "when": "今天内"}
 
     async def fake_text(system, prompt):
         return "您好，报价【待确认：价格】今天内回复。"

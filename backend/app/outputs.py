@@ -101,7 +101,7 @@ def check_xlsx(data: bytes, sheets: list[dict]) -> dict:
     if extra:
         problems.append("多出工作表：" + "、".join(extra))
     summary = "；".join(f"《{s.get('name')}》{len(s.get('rows') or [])} 行" for s in sheets)
-    return {"ok": not problems, "detail": (f"重新打开文件核对了 {len(sheets)} 个工作表、{cells} 个单元格，与要求一致（{summary}）"
+    return {"ok": not problems, "detail": (f"重新打开文件核对了 {len(sheets)} 个工作表、{cells} 个单元格，与要求一致（{summary}）。这只说明文件写对了，数据和结论需按来源核实"
                                             if not problems else "核对不一致：" + "；".join(problems[:6]))}
 
 
@@ -194,7 +194,7 @@ def check_pptx(data: bytes, slides: list[dict], title: str | None = None) -> dic
                         if r >= len(t.rows) or c >= len(t.columns) or t.cell(r, c).text != _norm(value):
                             problems.append(f"第 {page} 页表格第 {r + 1} 行第 {c + 1} 列不一致")
                             break
-    return {"ok": not problems, "detail": (f"重新打开文件核对了 {len(actual)} 页的标题、要点和表格，与要求一致"
+    return {"ok": not problems, "detail": (f"重新打开文件核对了 {len(actual)} 页的标题、要点和表格，与要求一致。这只说明文件写对了，数据和结论需按来源核实"
                                             if not problems else "核对不一致：" + "；".join(problems[:6]))}
 
 
@@ -268,7 +268,7 @@ def check_docx(data: bytes, title: str | None, sections: list[dict]) -> dict:
                 if r >= len(have.rows) or c >= len(have.columns) or have.cell(r, c).text != _norm(value):
                     problems.append(f"第 {n} 张表第 {r + 1} 行第 {c + 1} 列不一致")
                     break
-    return {"ok": not problems, "detail": (f"重新打开文件核对了 {len(expected)} 段文字和 {len(tables)} 张表，与要求一致"
+    return {"ok": not problems, "detail": (f"重新打开文件核对了 {len(expected)} 段文字和 {len(tables)} 张表，与要求一致。这只说明文件写对了，数据和结论需按来源核实"
                                             if not problems else "核对不一致：" + "；".join(problems[:6]))}
 
 

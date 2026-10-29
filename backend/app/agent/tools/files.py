@@ -51,6 +51,8 @@ SECTION = {
     },
     "additionalProperties": False,
 }
+SOURCES = {"sources": {"type": "array", "items": {"type": "string"}, "maxItems": 20,
+                       "description": "数据和结论来自哪里（哪封邮件、哪张表、哪个群、哪份纪要，带时间），会写在文件卡片上给他核实"}}
 DRIVE = {
     "save_to_drive": {"type": "boolean", "description": "他明确要求存进飞书云空间时为 true（存进他本人的“我的空间”，或 folder_url 指定的文件夹）"},
     "folder_url": {"type": "string", "description": "要存进的飞书文件夹链接（可选）"},
@@ -89,8 +91,11 @@ async def _make(ctx: ToolContext, kind: str, filename: str, spec: dict, args: di
             sent = f"（飞书发送失败：{exc}，可以在网页下载）"
     verified = record.verified
     check = "核对通过" if verified["ok"] else "⚠️ 核对不一致"
+    sources = spec.get("sources") or []
     return (f"已生成《{record.filename}》（{len(data) // 1024 + 1} KB，文件编号 {record.id}）{sent}。{check}：{verified['detail']}。"
-            "告诉用户文件已生成和核对结果；不一致时说明哪里不对。他要存进飞书云空间时用 save_file_to_drive。")
+            "注意：这个核对只说明文件内容和要写的一致，不说明原始数据和分析结论已经核实。告诉用户时要分开说："
+            "文件写对了没有；数据和结论来自哪里" + (f"（{'；'.join(sources)}）" if sources else "（没有注明来源，要提醒他数据未核实）")
+            + "、哪些是推断需要他确认。他要存进飞书云空间时用 save_file_to_drive。")
 
 
 @tool(
@@ -98,11 +103,11 @@ async def _make(ctx: ToolContext, kind: str, filename: str, spec: dict, args: di
     "生成一个 Excel 文件（.xlsx）给用户：一个或多个工作表，每个有表头和数据行。数据必须来自已经查到的真实内容，不要编造；"
     "数字用数字类型，合计等可以写公式。生成后会重新打开逐格核对，结果会显示给用户。",
     {"filename": {"type": "string", "description": "文件名，不含扩展名"},
-     "sheets": {"type": "array", "minItems": 1, "maxItems": 10, "items": SHEET}, **DRIVE},
+     "sheets": {"type": "array", "minItems": 1, "maxItems": 10, "items": SHEET}, **DRIVE, **SOURCES},
     ["filename", "sheets"],
 )
 async def create_excel_file(ctx: ToolContext, args: dict) -> str:
-    return await _make(ctx, "xlsx", args["filename"], {"sheets": args["sheets"]}, args)
+    return await _make(ctx, "xlsx", args["filename"], {"sheets": args["sheets"], "sources": args.get("sources") or []}, args)
 
 
 @tool(
@@ -111,11 +116,12 @@ async def create_excel_file(ctx: ToolContext, args: dict) -> str:
     "要点精炼，每页不超过 6 条。生成后会重新打开逐页核对，结果会显示给用户。",
     {"filename": {"type": "string", "description": "文件名，不含扩展名"},
      "title": {"type": "string", "description": "封面标题（可选）"},
-     "slides": {"type": "array", "minItems": 1, "maxItems": outputs.MAX_SLIDES, "items": SLIDE}, **DRIVE},
+     "slides": {"type": "array", "minItems": 1, "maxItems": outputs.MAX_SLIDES, "items": SLIDE}, **DRIVE, **SOURCES},
     ["filename", "slides"],
 )
 async def create_ppt_file(ctx: ToolContext, args: dict) -> str:
-    return await _make(ctx, "pptx", args["filename"], {"title": args.get("title"), "slides": args["slides"]}, args)
+    return await _make(ctx, "pptx", args["filename"], {"title": args.get("title"), "slides": args["slides"],
+                                                      "sources": args.get("sources") or []}, args)
 
 
 @tool(
@@ -124,11 +130,12 @@ async def create_ppt_file(ctx: ToolContext, args: dict) -> str:
     "内容必须来自已经查到的真实材料，不要编造；不知道的写【待确认】。生成后会重新打开逐段核对，结果会显示给用户。",
     {"filename": {"type": "string", "description": "文件名，不含扩展名"},
      "title": {"type": "string", "description": "文档标题（可选）"},
-     "sections": {"type": "array", "minItems": 1, "maxItems": outputs.MAX_SECTIONS, "items": SECTION}, **DRIVE},
+     "sections": {"type": "array", "minItems": 1, "maxItems": outputs.MAX_SECTIONS, "items": SECTION}, **DRIVE, **SOURCES},
     ["filename", "sections"],
 )
 async def create_word_file(ctx: ToolContext, args: dict) -> str:
-    return await _make(ctx, "docx", args["filename"], {"title": args.get("title"), "sections": args["sections"]}, args)
+    return await _make(ctx, "docx", args["filename"], {"title": args.get("title"), "sections": args["sections"],
+                                                      "sources": args.get("sources") or []}, args)
 
 
 @tool(

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     embedding_model: str = ""
     # 主动流程（邮件分级、起草、简报）用的模型，provider:model；留空用默认模型
     triage_model: str = ""
+    # 轻量模型：读附件、文件后提取要点这类量大但简单的活；留空且配了 Gemini 时用 gemini-3.5-flash-lite，否则用主动流程的模型
+    light_model: str = ""
 
     # Optional observability; no dependency on the monitoring stack for business requests.
     monitoring_enabled: bool = False

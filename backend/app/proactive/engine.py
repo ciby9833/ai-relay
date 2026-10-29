@@ -44,6 +44,10 @@ TRIAGE_TOOL = {
             "due": {"type": "string", "enum": ["today", "this_week", "none"]},
             "summary": {"type": "string"},
             "reason": {"type": "string", "description": "一句话说明为什么这样判断"},
+            "ask": {"type": "string", "description": "reply / review 时必填：邮件里对他（或包括他的一群人）的具体要求（回复什么、确认什么、看什么）"},
+            "why_me": {"type": "string", "description": "为什么和他有关：谁点名要他、他负责的哪件事、他是审批/决策人……写具体依据；从邮件和往来里看不出来就留空"},
+            "responsible": {"type": "string", "enum": ["me", "unclear"], "description": "责任是不是明确在他：me 明确是他；unclear 有要求但看不出是不是归他"},
+            "when": {"type": "string", "description": "邮件里写了时间才填（原样，例如“周五前”）；没写就留空，不要猜"},
         },
         "required": ["importance", "notify_now", "needs_reply", "action_type", "due", "summary", "reason"],
         "additionalProperties": False,
@@ -157,9 +161,13 @@ async def triage(session: AsyncSession, user: User) -> None:
         position = ("收件人" if any((a.get("mail_address") or "").lower() in mine for a in mail.get("to_addresses") or [])
                     else "只在抄送里" if any((a.get("mail_address") or "").lower() in mine for a in mail.get("cc_addresses") or [])
                     else "不在收件人和抄送里（群发 / 邮件组）")
+        from app.proactive import casefile
+
+        earlier = await casefile.thread_history(session, user, signal, limit=3)
         prompt = (
             f"用户：{user.name}（{'、'.join(sorted(own)) or '邮箱未知'}）。这封信里他是：{position}。\n关于用户：\n{profile}\n\n"
-            f"<mail>\n发件人：{mail.get('from')}\n收件人：{'、'.join(mail.get('to') or [])}\n"
+            + (f"<thread>\n同一线程里之前的往来（判断这件事是不是归他）：\n" + "\n".join(earlier) + "\n</thread>\n\n" if earlier else "")
+            + f"<mail>\n发件人：{mail.get('from')}\n收件人：{'、'.join(mail.get('to') or [])}\n"
             f"抄送：{'、'.join(mail.get('cc') or [])}\n主题：{signal.title}\n\n{(signal.body or '')[:6000]}\n</mail>"
         )
         try:
@@ -168,9 +176,14 @@ async def triage(session: AsyncSession, user: User) -> None:
             logger.exception("邮件分级失败 #%s", signal.id)
             signal.status = "digest"
             continue
+        # 有明确的行动要求才进待处理；没写时间不是不用处理（时间标“未约定”），看不出是不是归他也不是不用处理（先请他确认）
+        if decision["action_type"] in ("reply", "review") and not (decision.get("ask") or "").strip():
+            decision["action_type"], decision["needs_reply"] = "fyi", False
         signal.importance = decision["importance"]
         signal.needs_reply = decision["needs_reply"] or decision["action_type"] == "reply"
-        signal.payload = {**signal.payload, "action_type": decision["action_type"], "due": decision["due"]}
+        signal.payload = {**signal.payload, "action_type": decision["action_type"], "due": decision["due"],
+                          "why_me": decision.get("why_me"), "ask": decision.get("ask"), "when": (decision.get("when") or "").strip() or None,
+                          "responsible": decision.get("responsible") or ("me" if decision.get("why_me") else "unclear")}
         signal.summary = decision["summary"]
         signal.reason = decision["reason"]
         if signal.status == "digest":

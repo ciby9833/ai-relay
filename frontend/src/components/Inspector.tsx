@@ -21,7 +21,8 @@ type Entry =
 const RSVP: Record<string, [string, string]> = {
   accept: ["已接受", "ok"], tentative: ["待定", "warn"], needs_action: ["待回复邀请", "warn"], decline: ["已拒绝", ""],
 };
-const SOURCE: Record<string, string> = { agenda: "议程", doc: "文档", minutes: "纪要", actions: "行动项", mail: "邮件", chat: "聊天" };
+const SOURCE: Record<string, string> = { agenda: "议程", doc: "文档", minutes: "纪要", actions: "行动项", mail: "邮件", chat: "聊天",
+  attachment: "附件", items: "相关事项" };
 const safe = (url: string | null | undefined) => (url && /^https:\/\//.test(url) ? url : null);
 
 function meetingContext(m: Meeting): AskContext {
@@ -39,6 +40,7 @@ function ItemRow({ item, onOpen, highlight }: { item: FollowUp; onOpen: () => vo
     <button className={`ws-row ${highlight ? "active" : ""} ${item.importance === "urgent" ? "urgent" : ""}`} onClick={onOpen}>
       <span className="ws-row-title">{item.title}</span>
       <span className="ws-row-sub">
+        {isMail(item) && <span className="row-tag">{t("邮件")}</span>}
         {item.due_at && <span className={overdue ? "due overdue" : "due"}>{dayLabel(item.due_at)} {timeOf(item.due_at)}</span>}
         {localize(item.ask_ui, item.ask)}
       </span>
@@ -129,7 +131,8 @@ function MeetingDetail({ meeting, all, work, onOpen, onAsk }: {
               <li key={n}>
                 <button className="source-row" onClick={() => onOpen({ type: "source", source: s, meeting: meeting.title })}>
                   <Icon name="doc" size={14} />
-                  <span><b>{s.title}</b><span className="muted small">{t(SOURCE[s.kind] ?? s.kind)} · {s.why}</span></span>
+                  <span><b>{s.title}</b><span className="muted small">{t(SOURCE[s.kind] ?? s.kind)} · {s.why}</span>
+                    {s.access && s.access !== "ok" && <span className="badge warn">{s.access === "denied" ? t("没有权限，没用到") : t("读取失败，没用到")}</span>}</span>
                   <Icon name="chevron" size={13} />
                 </button>
               </li>
@@ -226,8 +229,9 @@ export default function Inspector({ work, view, focus, onClose, onAsk }: {
 
   const todoList = () => {
     if (!board) return null;
-    const me = board.me.filter((i) => !isMail(i));
-    const others = board.others.filter((i) => !isMail(i));
+    // 待处理是跨渠道的完整清单：邮件里要他推进的事也在这里（和“邮件”里是同一件事、同一个状态）
+    const me = board.me;
+    const others = board.others;
     const sections: [string, FollowUp[]][] = [
       [t("现在要处理"), me.filter(isNow)], [t("需要你"), me.filter((i) => !isNow(i))], [t("在等对方"), others],
     ];

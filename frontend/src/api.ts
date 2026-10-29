@@ -105,7 +105,7 @@ export interface MissionData {
 export type Card =
   | { kind: "file"; file_id: string; filename: string; file_kind: "xlsx" | "pptx" | "docx"; size: number;
       verified: { ok?: boolean | null; detail?: string }; status?: "queued" | "running" | "done" | "failed"; stage?: string | null;
-      drive?: { url: string; verified?: { ok: boolean; detail: string } } | null; error?: string | null }
+      drive?: { url: string; verified?: { ok: boolean; detail: string } } | null; error?: string | null; sources?: string[] }
   | {
       kind: "mail";
       signal_id: number;
@@ -181,6 +181,8 @@ export interface FollowUp {
   context?: { thread: number; attachments: string[]; links: number; meeting: string | null } | null;
   mail_id?: number | null;
   is_mail?: boolean;
+  /** 这件事每一次进展的依据（邮件、聊天、会议纪要……各自保留） */
+  evidence?: { channel: string; at: string; text: string }[];
 }
 
 export interface CaseRef {
@@ -324,7 +326,7 @@ export interface ReminderQuality {
     feedback: Record<string, number>; created: Record<string, number> })[];
 }
 
-export interface MeetingSource { kind: string; title: string; url: string | null; why: string }
+export interface MeetingSource { kind: string; title: string; url: string | null; why: string; access?: "ok" | "failed" | "denied" }
 export interface Meeting {
   id: number;
   title: string;

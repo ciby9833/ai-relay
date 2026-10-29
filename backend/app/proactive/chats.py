@@ -76,9 +76,10 @@ TASKS_TOOL = {
                     "type": "object",
                     "properties": {
                         "item_id": {"type": "integer"},
-                        "verdict": {"type": "string", "enum": ["done", "committed", "track"],
+                        "verdict": {"type": "string", "enum": ["done", "committed", "track", "same"],
                                     "description": "done=已经办完/给出了这件事要的结果（或者不需要了）；committed=答应了、给了完成时间但还没办完；"
-                                                   "track=只用于标了（候选）的事：新消息表明这确实是要跟进的事"},
+                                                   "track=只用于标了（候选）的事：新消息表明这确实是要跟进的事；"
+                                                   "same=又提了一次这件事（例如邮件里提过、现在在聊天里重复），没有新进展"},
                         "evidence": {"type": "string", "description": "哪条消息、说了什么，一句话"},
                         "due": {"type": "string", "description": "committed 时：答应的完成时间，ISO 8601（按 <now> 换算）；说不出具体时间就留空"},
                     },
@@ -135,6 +136,13 @@ async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[
         involved = {m.sender_open_id for m in new} | {x.get("open_id") for m in new for x in m.mentions}
         if owner is None and not involved & set(users) and not open_items:
             continue  # 群里这段新消息和任何 Relay 用户都无关，也没有在等这个群里的答复
+        # 同一件事可能是在别的渠道提起的（邮件里要他确认的事，私聊里补充进展）：同一个人、说到同样的事的未结事项也拿来对照
+        text = "\n".join(m.text for m in new)
+        speakers = {m.sender_name for m in new if m.sender_name} | {m.chat_name.removeprefix("和 ").removesuffix(" 的私聊")
+                                                                   for m in new if owner and m.chat_name}
+        for person in ([owner] if owner else [u for u in users.values() if u.feishu_open_id in involved]):
+            open_items += await items.related_open_items(session, person, text, speakers - {person.name},
+                                                         exclude={i.id for i in open_items}, limit=3)
         await _process(session, chat_id, new, earlier, open_items, users, by_name, owner)
     await session.commit()
 
@@ -145,7 +153,9 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
     lines = [f"（之前）{m.sender_name or '某人'}{replied.get(m.message_id, '')}：{m.text}" for m in earlier]
     lines += [f"[{i}] {m.created_at.astimezone(tz):%m-%d %H:%M} {m.sender_name or '某人'}{replied.get(m.message_id, '')}：{m.text}"
               for i, m in enumerate(new)]
-    pending = "\n".join(f"[#{i.id}]" + ("（候选）" if i.status == items.CANDIDATE else "") + f" {i.title}"
+    here = chat_link(chat_id)
+    pending = "\n".join(f"[#{i.id}]" + ("（候选）" if i.status == items.CANDIDATE else "")
+                        + ("" if i.url == here else f"（来自{items.channel_of(i)}）") + f" {i.title}"
                         + (f"（{i.summary}）" if i.summary else "") for i in open_items)
     if owner:
         # 私聊只有两个人：告诉模型是谁和谁，否则“你帮我……”里的“你”对应不到人名
@@ -179,6 +189,10 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
         item = by_id.get(change.get("item_id"))
         if item is not None and item.status == items.CANDIDATE:
             settle_candidate(item, change)
+        elif item is not None and item.status == "open" and change.get("verdict") == "same":
+            # 又提了一次同一件事（换个渠道、没有新进展）：只记下依据，不另建
+            items.add_evidence(item, "私聊" if owner else "群聊", clean_evidence(change.get("evidence") or ""))
+            item.updated_at = datetime.now(UTC)
         elif item is not None and item.status == "open" and change.get("verdict") != "track":
             await apply_progress(session, item, change, next((u for u in users.values() if u.id == item.user_id), None))
     # 有一件办完了：同一个会话里、同一个人的其他未结事项，再单独对照这些新消息判断一次。
@@ -364,6 +378,7 @@ def clean_evidence(text: str) -> str:
 async def apply_progress(session: AsyncSession, item: FollowUp, change: dict, user: User | None) -> None:
     """对方有了实质进展：办完了就结束；答应了时间就改成到那个时间再核实。两种都告诉他。"""
     evidence = clean_evidence(change.get("evidence") or "")
+    items.add_evidence(item, "聊天", evidence)
     if change.get("verdict") == "done":
         items.close(item, "done", f"有了结果：{evidence}".rstrip("："))
         note = f"{item.title.removeprefix('等 ')} —— 已有结果：{evidence}"
@@ -376,7 +391,7 @@ async def apply_progress(session: AsyncSession, item: FollowUp, change: dict, us
                     due = due.replace(tzinfo=ZoneInfo(user.timezone))
             except ValueError:
                 due = None
-        item.summary = f"对方答应了：{evidence}"
+        item.summary = f"{'你答应了' if item.owner == 'me' else '对方答应了'}：{evidence}"
         if due is not None:
             item.due_at, item.remind_at = due, due
             item.next_step = "Relay 会在答应的时间核实有没有完成"

@@ -2255,5 +2255,29 @@ export const messages: Record<string, readonly [string, string]> = {
   "稍后重试": [
     "Retrying soon",
     "Coba lagi nanti"
+  ],
+  "数据来源": [
+    "Data sources",
+    "Sumber data"
+  ],
+  "没有注明数据来源：数据和结论还没有核实": [
+    "No data sources noted: the data and conclusions haven't been verified",
+    "Sumber data tidak dicatat: data dan kesimpulan belum diverifikasi"
+  ],
+  "进展依据（{count} 条）": [
+    "Evidence ({count})",
+    "Bukti ({count})"
+  ],
+  "相关事项": [
+    "Related items",
+    "Hal terkait"
+  ],
+  "没有权限，没用到": [
+    "No access — not used",
+    "Tanpa akses — tidak dipakai"
+  ],
+  "读取失败，没用到": [
+    "Couldn't read — not used",
+    "Gagal dibaca — tidak dipakai"
   ]
 };

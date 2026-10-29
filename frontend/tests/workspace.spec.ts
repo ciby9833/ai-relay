@@ -13,7 +13,9 @@ const mailDraft = { id: 31, kind: "send_mail", summary: "回复 Sari：Medan 延
   subject: "Re: Medan 延误复盘", body: "大家好，方案周五前发出。", rsvp: null, reply_all: true, others: ["Budi", "Kange"], to_extra: ["Budi"], cc: ["Kange"],
   reply_all_why: "原邮件发给了几个人，问的是大家的事", references: ["附件《方案.xlsx》"] };
 const mailItem = item(21, "回复 Sari：Medan 延误复盘", { kind: "reply", is_mail: true, mail_id: 77, action: mailDraft, ask: "确认回复",
-  context: { thread: 2, attachments: ["方案.xlsx"], links: 1, meeting: "Medan 运营周会" } });
+  context: { thread: 2, attachments: ["方案.xlsx"], links: 1, meeting: "Medan 运营周会" },
+  evidence: [{ channel: "邮件", at: now.toISOString(), text: "Sari：请确认改善方案" },
+    { channel: "聊天", at: now.toISOString(), text: "你答应了：明天给 Sari" }] });
 const board = {
   me: [mailItem, item(1, "Callesya 让你：把 21 号盘点报表发给她", { due_at: later }), item(2, "看一下 客户A 的周报"),
     item(11, "Ricky：新功能申请", { kind: "approval", ask: "审批" }), item(12, "Gray：新功能申请", { kind: "approval", ask: "审批" })],
@@ -25,7 +27,8 @@ const meetings = {
     id: 9, title: "Medan 运营周会", start: later, all_day: false, location: "3F", meeting_url: "https://vc.feishu.cn/j/1", url: null,
     rsvp: "needs_action", organizer: "Sari", attendees: ["Budi"], minutes: null, minutes_missing: false, invitation_item_id: null,
     end: new Date(new Date(later).getTime() + 3600_000).toISOString(), prep: { text: "**为什么开这个会** 复盘 Medan 延误【议程】\n\n**还没解决的问题** Budi 的延误原因还没查完【行动项】", generated_at: now.toISOString(), worth_pushing: true,
-      sources: [{ kind: "agenda", title: "会议描述 / 议程", url: null, why: "写在日程里的" }, { kind: "actions", title: "这个系列以前的会留下的行动项", url: null, why: "同一个系列的会" }] },
+      sources: [{ kind: "agenda", title: "会议描述 / 议程", url: null, why: "写在日程里的" }, { kind: "actions", title: "这个系列以前的会留下的行动项", url: null, why: "同一个系列的会" },
+        { kind: "attachment", title: "附件《内部名单.xlsx》", url: null, why: "标题写明这个会的邮件里的附件", access: "denied" }] },
     actions: [{ id: 5, title: "等 Budi：查延误原因", owner: "others", status: "open", resolution: null }],
   }],
   recent: [{
@@ -66,7 +69,8 @@ async function mockApi(page: Page) {
     if (path === "/api/signals/77/forward") return route.fulfill({ json: { id: 41, kind: "forward_mail", summary: "转发《Medan 延误复盘》给 hendri@jt.id",
       status: "pending", result: null, to: "hendri@jt.id", subject: "Fw: Medan 延误复盘", body: "请看一下", rsvp: null, attachments: ["方案.xlsx"] } });
     if (path === "/api/files/f1/info") return route.fulfill({ json: { ...fileCard, status: "done", stage: null, size: 9000,
-      verified: { ok: true, detail: "重新打开文件核对了 5 段文字和 1 张表，与要求一致" } } });
+      verified: { ok: true, detail: "重新打开文件核对了 5 段文字和 1 张表，与要求一致。这只说明文件写对了，数据和结论需按来源核实" },
+      sources: ["Sari 10-28 邮件《Medan 延误复盘》", "延误明细.xlsx"] } });
     if (path === "/api/files/f1/save") return route.fulfill({ json: { ...fileCard, status: "queued", stage: "排队中" } });
     if (path === "/api/items/1/undo") return route.fulfill({ json: { ok: true, message: "已撤销，这件事回到待处理" } });
     return route.fulfill({ json: [] });
@@ -83,7 +87,7 @@ test("desktop: three entries above the chat open one inspector: list → detail 
   await page.setViewportSize({ width: 1400, height: 860 });
   await page.goto("/");
   const dock = page.getByRole("region", { name: "今天的工作" });
-  await expect(dock.getByRole("button", { name: /待处理/ })).toContainText("需要你 4 · 在等对方 1");
+  await expect(dock.getByRole("button", { name: /待处理/ })).toContainText("需要你 5 · 在等对方 1");
   const inspector = page.getByRole("complementary", { name: "详情栏" });
   await expect(inspector).toBeVisible();  // 宽屏默认打开，和对话并排
   await expect(inspector.locator(".ws-group").nth(0)).toContainText("Callesya 让你");  // 今天到期：现在要处理
@@ -109,6 +113,7 @@ test("desktop: three entries above the chat open one inspector: list → detail 
   await inspector.getByRole("button", { name: /Medan 运营周会/ }).click();
   await expect(inspector.getByText("Budi 的延误原因还没查完【行动项】")).toBeVisible();
   await inspector.getByRole("tab", { name: /相关材料/ }).click();
+  await expect(inspector.getByRole("button", { name: /内部名单\.xlsx/ })).toContainText("没有权限，没用到");  // 读不了的写明，不当作没有材料
   await inspector.getByRole("button", { name: /这个系列以前的会留下的行动项/ }).click();
   await expect(inspector.getByText("为什么相关：同一个系列的会")).toBeVisible();
   await inspector.getByRole("button", { name: "返回" }).click();
@@ -158,12 +163,19 @@ test("mail has its own entry: only mail that needs you, with context, who gets t
   await page.goto("/");
   const dock = page.getByRole("region", { name: "今天的工作" });
   await expect(dock.getByRole("button", { name: /邮件/ })).toContainText("要回 1 · 要看 0");
-  await expect(dock.getByRole("button", { name: /待处理/ })).toContainText("需要你 4 · 在等对方 1");  // 邮件不算在待处理里
+  // 待处理是跨渠道的完整清单：邮件里要他推进的事也在，标着“邮件”；两个入口是同一个事项
+  await expect(dock.getByRole("button", { name: /待处理/ })).toContainText("需要你 5 · 在等对方 1");
   const inspector = page.getByRole("complementary", { name: "详情栏" });
-  await expect(inspector.getByText("回复 Sari：Medan 延误复盘")).toHaveCount(0);
+  const inTodo = inspector.getByRole("button", { name: /回复 Sari：Medan 延误复盘/ });
+  await expect(inTodo).toContainText("邮件");
+  await inTodo.click();
+  await expect(inspector.getByText("回复全部：原邮件发给了几个人，问的是大家的事")).toBeVisible();  // 同一个事项、同一份草稿
+  await page.keyboard.press("Escape");
   await dock.getByRole("button", { name: /邮件/ }).click();
   await inspector.getByRole("button", { name: /回复 Sari/ }).click();
   await expect(inspector.getByText("📎 线程里之前 2 封往来 · 附件 方案.xlsx · 正文里 1 个飞书文档 · 相关会议《Medan 运营周会》")).toBeVisible();
+  await inspector.getByText("进展依据（2 条）").click();  // 同一件事来自不同渠道的依据各自保留
+  await expect(inspector.locator(".evidence li")).toHaveText([/邮件.*Sari：请确认改善方案/, /聊天.*你答应了：明天给 Sari/]);
   await expect(inspector.locator(".draft-head")).toContainText("sari@jt.id、Budi");  // 原来的收件人仍是收件人
   await expect(inspector.locator(".draft-head")).toContainText("抄送 Kange");
   await expect(inspector.getByText("回复全部：原邮件发给了几个人，问的是大家的事")).toBeVisible();
@@ -185,6 +197,8 @@ test("a long file job shows progress, then the verified result and saving to Fei
   await expect(card).toContainText("在后台做，做完会在飞书里告诉你");
   await expect(card).toContainText("已核对", { timeout: 8000 });  // 轮询到做完
   await expect(card).toContainText("重新打开文件核对了 5 段文字和 1 张表");
+  await expect(card).toContainText("这只说明文件写对了，数据和结论需按来源核实");  // 文件写对 ≠ 数据和结论已核实
+  await expect(card).toContainText("数据来源：Sari 10-28 邮件《Medan 延误复盘》；延误明细.xlsx");
   await card.getByRole("button", { name: "存进飞书云空间" }).click();
   expect(writes.map((w) => w.path)).toContain("/api/files/f1/save");
   await expect(card).toContainText("排队中");

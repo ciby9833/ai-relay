@@ -2309,3 +2309,10 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .forward-form input:not([type="checkbox"]), .forward-form textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px;
   background: var(--surface); color: var(--text); width: 100%; box-sizing: border-box; }
 .forward-actions { display: flex; gap: 8px; }
+
+.row-tag { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--bg-sunken); color: var(--text-2); font-size: 11px; }
+
+.evidence { margin: 6px 0; font-size: 13px; }
+.evidence summary { cursor: pointer; color: var(--text-2); }
+.evidence ol { list-style: none; padding: 0; margin: 6px 0; }
+.evidence li { margin: 4px 0; overflow-wrap: anywhere; }

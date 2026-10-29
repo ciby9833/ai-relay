@@ -11,11 +11,34 @@ import pytest
 db = pytest.mark.skipif(not os.getenv("RUN_DB_TESTS"), reason="需要 RUN_DB_TESTS=1 和数据库")
 
 
+def _xlsx() -> bytes:
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.append(["网点", "延误单数"])
+    wb.active.append(["Medan", 12])
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
 class Feishu:
     def __init__(self, docs=(), contents=None):
         self.docs, self.contents, self.reads = list(docs), contents or {}, []
 
+    async def download(self, url, user=None, max_bytes=None):
+        from app.feishu.client import FeishuError
+
+        if url.endswith("/secret"):
+            raise FeishuError("no permission to access this attachment")
+        return _xlsx(), None
+
     async def user_api(self, user, method, path, **kwargs):
+        if path.endswith("/attachments/download_url"):
+            name = "secret" if kwargs["params"]["attachment_ids"] == "a2" else "ok"
+            return {"download_urls": [{"attachment_id": kwargs["params"]["attachment_ids"], "download_url": f"https://x/{name}"}]}
         if path == "/search/v2/doc_wiki/search":
             return {"res_units": [{"title_highlighted": d["title"], "result_meta": {"url": d["url"], "update_time": d.get("updated")}}
                                   for d in self.docs]}
@@ -65,7 +88,11 @@ async def test_prep_uses_only_related_material(monkeypatch):
                                       "attendees": ["Budi"]}, status="scheduled")
             # 标题写明了这个会的邮件：相关；Budi 发来的报销邮件：不相关（只是参会人相同）
             await add_signal(session, user, "mail", f"m1-{tag}", kind="mail", title="Re: Medan 运营周会 数据", occurred_at=now - timedelta(days=1),
-                             payload={"from_name": "Sari"}, status="tracked")
+                             payload={"from_name": "Sari", "attachments": [{"id": "a1", "filename": "延误明细.xlsx"},
+                                                                         {"id": "a2", "filename": "内部名单.xlsx"}]}, status="tracked")
+            # 私聊里他答应的事，提到了这个会：会前一起看，不用去待处理里另找
+            session.add(FollowUp(user_id=user_id, key=f"chat:p-{tag}", kind="request", owner="me", title="Budi 让你：周会前准备 Medan 运营周会 的数据",
+                                 next_step="完成后在私聊回复对方", facets={"private": True}))
             await add_signal(session, user, "mail", f"m2-{tag}", kind="mail", title="报销单", occurred_at=now - timedelta(days=1),
                              payload={"from_name": "Budi"}, status="tracked")
             await session.commit()
@@ -75,7 +102,13 @@ async def test_prep_uses_only_related_material(monkeypatch):
                             contents={"AGENDA1": "1. Medan 延误复盘 2. 下周排班"})
             prep = await meetings.prepare(session, feishu, user, meeting, "zh")
             kinds = [s["kind"] for s in prep["sources"]]
-            assert kinds == ["agenda", "doc", "minutes", "actions", "mail"]
+            assert kinds == ["agenda", "doc", "minutes", "actions", "attachment", "attachment", "mail", "items"]
+            # 附件真的读出来用于会前准备（有来源）；没权限的写明没用到，不当作“没有材料”
+            assert "附件《延误明细.xlsx》" in prompts[0] and "A: Medan | B: 12" in prompts[0]
+            access = {s["title"]: s["access"] for s in prep["sources"] if s["kind"] == "attachment"}
+            assert access == {"附件《延误明细.xlsx》": "ok", "附件《内部名单.xlsx》": "denied"}
+            assert "没有权限读取" in prompts[0]
+            assert "Budi 让你：周会前准备 Medan 运营周会 的数据" in prompts[0]
             assert "报销单" not in prompts[0] and "别的周会" not in prompts[0]
             assert "等 Budi：查延误原因（未完成）" in prompts[0] and "Medan 延误复盘" in prompts[0]
             assert prep["worth_pushing"] and meeting.payload["prep"]["text"].startswith("**为什么开这个会**")

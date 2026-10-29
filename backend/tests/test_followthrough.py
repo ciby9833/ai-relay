@@ -65,7 +65,7 @@ async def test_delegated_writes_are_read_back():
 
 
 @db
-async def test_review_mail_items_close_by_rule():
+async def test_review_mail_items_close_by_rule(monkeypatch):
     from sqlalchemy import delete
 
     from app.db import SessionLocal, engine
@@ -94,6 +94,10 @@ async def test_review_mail_items_close_by_rule():
             await add_signal(session, user, "mail", f"sent-{tag}", kind="mail_sent", title="Re: 周报", payload={"thread_id": f"th-{tag}"},
                              occurred_at=datetime.now(UTC), status="done")
             await session.commit()
+            async def answered(theirs, mine, lang="zh"):
+                return "done", "你已经回复了"
+
+            monkeypatch.setattr(items, "judge_reply", answered)
             await items.advance(session, user)
             for i in (quiet, replied, fresh):
                 await session.refresh(i)

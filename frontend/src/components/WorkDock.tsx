@@ -22,9 +22,9 @@ export default function WorkDock({
   onPreferences: () => void;
 }) {
   const today = new Date();
-  // 邮件单独一个入口：要回的、要看的、在等对方回信的；待处理里只算邮件以外的事
-  const me = work.board?.me.filter((i) => !isMail(i)).length ?? 0;
-  const others = work.board?.others.filter((i) => !isMail(i)).length ?? 0;
+  // 待处理是跨渠道的完整清单（含邮件里要他推进的事）；邮件入口是同一批邮件事项的阅读和回复视图，不另算一份
+  const me = work.board?.me.length ?? 0;
+  const others = work.board?.others.length ?? 0;
   const mails = [...(work.board?.me ?? []), ...(work.board?.others ?? [])].filter(isMail);
   const toReply = mails.filter((i) => i.kind === "reply").length;
   const upcoming = work.meetings?.upcoming ?? [];

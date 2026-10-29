@@ -58,6 +58,11 @@ async def upsert(session: AsyncSession, user: User, key: str, signal: Signal | N
         )
         item = await get_item(session, user, key)
         item.signal_ids = []
+    elif item.status != OPEN and not may_reopen(item, signal):
+        # 迟到的旧消息（比这件事结束得还早）、或者他说过不归他/不值得/重复的：只记下依据，不重新打开
+        if signal is not None and signal.id not in item.signal_ids:
+            item.signal_ids = item.signal_ids + [signal.id]
+        return item
     for name, value in fields.items():
         setattr(item, name, value)
     if signal is not None and signal.id not in item.signal_ids:
@@ -67,6 +72,74 @@ async def upsert(session: AsyncSession, user: User, key: str, signal: Signal | N
     item.updated_at = now
     item.announced_at = now if silent else None
     return item
+
+
+# 他明确说过不用再跟的：后来同一件事又有消息也不自动重新打开（“暂时不跟进”的，有新消息可以重新打开）
+FINAL_DISMISSALS = ("你说这件不归你", "你说不值得提醒", "你说和别的重复了", "你说这类以后少提醒")
+
+
+def may_reopen(item: FollowUp, signal: Signal | None) -> bool:
+    if item.status == CANDIDATE:
+        return True
+    if item.resolution in FINAL_DISMISSALS:
+        return False
+    if signal is None or item.closed_at is None:
+        return signal is not None
+    at = signal.occurred_at or signal.created_at
+    return at is not None and at > item.closed_at
+
+
+# ---------- 同一件事跨渠道：关联和依据 ----------
+
+MAX_EVIDENCE = 12
+
+
+def add_evidence(item: FollowUp, channel: str, text: str, at: datetime | None = None) -> None:
+    """这件事每一次进展的依据（来自哪个渠道、什么时候、谁说了什么），各自保留，不覆盖。"""
+    entry = {"channel": channel, "at": (at or datetime.now(UTC)).isoformat(), "text": (text or "")[:300]}
+    evidence = [e for e in (item.facets or {}).get("evidence") or [] if e != entry]
+    item.facets = {**(item.facets or {}), "evidence": (evidence + [entry])[-MAX_EVIDENCE:]}
+
+
+def _people(item: FollowUp) -> set[str]:
+    names = {str(p).lower() for p in (item.facets or {}).get("people") or [] if p}
+    if item.waiting_on:
+        names.add(item.waiting_on.lower())
+    return names
+
+
+def _overlap(names: set[str], others: set[str]) -> bool:
+    return any(a and b and (a in b or b in a) for a in names for b in others)
+
+
+async def related_open_items(session: AsyncSession, user: User, text: str, people: set[str] | None = None,
+                             exclude: set[int] | None = None, limit: int = 5) -> list[FollowUp]:
+    """可能是同一件事的、还没结的事（不管来自哪个渠道）：说到了这件事的关键词（人名不算），给了 people 时还要是同一个人。
+    只是同一个人、说的是别的事的，不算——宁可漏关联，也不要把两件事并成一件。最后由模型对照内容判断。"""
+    from app.proactive.casefile import _terms
+
+    low = (text or "").lower()
+    people = {p.lower() for p in people or set() if p}
+    scored = []
+    for item in (await session.execute(select(FollowUp).where(
+            FollowUp.user_id == user.id, FollowUp.status == OPEN, FollowUp.id.notin_(exclude or {0})))).scalars():
+        names = _people(item)
+        if people and not _overlap(names, people):
+            continue
+        terms = {t for t in _terms(item.title, item.summary) if not _overlap({t}, names)}
+        hits = {t for t in terms if t in low}
+        if hits:
+            scored.append((len(hits), item))
+    scored.sort(key=lambda pair: -pair[0])
+    return [item for _, item in scored[:limit]]
+
+
+CHANNEL = {"mail-thread": "邮件", "batch": "邮件", "chat": "聊天", "mention": "群聊", "meeting": "会议纪要",
+           "approval": "审批", "invite": "会议邀请", "task": "飞书任务"}
+
+
+def channel_of(item: FollowUp) -> str:
+    return CHANNEL.get(item.key.split(":", 1)[0], "其他")
 
 
 def close(item: FollowUp, status: str, resolution: str) -> None:
@@ -86,6 +159,17 @@ async def link_action(session: AsyncSession, user: User, action: PendingAction) 
 
 
 # ---------- 信号 → 事项 ----------
+
+
+def why_line(mail: dict, signal: Signal) -> str:
+    """为什么和他有关 + 什么时候；没约定时间就写“未约定”，不编。"""
+    why = mail.get("why_me") or ("还不确定是不是要你负责" if mail.get("responsible") == "unclear" else signal.reason or "")
+    return f"{why}（时间：{mail.get('when') or '未约定'}）".strip()
+
+
+def ask_line(mail: dict, default: str) -> str:
+    ask = mail.get("ask") or default
+    return f"{ask}（先确认这件事是不是归你）" if mail.get("responsible") == "unclear" else ask
 
 
 async def mail_context(session: AsyncSession, user: User, signal: Signal) -> dict:
@@ -123,11 +207,12 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             kind="reply", owner="me", title=f"回复 {sender}：{signal.title}",
             summary=signal.summary, waiting_on=None, remind_at=None, nudges=0,
             importance="urgent" if signal.importance == "urgent" else "normal",
-            next_step="看一下 Relay 起草的回复，确认后发送" if fresh else "回复这封邮件",
-            recommendation=("对方回复了你之前的邮件。" if resumed else "") + (signal.reason or ""),
+            next_step=ask_line(mail, "回复这封邮件") + ("；Relay 已起草，确认后发送" if fresh else ""),
+            recommendation=("对方回复了你之前的邮件。" if resumed else "") + why_line(mail, signal),
             due_at=_due(mail.get("due"), user),
         )
         item.facets = {**(item.facets or {}), "context": await mail_context(session, user, signal)}
+        add_evidence(item, "邮件", f"{mail.get('from_name') or mail.get('from') or ''}：{signal.summary or signal.title}", signal.occurred_at)
         if fresh:
             try:
                 action = await actions.prepare_mail_reply(session, feishu, user, signal.id)
@@ -148,11 +233,13 @@ async def _from_mail(session: AsyncSession, feishu: FeishuClient, user: User, si
             kind="review", owner="me",
             title=f"{sender} 发来 {count} 封邮件需要你看" if count > 1 else f"看一下 {sender} 的《{signal.title}》",
             summary="；".join(subjects[:8]) + ("……" if len(subjects) > 8 else ""),
-            next_step="审阅后回复对方" , recommendation=signal.reason,
+            next_step=ask_line(mail, "审阅后回复对方"),
+            recommendation=why_line(mail, signal),
             importance="urgent" if signal.importance == "urgent" else "normal",
             due_at=_due(mail.get("due"), user),
         )
         item.facets = {**(item.facets or {}), "context": await mail_context(session, user, signal)}
+        add_evidence(item, "邮件", f"{mail.get('from_name') or mail.get('from') or ''}：{signal.summary or signal.title}", signal.occurred_at)
     signal.status = "tracked"
 
 
@@ -198,6 +285,7 @@ async def apply_mail_progress(session: AsyncSession, user: User, item: FollowUp,
     who = item.waiting_on or "对方"
     if kind == "unrelated":
         return
+    add_evidence(item, "邮件", evidence, signal.occurred_at)
     pending = await session.get(PendingAction, item.action_id) if item.action_id else None
     if kind == "done":
         close(item, "done", evidence)
@@ -493,8 +581,8 @@ REPLY_STATE_TOOL = {
     "description": "判断他回复之后还要不要等对方",
     "input_schema": {
         "type": "object",
-        "properties": {"needs_response": {"type": "boolean"}, "summary": {"type": "string"}},
-        "required": ["needs_response", "summary"],
+        "properties": {"state": {"type": "string", "enum": ["done", "waiting", "mine"]}, "summary": {"type": "string"}},
+        "required": ["state", "summary"],
         "additionalProperties": False,
     },
 }
@@ -513,10 +601,11 @@ async def _my_reply(session: AsyncSession, user: User, thread: str | None, actio
     return sent.body if sent else None
 
 
-async def judge_reply(theirs: Signal | None, mine: str | None, lang: str = "zh") -> tuple[bool, str | None]:
-    """他回复之后：还需要等对方吗？拿不到正文或模型出错时，保守地当作要等。"""
+async def judge_reply(theirs: Signal | None, mine: str | None, lang: str = "zh") -> tuple[str, str | None]:
+    """他回复之后这件事在谁手里：done 办完了 / waiting 等对方 / mine 他答应了但还没给（“晚点看”“还在处理”）。
+    拿不到正文或模型出错时，保守地当作等对方（不关掉）。"""
     if not mine:
-        return True, None
+        return "waiting", None
     their_text = f"{theirs.payload.get('from')}：《{theirs.title}》\n{(theirs.body or '')[:3000]}" if theirs else "（不知道）"
     try:
         from app.proactive.llm import complete_structured
@@ -526,10 +615,33 @@ async def judge_reply(theirs: Signal | None, mine: str | None, lang: str = "zh")
             f"<mail>\n对方上一封：{their_text}\n\n他的回复：\n{mine[:3000]}\n</mail>\n\nsummary " + i18n.instruction(lang),
             REPLY_STATE_TOOL,
         )
-        return bool(result.get("needs_response", True)), (result.get("summary") or None)
+        return result.get("state") or "waiting", (result.get("summary") or None)
     except Exception:  # noqa: BLE001 - 判断失败不影响主流程
         logger.exception("判断回复状态失败")
-        return True, None
+        return "waiting", None
+
+
+def after_my_reply(item: FollowUp, last: Signal | None, state: str, summary: str | None) -> None:
+    """按他回了什么推进同一个事项：办完就结束；等对方就转成等对方；他答应了还没给就留在他这里（不重新提醒，明天再看）。"""
+    now = datetime.now(UTC)
+    if state == "done":
+        close(item, "done", summary or "你已经回复了")
+        return
+    if state == "mine":
+        # 记下这次回复已经判断过：之后只有他再回一封才重新判断，不是每轮都问一次模型
+        item.facets = {**(item.facets or {}), "replied_seen": now.isoformat()}
+        item.summary = summary or "你回复了，但答应的事还没给"
+        item.next_step = "把答应的给对方"
+        item.action_id, item.remind_at, item.nudges, item.updated_at = None, now + timedelta(days=1), 0, now
+        return
+    who = (last.payload.get("from_name") or last.payload.get("from_address")) if last else None
+    # 转成“等对方”时，所有描述“该你做什么”的字段一起换掉，不能留下“紧急、今天截止、回复对方”这类旧内容
+    item.kind, item.owner, item.waiting_on = "waiting", "others", who
+    item.title = f"等 {who or '对方'} 回复"
+    item.summary = summary or (f"你已回复《{last.title}》" if last else "你已回复")
+    item.next_step = "Relay 盯着对方的回复，3 天没回会提醒你"
+    item.recommendation, item.action_id, item.importance, item.due_at = None, None, "normal", None
+    item.remind_at, item.nudges, item.updated_at = now + WAITING_REMIND, 0, now
 
 
 def _who(signal: Signal | None) -> tuple[str | None, str | None]:
@@ -576,27 +688,16 @@ async def advance(session: AsyncSession, user: User) -> None:
             replied_elsewhere = bool(thread) and bool(await session.scalar(
                 select(Signal.id).where(Signal.user_id == user.id, Signal.kind == "mail_sent",
                                         Signal.payload["thread_id"].astext == thread,
-                                        Signal.occurred_at > (last.occurred_at or item.created_at)).limit(1)
+                                        Signal.occurred_at > seen_after(item, last.occurred_at or item.created_at)).limit(1)
             ))
             if replied_elsewhere and action and action.status == "pending":
                 actions.cancel(action)  # Relay 起草的那版用不上了
         if item.kind == "reply" and ((action and action.status == "done") or replied_elsewhere):
             # 回复已发出：看他回了什么，判断是已经办完，还是要等对方回应
             mine = await _my_reply(session, user, (last.payload or {}).get("thread_id") if last else None, action,
-                                   (last.occurred_at if last else None) or item.created_at)
-            needs_response, state = await judge_reply(last, mine, await language_of(session, user))
-            who = (last.payload.get("from_name") or last.payload.get("from_address")) if last else None
-            if not needs_response:
-                close(item, "done", state or "你已经回复了")
-                continue
-            # 转成“等对方”时，所有描述“该你做什么”的字段一起换掉，不能留下“紧急、今天截止、回复对方”这类旧内容
-            item.kind, item.owner, item.waiting_on = "waiting", "others", who
-            item.title = f"等 {who or '对方'} 回复"
-            item.summary = state or (f"你已回复《{last.title}》" if last else "你已回复")
-            item.next_step = "Relay 盯着对方的回复，3 天没回会提醒你"
-            item.recommendation, item.action_id, item.importance, item.due_at = None, None, "normal", None
-            item.remind_at, item.nudges = datetime.now(UTC) + WAITING_REMIND, 0
-            item.updated_at = datetime.now(UTC)
+                                   seen_after(item, (last.occurred_at if last else None) or item.created_at))
+            state, summary = await judge_reply(last, mine, await language_of(session, user))
+            after_my_reply(item, last, state, summary)
         elif item.kind == "waiting" and item.key.startswith("mail-thread:"):
             # 对方在别的线程来信、发来会议邀请：对照在等的事判断是不是对这件事的回应，不是一有动静就关
             activity = await _counterpart_activity(session, user, item, last)
@@ -625,12 +726,35 @@ async def advance(session: AsyncSession, user: User) -> None:
             close(item, "dismissed", "已过期")
         elif item.kind == "review":
             reason = await review_closure(session, user, item)
-            if reason:
+            if reason and reason[0] == "replied":
+                # 他回了信不一定就办完了：看他回了什么——结束，还是转成等对方
+                thread = (last.payload or {}).get("thread_id") if last else None
+                mine = await _my_reply(session, user, thread, None, seen_after(item, (last.occurred_at if last else None) or item.created_at))
+                state, summary = await judge_reply(last, mine, await language_of(session, user))
+                after_my_reply(item, last, state, summary)
+            elif reason:
                 close(item, *reason)
+    # 事情已经结束（在 Relay 之外回了信、在飞书里审批了……）：还没发出的草稿、跟进邮件作废，不再让他确认
+    await session.flush()
+    stale = (await session.execute(select(PendingAction).where(
+        PendingAction.user_id == user.id, PendingAction.status == "pending",
+        PendingAction.id.in_(select(FollowUp.action_id).where(
+            FollowUp.user_id == user.id, FollowUp.status.in_(("done", "dismissed")), FollowUp.action_id.isnot(None))),
+    ))).scalars().all()
+    for action in stale:
+        actions.cancel(action)
+        action.result = "事情已经结束，这份草稿作废"
     await session.commit()
 
 
 REVIEW_QUIET = timedelta(days=3)
+DUE_SOON = timedelta(hours=3)
+
+
+def seen_after(item: FollowUp, default: datetime) -> datetime:
+    """他的回复判断到哪了：判断过的回复不再判断。"""
+    seen = (item.facets or {}).get("replied_seen")
+    return max(default, datetime.fromisoformat(seen)) if seen else default
 
 
 async def review_closure(session: AsyncSession, user: User, item: FollowUp) -> tuple[str, str] | None:
@@ -646,8 +770,8 @@ async def review_closure(session: AsyncSession, user: User, item: FollowUp) -> t
             threads.add(signal.payload["thread_id"])
     if threads and await session.scalar(select(Signal.id).where(
             Signal.user_id == user.id, Signal.kind == "mail_sent", Signal.payload["thread_id"].astext.in_(threads),
-            Signal.occurred_at > item.created_at - timedelta(minutes=5)).limit(1)):
-        return "done", "你已经回复了"
+            Signal.occurred_at > seen_after(item, item.created_at - timedelta(minutes=5))).limit(1)):
+        return "replied", "你已经回复了"
     if item.due_at is not None:
         return ("dismissed", "期限已过，不再跟进") if item.due_at < now - timedelta(days=1) else None
     if item.importance != "urgent" and (item.updated_at or item.created_at) < now - REVIEW_QUIET:
@@ -698,6 +822,18 @@ async def due_reminders(session: AsyncSession, feishu: FeishuClient, user: User)
         item.remind_at = now + (WAITING_REMIND if item.kind == "waiting" else timedelta(days=1))
         item.announced_at = None  # 让它出现在这次的通知里
         reminders.append((item, fact))
+    # 临近明确的截止时间（3 小时内）还没处理：再说一次，每个截止时间只说一次；没约定时间的不会因此提醒
+    soon = (await session.execute(select(FollowUp).where(
+        FollowUp.user_id == user.id, FollowUp.status == OPEN, FollowUp.owner == "me", FollowUp.pushed_at.isnot(None),
+        FollowUp.due_at > now, FollowUp.due_at <= now + DUE_SOON,
+    ))).scalars().all()
+    for item in soon:
+        if (item.facets or {}).get("due_alerted") == item.due_at.isoformat() or item.pushed_at >= item.due_at - DUE_SOON:
+            continue  # 这个截止时间已经说过（或者刚提醒时就已经很近了）
+        hours = max(1, int((item.due_at - now).total_seconds() // 3600))
+        item.facets = {**(item.facets or {}), "due_alerted": item.due_at.isoformat()}
+        item.announced_at = None
+        reminders.append((item, f"《{item.title}》约 {hours} 小时后到截止时间"))
     # 有人在等他：提醒过一次、过了一天还没处理，再提醒一次（说清楚谁、等了多久），之后不再催
     stalled = (await session.execute(select(FollowUp).where(
         FollowUp.user_id == user.id, FollowUp.status == OPEN, FollowUp.owner == "me", FollowUp.kind.in_(attention.ASK_KINDS),
@@ -753,6 +889,7 @@ async def _refresh_last_card(session: AsyncSession, feishu: FeishuClient, user: 
 
 
 CARD_LIFE = timedelta(days=3)
+PUSH_RETRIES = 3
 
 
 def _card_items(record) -> set[int]:
@@ -900,9 +1037,11 @@ async def announce(
         await session.rollback()
         return
     renotified = {i.id for i in shown if i.pushed_at is not None}
+    before = {i.id: (i.pushed_at, i.pushed_importance, (i.facets or {}).get("pushed_state")) for i in shown}
     for item in shown:
         item.announced_at = item.pushed_at = now
         item.pushed_importance = item.importance
+        item.facets = {**(item.facets or {}), "pushed_state": attention.pushed_state(item)}
     if interrupt:
         await attention.note_interrupt(session, user, now)
     else:
@@ -915,7 +1054,15 @@ async def announce(
         # 同一件事以前的卡片：收成一行指向这条新的，不留两张都能操作的卡片
         await supersede(session, feishu, user, [i.id for i in shown if i.id in renotified], message_id)
     except FeishuError:
+        # 没发出去：下一轮再发（恢复成没推送过的样子），同一件事最多重试 3 次，避免一直失败一直试
         logger.exception("推送到飞书失败")
+        for item in shown:
+            failures = int((item.facets or {}).get("push_failures") or 0) + 1
+            if failures > PUSH_RETRIES:
+                continue
+            pushed_at, importance, state = before[item.id]
+            item.announced_at, item.pushed_at, item.pushed_importance = None, pushed_at, importance
+            item.facets = {**(item.facets or {}), "push_failures": failures, "pushed_state": state}
     await session.commit()
 
 
@@ -970,6 +1117,7 @@ async def item_json(session: AsyncSession, item: FollowUp) -> dict:
         "context": (item.facets or {}).get("context"),
         "mail_id": last.id if last and last.kind == "mail" else None,
         "is_mail": item.key.startswith(("mail-thread:", "batch:")),
+        "evidence": (item.facets or {}).get("evidence") or [],
     }
 
 

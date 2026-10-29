@@ -11,8 +11,22 @@ def _model():
     return registry.resolve(get_settings().triage_model or None)
 
 
-async def complete_text(system: str, prompt: str) -> str:
-    provider, model, _ = _model()
+def _light():
+    """量大但简单的活（附件、文件提取要点）用轻量模型，省时间和额度。"""
+    from app.llm.google import gemini_configured
+
+    name = get_settings().light_model or ("gemini-3.5-flash-lite" if gemini_configured() else "")
+    if name and gemini_configured():
+        from app.llm.gemini_provider import GeminiProvider
+        from app.llm.google import genai_client
+        from app.telemetry import ObservedProvider
+
+        return ObservedProvider(GeminiProvider(genai_client())), name.split(":")[-1], name
+    return _model()
+
+
+async def complete_text(system: str, prompt: str, light: bool = False) -> str:
+    provider, model, _ = _light() if light else _model()
     parts = []
     async for event in provider.stream(
         model=model, system=system,
