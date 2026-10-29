@@ -1895,5 +1895,25 @@ export const messages: Record<string, readonly [string, string]> = {
   "会议纪要": [
     "Meeting minutes",
     "Notulen rapat"
+  ],
+  "在对话里问": [
+    "Ask in chat",
+    "Tanya di obrolan"
+  ],
+  "看这几件": [
+    "See these",
+    "Lihat ini"
+  ],
+  "跟进": [
+    "Tracking",
+    "Pantauan"
+  ],
+  "最近进展": [
+    "Recent progress",
+    "Perkembangan terbaru"
+  ],
+  "Relay 在跟进": [
+    "Relay is tracking",
+    "Relay sedang memantau"
   ]
 };

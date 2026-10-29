@@ -24,6 +24,8 @@ async function mockApi(page: Page, initial: Record<string, unknown>) {
       return route.fulfill({ json: { enrolled: true, since: now } });
     }
     if (path === "/api/eval") return route.fulfill({ json: eval_ });
+    if (path === "/api/meetings") return route.fulfill({ json: { upcoming: [], recent: [] } });
+    if (path === "/api/progress") return route.fulfill({ json: { days: [], notes: [] } });
     return route.fulfill({ json: [] });
   });
   return enrolls;

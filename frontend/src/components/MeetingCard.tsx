@@ -1,8 +1,8 @@
 import { t } from "../i18n";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api, type Meeting, type MeetingsData } from "../api";
+import { api, type Meeting } from "../api";
 import { dayLabel, timeOf } from "../format";
 import Icon from "./Icon";
 
@@ -13,7 +13,8 @@ function safeUrl(url: string | null) {
   return url && /^https:\/\//.test(url) ? url : null;
 }
 
-function MeetingCard({ meeting, past, onChanged }: { meeting: Meeting; past: boolean; onChanged: (m: Meeting) => void }) {
+/** 一个会：会前准备（依据可展开）、会后纪要和行动项。参加、回复邀请、会后承诺分开显示。 */
+export function MeetingCard({ meeting, past, onChanged }: { meeting: Meeting; past: boolean; onChanged: (m: Meeting) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const prepare = async () => {
@@ -99,36 +100,5 @@ function MeetingCard({ meeting, past, onChanged }: { meeting: Meeting; past: boo
         {error && <span className="card-error">{t("操作失败")}</span>}
       </footer>
     </article>
-  );
-}
-
-/** 会议：接下来的会和会前准备；开过的会、纪要和行动项。参加、回复邀请、会后承诺分开显示。 */
-export default function MeetingsPage() {
-  const [data, setData] = useState<MeetingsData | null>(null);
-  const [error, setError] = useState(false);
-  const load = useCallback(() => api.meetings().then(setData).catch(() => setError(true)), []);
-  useEffect(() => void load(), [load]);
-  const replace = (m: Meeting) => setData((d) => d && { ...d, upcoming: d.upcoming.map((x) => (x.id === m.id ? m : x)) });
-
-  return (
-    <main className="workspace single">
-      <section className="ws-list wide">
-        <header className="ws-head"><h1>{t("会议")}</h1></header>
-        {!data && <p className="ws-empty">{error ? t("操作失败") : t("loading")}</p>}
-        {data && (
-          <>
-            <div className="ws-group-head">{t("接下来")} <span className="muted">{data.upcoming.length}</span></div>
-            {data.upcoming.length === 0 && <p className="ws-empty small">{t("接下来 3 天没有会。")}</p>}
-            {data.upcoming.map((m) => <MeetingCard key={m.id} meeting={m} past={false} onChanged={replace} />)}
-            {data.recent.length > 0 && (
-              <>
-                <div className="ws-group-head">{t("刚开过的")} <span className="muted">{data.recent.length}</span></div>
-                {data.recent.map((m) => <MeetingCard key={m.id} meeting={m} past onChanged={() => undefined} />)}
-              </>
-            )}
-          </>
-        )}
-      </section>
-    </main>
   );
 }

@@ -63,60 +63,55 @@ async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 }
 
-test("to-do is the home page; items open into details with feedback and ask-Relay", async ({ page }, testInfo) => {
+test("desktop: chat with the tracking panel beside it; feedback and ask-in-chat stay in one place", async ({ page }, testInfo) => {
   const writes = await mockApi(page);
-  await page.setViewportSize({ width: 1280, height: 820 });
+  await page.setViewportSize({ width: 1400, height: 860 });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "待处理" })).toBeVisible();
-  // 今天到期的在“现在要处理”，其余在“待处理”，等别人的单独一组
-  const groups = page.locator(".ws-group-head");
-  await expect(groups.nth(0)).toContainText("现在要处理");
-  await expect(page.locator(".ws-group").nth(0)).toContainText("Callesya 让你");
-  await expect(page.locator(".ws-group").nth(2)).toContainText("等 Lavianna");
-  await page.getByRole("button", { name: /Callesya 让你/ }).click();
-  await expect(page.getByText("Callesya 说要 21 号的盘点报表，今天下班前要")).toBeVisible();  // 为什么跟、依据
-  await page.getByRole("button", { name: "不用跟了" }).click();
-  await expect(page.getByRole("group", { name: "为什么不用跟了？" })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("inbox-desktop.png") });
-  await page.getByRole("button", { name: "提醒前就处理了" }).click();
+  // 只有一个“对话”入口：没有单独的待处理 / 会议 / 进展菜单
+  await expect(page.locator(".nav .nav-item")).toHaveCount(3);
+  const tracker = page.getByRole("complementary", { name: "Relay 在跟进" });
+  await expect(tracker).toBeVisible();
+  await expect(tracker.locator(".ws-group").nth(0)).toContainText("Callesya 让你");  // 今天到期：现在要处理
+  await expect(tracker.locator(".ws-group").nth(2)).toContainText("等 Lavianna");
+  await expect(page.getByText("还有一个会。")).toBeVisible();
+  // 对话里的提醒只留一行；点“看这几件”直接打开那件事
+  await page.getByRole("button", { name: "看这几件" }).click();
+  await expect(tracker.getByText("Callesya 说要 21 号的盘点报表，今天下班前要")).toBeVisible();
+  await tracker.getByRole("button", { name: "不用跟了" }).click();
+  await expect(tracker.getByRole("group", { name: "为什么不用跟了？" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("chat-tracker-desktop.png") });
+  await tracker.getByRole("button", { name: "提醒前就处理了" }).click();
   expect(writes).toContainEqual({ path: "/api/items/1/feedback", body: { outcome: "handled_before" } });
-
-  await page.getByRole("button", { name: /看一下 客户A/ }).click();
-  await page.getByRole("button", { name: "问 Relay" }).click();
-  await expect(page.getByRole("textbox")).toHaveValue("关于 #2《看一下 客户A 的周报》：");  // 带着这件事进对话，不用重新解释
+  // 在对话里问：带进当前对话的输入框，不另开对话
+  await tracker.getByRole("button", { name: "在对话里问" }).click();
+  await expect(page.getByRole("textbox", { name: /回复 Relay/ })).toHaveValue("关于 #1《Callesya 让你：把 21 号盘点报表发给她》：");
+  // 会议在面板的另一个分组；进展是底部的日志
+  await tracker.getByRole("tab", { name: /会议/ }).click();
+  await expect(tracker.getByText("Budi 的延误原因还没查完【行动项】")).toBeVisible();
+  await tracker.getByText("最近进展").click();
+  await expect(tracker.getByText("Hendri 的补卡申请")).toBeVisible();
 });
 
-test("mobile: bottom tabs, list then full-screen detail, meetings with evidence, chat keeps notices to one line", async ({ page }, testInfo) => {
+test("mobile: the tracking panel opens over the chat and closes back to it", async ({ page }, testInfo) => {
   await mockApi(page);
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
-  await expect(page.locator(".tabbar")).toBeVisible();
-  await noOverflow(page);
-  await page.getByRole("button", { name: /Callesya 让你/ }).click();
-  await expect(page.locator(".ws-list")).toBeHidden();
-  await expect(page.getByRole("button", { name: "返回列表" })).toBeVisible();
-  await noOverflow(page);
-  await page.screenshot({ path: testInfo.outputPath("inbox-detail-mobile.png"), fullPage: true });
-  await page.getByRole("button", { name: "返回列表" }).click();
-  await expect(page.locator(".ws-list")).toBeVisible();
-
-  await page.locator(".tabbar button").nth(1).click();
-  await expect(page.getByRole("heading", { name: "会议" })).toBeVisible();
-  await expect(page.getByText("未回复邀请")).toBeVisible();
-  await expect(page.getByText("Budi 的延误原因还没查完【行动项】")).toBeVisible();
-  await page.getByText("依据（2 份材料）").click();
-  await expect(page.getByText("同一个系列的会").first()).toBeVisible();
-  await expect(page.getByText("没有找到这次会的纪要，没有提取行动项。")).toBeVisible();  // 找不到就直说
-  await noOverflow(page);
-  await page.screenshot({ path: testInfo.outputPath("meetings-mobile.png"), fullPage: true });
-
-  await page.locator(".tabbar button").nth(2).click();
-  await expect(page.getByText("Hendri 的补卡申请")).toBeVisible();
-
-  await page.locator(".tabbar button").nth(3).click();
-  await expect(page.getByText("Relay 提醒了你 1 件事")).toBeVisible();
-  await expect(page.getByText("还有一个会。")).toBeVisible();
+  const tracker = page.getByRole("complementary", { name: "Relay 在跟进" });
+  await expect(tracker).toBeHidden();
   await expect(page.locator(".app-card")).toHaveCount(0);  // 提醒的卡片不再堆在对话里
-  await page.getByRole("button", { name: "去待处理" }).click();
-  await expect(page.getByRole("heading", { name: "待处理" })).toBeVisible();
+  await page.getByRole("button", { name: /跟进/ }).click();
+  await expect(tracker).toBeVisible();
+  await noOverflow(page);
+  await tracker.getByRole("button", { name: /Callesya 让你/ }).click();
+  await expect(tracker.getByRole("button", { name: "在对话里问" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("tracker-mobile.png") });
+  await tracker.getByRole("tab", { name: /会议/ }).click();
+  await page.getByText("依据（2 份材料）").click();
+  await expect(tracker.getByText("同一个系列的会").first()).toBeVisible();
+  await expect(tracker.getByText("没有找到这次会的纪要，没有提取行动项。")).toBeVisible();  // 找不到就直说
+  await noOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath("meetings-mobile.png") });
+  await tracker.getByRole("button", { name: "关闭" }).click();
+  await expect(tracker).toBeHidden();
+  await expect(page.getByText("Relay 提醒了你 1 件事")).toBeVisible();
 });

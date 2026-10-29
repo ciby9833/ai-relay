@@ -350,6 +350,10 @@ async def run_for_user(session: AsyncSession, feishu: FeishuClient, user: User) 
     await items.advance(session, user)
     reminders = await items.due_reminders(session, feishu, user)
     await items.announce(session, feishu, user, settings, reminders)
+    try:
+        await items.sync_cards(session, feishu, user)  # 卡片跟着事项状态走，不另发
+    except Exception:  # noqa: BLE001 - 同步卡片失败不影响别的
+        logger.exception("同步卡片状态失败")
     await meeting_briefs(session, feishu, user, settings)
     try:
         await meetings.collect_minutes(session, feishu, user)

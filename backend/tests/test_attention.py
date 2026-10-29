@@ -127,8 +127,10 @@ def test_repeat_within_cooldown():
     assert not attention.is_repeat(item)  # 升级成紧急：另发一条
     item.pushed_importance = "urgent"
     assert attention.is_repeat(item)
-    item.pushed_at = datetime.now(UTC) - timedelta(hours=1)
-    assert not attention.is_repeat(item)  # 隔了一段时间的新进展：照常处理
+    item.pushed_at = datetime.now(UTC) - timedelta(hours=5)
+    assert attention.is_repeat(item)  # 一件事一张卡片：几个小时后的新进展也是更新那张卡片
+    item.pushed_at = datetime.now(UTC) - timedelta(days=4)
+    assert not attention.is_repeat(item)  # 卡片已经是好几天前的了：照常处理
 
 
 def test_rule_matching_is_not_too_loose():

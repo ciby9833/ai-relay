@@ -15,6 +15,8 @@ async function setup(page: Page, admin = true, failOnce = false, language = "zh"
     if (path === "/api/conversations") return route.fulfill({ json: [] });
     if (path === "/api/home") return route.fulfill({ json: { conversation: { id: "home" }, messages: [], status: { source_errors: 0 } } });
     if (path === "/api/board") return route.fulfill({ json: { me: [], others: [], relay: [] } });
+    if (path === "/api/meetings") return route.fulfill({ json: { upcoming: [], recent: [] } });
+    if (path === "/api/progress") return route.fulfill({ json: { days: [], notes: [] } });
     if (path === "/api/insights/reminders") return route.fulfill({ json: { days: 7,
       total: { feedback: { handled_after: 3, handled_before: 1 }, accuracy: 0.75, late: 0.25, judged: 4, pushed: 9, no_response: 5, candidates: 12 },
       by_source: { p2p: { feedback: { handled_before: 1 }, accuracy: 0, late: 1, judged: 1 } },

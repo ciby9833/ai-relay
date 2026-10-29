@@ -600,7 +600,36 @@ async def advance(session: AsyncSession, user: User) -> None:
             close(item, "done", "你已经在群里回复了")
         elif item.kind == "attendance" and item.created_at < datetime.now(UTC) - timedelta(hours=12):
             close(item, "dismissed", "已过期")
+        elif item.kind == "review":
+            reason = await review_closure(session, user, item)
+            if reason:
+                close(item, *reason)
     await session.commit()
+
+
+REVIEW_QUIET = timedelta(days=3)
+
+
+async def review_closure(session: AsyncSession, user: User, item: FollowUp) -> tuple[str, str] | None:
+    """邮件里“请你看一下”的事什么时候结束（以前没有规则，14 天里 386 件只结了 27 件）：
+    - 他在这些邮件的线程里回复了 → 办完；
+    - 写了期限的，过期一天 → 不再跟进；
+    - 没写期限、不紧急，3 天没有新的往来 → 不再跟进（在进展里能找到，需要时再翻）。"""
+    now = datetime.now(UTC)
+    threads = set()
+    for sid in item.signal_ids or []:
+        signal = await session.get(Signal, sid)
+        if signal is not None and (signal.payload or {}).get("thread_id"):
+            threads.add(signal.payload["thread_id"])
+    if threads and await session.scalar(select(Signal.id).where(
+            Signal.user_id == user.id, Signal.kind == "mail_sent", Signal.payload["thread_id"].astext.in_(threads),
+            Signal.occurred_at > item.created_at - timedelta(minutes=5)).limit(1)):
+        return "done", "你已经回复了"
+    if item.due_at is not None:
+        return ("dismissed", "期限已过，不再跟进") if item.due_at < now - timedelta(days=1) else None
+    if item.importance != "urgent" and (item.updated_at or item.created_at) < now - REVIEW_QUIET:
+        return "dismissed", "3 天没有新的往来，不再跟进"
+    return None
 
 
 async def due_reminders(session: AsyncSession, feishu: FeishuClient, user: User) -> list[tuple[FollowUp, str]]:
@@ -646,6 +675,20 @@ async def due_reminders(session: AsyncSession, feishu: FeishuClient, user: User)
         item.remind_at = now + (WAITING_REMIND if item.kind == "waiting" else timedelta(days=1))
         item.announced_at = None  # 让它出现在这次的通知里
         reminders.append((item, fact))
+    # 有人在等他：提醒过一次、过了一天还没处理，再提醒一次（说清楚谁、等了多久），之后不再催
+    stalled = (await session.execute(select(FollowUp).where(
+        FollowUp.user_id == user.id, FollowUp.status == OPEN, FollowUp.owner == "me", FollowUp.kind.in_(attention.ASK_KINDS),
+        FollowUp.pushed_at <= now - timedelta(days=1), FollowUp.nudges == 0, FollowUp.remind_at.is_(None),
+    ))).scalars().all()
+    for item in stalled:
+        signal = await session.get(Signal, item.signal_ids[-1]) if item.signal_ids else None
+        person = attention.asker(item, attention.facets(item, signal))
+        if not person:
+            continue
+        fact = f"{person} 已经等你 {attention._span(attention.waited(item, signal, now) or timedelta(days=1))}：{item.title}"
+        item.nudges, item.remind_at, item.announced_at = 1, now + timedelta(days=1), None
+        item.attention_note = f"{person} 还在等你"
+        reminders.append((item, fact))
     await session.flush()
     return reminders
 
@@ -686,6 +729,62 @@ async def _refresh_last_card(session: AsyncSession, feishu: FeishuClient, user: 
         logger.warning("原地更新卡片失败 #%s", item.id)
 
 
+CARD_LIFE = timedelta(days=3)
+
+
+def _card_items(record) -> set[int]:
+    return {c.get("item_id") for _, group in record.sections or [] for c in group if c.get("kind") == "item"}
+
+
+async def supersede(session: AsyncSession, feishu: FeishuClient, user: User, item_ids: list[int], keep: str | None) -> None:
+    """这几件事另发了新提醒：旧卡片上它们收成一行（没有按钮），指向新的那条。"""
+    from app.models import FeishuCard
+    from app.proactive.push import refresh
+
+    if not item_ids:
+        return
+    ids = set(item_ids)
+    records = (await session.execute(select(FeishuCard).where(
+        FeishuCard.user_id == user.id, FeishuCard.created_at > datetime.now(UTC) - CARD_LIFE, FeishuCard.message_id != (keep or ""),
+    ))).scalars().all()
+    for record in records:
+        if not _card_items(record) & ids:
+            continue
+        record.sections = [[label, [({**c, "moved": True} if c.get("kind") == "item" and c.get("item_id") in ids else c) for c in group]]
+                           for label, group in record.sections]
+        try:
+            await refresh(session, feishu, user, record.message_id)
+        except FeishuError:
+            logger.warning("旧卡片收起失败 %s", record.message_id)
+
+
+async def sync_cards(session: AsyncSession, feishu: FeishuClient, user: User, limit: int = 20) -> int:
+    """卡片跟着事项走：最近 3 天的卡片里，有事项状态变了（办完、有了进展、转成等对方……）就原地更新，不另发。"""
+    from app.models import FeishuCard
+    from app.proactive.push import refresh
+
+    records = (await session.execute(select(FeishuCard).where(
+        FeishuCard.user_id == user.id, FeishuCard.created_at > datetime.now(UTC) - CARD_LIFE,
+    ).order_by(FeishuCard.created_at.desc()).limit(60))).scalars().all()
+    updated = 0
+    for record in records:
+        ids = _card_items(record)
+        if not ids:
+            continue
+        changed = await session.scalar(select(func.max(FollowUp.updated_at)).where(FollowUp.id.in_(ids)))
+        if changed is None or changed <= (record.refreshed_at or record.created_at):
+            continue
+        try:
+            await refresh(session, feishu, user, record.message_id)
+            updated += 1
+        except FeishuError:
+            logger.warning("同步卡片状态失败 %s", record.message_id)
+        if updated >= limit:
+            break
+    await session.commit()
+    return updated
+
+
 async def unread_context(session: AsyncSession, pending: list[FollowUp]) -> set[int]:
     """推送前复查：聊天里来的事，如果那段会话还有没读过的新消息（可能就是答复或结论），先不说，等读完再判断。"""
     held = set()
@@ -720,7 +819,8 @@ async def announce(
     )).scalars())
     held_for_context = await unread_context(session, pending)
     pending = [i for i in pending if i.id not in held_for_context]
-    for item in [i for i in pending if attention.is_repeat(i, now)]:
+    reminded = {i.id for i, _ in reminders or []}  # 到了提醒时间 / 对方等太久：要另发一条，不只是原地更新
+    for item in [i for i in pending if i.id not in reminded and attention.is_repeat(i, now)]:
         item.announced_at = now
         await _refresh_last_card(session, feishu, user, item)
         pending.remove(item)
@@ -776,6 +876,7 @@ async def announce(
     except ConversationBusy:
         await session.rollback()
         return
+    renotified = {i.id for i in shown if i.pushed_at is not None}
     for item in shown:
         item.announced_at = item.pushed_at = now
         item.pushed_importance = item.importance
@@ -787,7 +888,9 @@ async def announce(
     try:
         title = (i18n.t(lang, "things_to_know", n=len(interrupt)) if interrupt
                  else i18n.t(lang, "digest", n=len(head) + len(results)) if head or results else i18n.t(lang, "update"))
-        await push(session, feishu, user, title, text, sections=sections)
+        message_id = await push(session, feishu, user, title, text, sections=sections)
+        # 同一件事以前的卡片：收成一行指向这条新的，不留两张都能操作的卡片
+        await supersede(session, feishu, user, [i.id for i in shown if i.id in renotified], message_id)
     except FeishuError:
         logger.exception("推送到飞书失败")
     await session.commit()

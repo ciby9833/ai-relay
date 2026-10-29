@@ -23,6 +23,8 @@ async function mockApi(page: Page, signedIn = true, withCards = false) {
     if (path === "/api/auth/config") return route.fulfill({ json: { dev_login: false } });
     if (path === "/api/home") return route.fulfill({ json: { conversation: { id: "home" }, messages: withCards ? [{ id: 1, role: "assistant", text: "Original response", steps: ["read_mail"], cards }] : [], status: { source_errors: 0, last_synced_at: new Date().toISOString() } } });
     if (path === "/api/board") return route.fulfill({ json: { me: [], others: [], relay: [] } });
+    if (path === "/api/meetings") return route.fulfill({ json: { upcoming: [], recent: [] } });
+    if (path === "/api/progress") return route.fulfill({ json: { days: [], notes: [] } });
     if (path === "/api/models") return route.fulfill({ json: { models: ["test:model"], default: "test:model" } });
     if (path === "/api/settings") return route.fulfill({ json: { settings, sources: {} } });
     if (path === "/api/conversations") return route.fulfill({ json: [{ id: "chat", title: "Original conversation", channel: "web", updated_at: new Date().toISOString() }] });
@@ -41,13 +43,6 @@ async function systemLanguage(page: Page, language: string) {
     Object.defineProperty(navigator, "language", { configurable: true, get: () => value });
     Object.defineProperty(navigator, "languages", { configurable: true, get: () => [value, "en-US"] });
   }, language);
-}
-
-/** 对话不再是首页（首页是“待处理”）：手机上点底部标签，电脑上点左侧导航 */
-async function openChat(page: Page) {
-  const tab = page.locator(".tabbar button").nth(3);
-  if (await tab.isVisible()) await tab.click();
-  else await page.locator(".nav .nav-item").nth(3).click();
 }
 
 async function noOverflow(page: Page) {
@@ -133,7 +128,6 @@ test("changing UI language preserves drafts and does not save assistant language
   await systemLanguage(page, "en-US");
   const writes = await mockApi(page, true, true);
   await page.goto("/");
-  await openChat(page);
   await page.getByRole("textbox", { name: "Email draft body" }).fill("My unsent draft");
   await page.getByRole("textbox", { name: "Reply to Relay or ask for help…" }).fill("My unsent question");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -210,8 +204,7 @@ for (const language of ["en-US", "id-ID"]) {
     await page.setViewportSize({ width: 320, height: 740 });
     await mockApi(page, true, true);
     await page.goto("/");
-    await openChat(page);
-    await expect(page.locator(".draft-body")).toBeVisible();
+      await expect(page.locator(".draft-body")).toBeVisible();
     await noOverflow(page);
     for (const card of await page.locator(".app-card").all()) {
       expect(await card.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);

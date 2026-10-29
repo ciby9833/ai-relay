@@ -5,7 +5,7 @@
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -53,12 +53,15 @@ def panel(header: str, elements: list[dict], expanded: bool = False) -> dict:
 
 
 async def _item_panel(session: AsyncSession, item: FollowUp, user: User, expanded: bool, compact: bool = False,
-                      asking: bool = False) -> tuple[dict, str]:
+                      asking: bool = False, moved: bool = False) -> tuple[dict, str]:
     """compact：卡片超过 30 KB 时用，只留标题、要他做什么和按钮（明细去网页或飞书看）。
     asking：他点了“不用跟了”，这件事的按钮换成原因选项。"""
     icon = KIND_ICON.get(item.kind, "•")
     if item.status != "open":
         line = f"✅ ~~{esc(item.title)}~~　<font color='grey'>{esc(item.resolution)}</font>"
+        return fc.markdown(line), line
+    if moved:
+        line = f"↪ {esc(item.title)}　<font color='grey'>{i18n.ui('moved_to_latest')}</font>"
         return fc.markdown(line), line
     due = ""
     if item.due_at:
@@ -226,7 +229,7 @@ async def _render(
                 if item is None:
                     continue
                 element, line = await _item_panel(session, item, user, expanded=total_items == 1 and not compact, compact=compact,
-                                                  asking=bool(card.get("asking")))
+                                                  asking=bool(card.get("asking")), moved=bool(card.get("moved")))
             elif card["kind"] == "event":
                 url = card.get("meeting_url")
                 join = f"　[加入会议]({url})" if url and fc._safe_host(url, hosts) else ""
@@ -268,13 +271,15 @@ async def _render(
 async def push(
     session: AsyncSession, feishu: FeishuClient, user: User, title: str, text: str,
     cards: list[dict] | None = None, sections: list | None = None,
-) -> None:
+) -> str | None:
     sections = sections if sections is not None else [["", cards or []]]
     card, fallback = await render(session, user, title, text, sections)
     message_id = await feishu.send_card(user.feishu_open_id, card, fallback)
     if message_id:
         # 只加入会话，由调用方提交
-        session.add(FeishuCard(message_id=message_id, user_id=user.id, title=title, text=text, sections=sections))
+        session.add(FeishuCard(message_id=message_id, user_id=user.id, title=title, text=text, sections=sections,
+                               refreshed_at=datetime.now(UTC)))
+    return message_id
 
 
 async def refresh(session: AsyncSession, feishu: FeishuClient, user: User, message_id: str | None) -> None:
@@ -284,3 +289,4 @@ async def refresh(session: AsyncSession, feishu: FeishuClient, user: User, messa
         return
     card, _ = await render(session, user, record.title, record.text, record.sections)
     await feishu.tenant_api("PATCH", f"/im/v1/messages/{message_id}", json={"content": json.dumps(card, ensure_ascii=False)})
+    record.refreshed_at = datetime.now(UTC)

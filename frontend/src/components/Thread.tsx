@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, sendMessage, type ThreadMessage } from "../api";
 import { greeting, relative } from "../format";
 import Composer from "./Composer";
-import type { View } from "./Sidebar";
-import { RelayMark } from "./Icon";
+import type { TrackerFocus } from "./Tracker";
+import Icon, { RelayMark } from "./Icon";
 import Message from "./Message";
 
 const SUGGESTIONS = ["今天有哪些会？", "有哪些邮件需要我回？", "我有什么待审批的？", "帮我搜一下报价相关的文档"];
@@ -16,11 +16,13 @@ export default function Thread({
   userName,
   onCreated,
   onTurnFinished,
-  onNavigate,
+  onOpenTracker,
   draft,
+  trackerCount,
 }: {
-  onNavigate?: (view: View) => void;
-  draft?: string;
+  onOpenTracker?: (focus: TrackerFocus) => void;
+  draft?: { text: string; n: number } | null;
+  trackerCount?: number;
   home: boolean;
   conversationId: string | null;
   userName: string;
@@ -107,6 +109,14 @@ export default function Thread({
 
   return (
     <main className="thread">
+      {home && onOpenTracker && (
+        // 窄屏时“Relay 在跟进”收起来：从这里打开
+        <div className="tracker-toggle">
+          <button className="btn secondary small" onClick={() => onOpenTracker({ tab: "todo", n: Date.now() })}>
+            <Icon name="check" size={14} /> {t("跟进")} {trackerCount ? <b>{trackerCount}</b> : null}
+          </button>
+        </div>
+      )}
       <div className="thread-scroll">
         <div className="thread-inner">
           {empty && (
@@ -138,9 +148,14 @@ export default function Thread({
                     : t("Relay 提醒了你 {count} 件事", { count: (message.cards ?? []).filter((c) => c.kind === "item").length || 1 })}
                   {message.created_at && ` · ${relative(message.created_at)}`}
                 </span>
-                <button className="btn ghost small" onClick={() => onNavigate?.({ type: message.notice === "interrupt" ? "inbox" : "progress" })}>
-                  {message.notice === "interrupt" ? t("去待处理") : t("看进展")}
-                </button>
+                {message.notice === "interrupt" && (
+                  <button className="btn ghost small" onClick={() => onOpenTracker?.({
+                    tab: "todo", n: Date.now(),
+                    itemIds: (message.cards ?? []).flatMap((c) => (c.kind === "item" ? [c.item_id] : [])),
+                  })}>
+                    {t("看这几件")}
+                  </button>
+                )}
               </div>
             ) : (
               <Message key={message.id} message={message} onChanged={load} />

@@ -6,10 +6,8 @@ import { useLocale } from "./useLocale";
 import Login from "./components/Login";
 import Drawer from "./components/panels/Drawer";
 import Evaluation from "./components/Evaluation";
-import Sidebar, { PRIMARY, type PanelKind, type View } from "./components/Sidebar";
-import Inbox from "./components/Inbox";
-import MeetingsPage from "./components/MeetingsPage";
-import Progress from "./components/Progress";
+import Sidebar, { type PanelKind, type View } from "./components/Sidebar";
+import Tracker, { type TrackerFocus } from "./components/Tracker";
 import Admin from "./components/Admin";
 import Missions from "./components/Missions";
 import Thread from "./components/Thread";
@@ -18,7 +16,16 @@ export default function App() {
   useLocale();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [view, setView] = useState<View>({ type: "inbox" });
+  const [view, setView] = useState<View>({ type: "home" });
+  // “Relay 在跟进”：宽屏时固定在对话右边；窄屏时是浮层，从对话顶部或提醒那一行打开
+  const [focus, setFocus] = useState<TrackerFocus | null>(null);
+  const [overlay, setOverlay] = useState(false);
+  const [draft, setDraft] = useState<{ text: string; n: number } | null>(null);
+  const [todoCount, setTodoCount] = useState(0);
+  const openTracker = useCallback((next: TrackerFocus) => {
+    setFocus(next);
+    if (!window.matchMedia("(min-width: 1100px)").matches) setOverlay(true);
+  }, []);
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -98,42 +105,43 @@ export default function App() {
             <a className="btn primary" href="/api/auth/feishu/login">{t("重新登录")}</a>
           </div>
         )}
-        {view.type === "inbox" ? (
-          // 从事项“问 Relay”：开一段新对话，输入框里带上这件事的编号，Relay 会自动读这件事的档案，不用他重新解释
-          <Inbox onAsk={(item) => navigate({ type: "chat", id: null, draft: t("关于 #{id}《{title}》：", { id: item.id, title: item.title }) })} />
-        ) : view.type === "meetings" ? (
-          <MeetingsPage />
-        ) : view.type === "progress" ? (
-          <Progress />
-        ) : view.type === "admin" && user.is_admin ? (
+        {view.type === "admin" && user.is_admin ? (
           <Admin />
         ) : view.type === "eval" && user.is_admin ? (
           <Evaluation />
         ) : view.type === "missions" ? (
           <Missions selected={view.id} onSelect={(id) => setView({ type: "missions", id })} />
         ) : (
+          <div className={`home-split ${view.type === "home" ? "with-tracker" : ""}`}>
           <Thread
-            // 新对话拿到 id 时不能重新挂载（流式输出还在进行），所以只按视图类型（和带进来的事项）区分
-            key={view.type + (view.type === "chat" ? view.draft ?? "" : "")}
-            draft={view.type === "chat" ? view.draft : undefined}
-            onNavigate={navigate}
+            // 新对话拿到 id 时不能重新挂载（流式输出还在进行），所以只按视图类型区分
+            key={view.type}
+            draft={view.type === "home" ? draft : null}
+            onOpenTracker={view.type === "home" ? openTracker : undefined}
+            trackerCount={todoCount}
             home={view.type === "home"}
             conversationId={view.type === "chat" ? view.id : null}
             userName={user.name}
             onCreated={(id) => setView({ type: "chat", id })}
             onTurnFinished={refresh}
           />
+          {view.type === "home" && (
+            <div className={`tracker-wrap ${overlay ? "open" : ""}`}>
+              <Tracker
+                focus={focus}
+                onCounts={setTodoCount}
+                onClose={overlay ? () => setOverlay(false) : undefined}
+                // 带着这件事回到对话：输入框里写上编号和标题，Relay 会读这件事的档案，不用重新解释
+                onAsk={(item) => {
+                  setDraft({ text: t("关于 #{id}《{title}》：", { id: item.id, title: item.title }), n: Date.now() });
+                  setOverlay(false);
+                }}
+              />
+            </div>
+          )}
+          </div>
         )}
       </div>
-      <nav className="tabbar" aria-label={t("主要入口")}>
-        {PRIMARY.map((entry) => (
-          <button key={entry.type} className={view.type === entry.type ? "active" : ""} aria-current={view.type === entry.type ? "page" : undefined}
-            onClick={() => navigate({ type: entry.type })}>
-            <Icon name={entry.icon as "home"} size={18} />
-            <span>{t(entry.label)}</span>
-          </button>
-        ))}
-      </nav>
       {panel && <Drawer kind={panel} onClose={() => setPanel(null)} />}
     </div>
   );

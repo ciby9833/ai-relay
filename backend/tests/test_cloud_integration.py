@@ -95,6 +95,8 @@ async def test_confirm_concurrency_ownership_and_timeout_persistence():
             self.calls = 0
             self.fail = False
         async def user_api(self, *args, **kwargs):
+            if args[1] != "POST":
+                return {"document": {"title": "测试"}}  # 写入后的读回核对，不算写入
             self.calls += 1
             await asyncio.sleep(0.02)
             if self.fail:

@@ -3,18 +3,7 @@ import type { Conversation, User } from "../api";
 import { relative } from "../format";
 import Icon, { RelayMark } from "./Icon";
 
-export type View =
-  | { type: "inbox" } | { type: "meetings" } | { type: "progress" }
-  | { type: "admin" } | { type: "eval" } | { type: "home" }
-  | { type: "chat"; id: string | null; draft?: string } | { type: "missions"; id: number | null };
-
-/** 主要入口：手机上同时作为底部标签栏 */
-export const PRIMARY: { type: "inbox" | "meetings" | "progress" | "home"; label: string; icon: string }[] = [
-  { type: "inbox", label: "待处理", icon: "check" },
-  { type: "meetings", label: "会议", icon: "calendar" },
-  { type: "progress", label: "进展", icon: "chart" },
-  { type: "home", label: "对话", icon: "home" },
-];
+export type View = { type: "admin" } | { type: "eval" } | { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
 export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations";
 
 const CHANNEL: Record<string, string | null> = { web: null, feishu: "飞书群", task: "定时", home: null };
@@ -46,12 +35,10 @@ export default function Sidebar({
       </div>
 
       <nav className="nav">
-        {PRIMARY.map((entry) => (
-          <button key={entry.type} className={`nav-item ${view.type === entry.type ? "active" : ""}`}
-            aria-current={view.type === entry.type ? "page" : undefined} onClick={() => onNavigate({ type: entry.type })}>
-            <Icon name={entry.icon as "home"} /> {t(entry.label)}
-          </button>
-        ))}
+        <button className={`nav-item ${view.type === "home" ? "active" : ""}`} aria-current={view.type === "home" ? "page" : undefined}
+          onClick={() => onNavigate({ type: "home" })}>
+          <Icon name="home" /> {t("对话")}
+        </button>
         <button className={`nav-item ${view.type === "missions" ? "active" : ""}`} onClick={() => onNavigate({ type: "missions", id: null })}>
           <Icon name="clock" /> {t("长期任务")}
         </button>

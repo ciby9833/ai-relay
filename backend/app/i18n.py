@@ -74,6 +74,7 @@ _STRINGS = {
     "prep_none": {"zh": "没有找到这次会的议程、纪要或相关资料。可以问组织者要议程，或者在会议页面让 Relay 帮你再找。",
                   "en": "No agenda, minutes or related material found for this meeting. You could ask the organizer for an agenda, or ask Relay to look again from the Meetings page.",
                   "id": "Tidak ditemukan agenda, notulen, atau materi terkait rapat ini. Anda bisa meminta agenda ke penyelenggara, atau minta Relay mencari lagi dari halaman Rapat."},
+    "moved_to_latest": {"zh": "已在最新的提醒里更新", "en": "Updated in the latest reminder", "id": "Diperbarui di pengingat terbaru"},
     "back": {"zh": "返回", "en": "Back", "id": "Kembali"},
     "fb_handled_before": {"zh": "提醒前就处理了", "en": "Already handled before", "id": "Sudah ditangani sebelumnya"},
     "fb_not_mine": {"zh": "不归我管", "en": "Not mine", "id": "Bukan urusan saya"},

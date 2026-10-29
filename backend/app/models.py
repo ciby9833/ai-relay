@@ -334,6 +334,7 @@ class FeishuCard(Base):
     text: Mapped[str] = mapped_column(Text)
     sections: Mapped[list] = mapped_column(JSONB)  # [[分组标题, [卡片数据...]], ...]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 上次按最新状态原地更新的时间
 
 
 class ChatMessage(Base):

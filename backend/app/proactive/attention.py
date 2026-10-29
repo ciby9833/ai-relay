@@ -17,8 +17,8 @@
 - 一般的“今天要处理”：受每小时 max_interrupts_per_hour 次限制；用完了就等名额空出来再说（不降到汇总），
   有 critical 要说时顺带一起说。
 
-同一件事（同一个归并键：同一邮件线程、同一张审批、业务系统里同一个事件）短时间内又有动静，不另发消息，
-而是原地更新上次那张卡片；只有升级成紧急才另发一条。
+一件事一张卡片：同一件事（同一个归并键：同一邮件线程、同一张审批、业务系统里同一个事件）发过卡片后又有动静，
+不另发消息，而是原地更新那张卡片；只有升级成紧急、到了提醒时间、或对方等太久才另发一条，旧卡片上这件事收成一行指向新的。
 """
 
 from dataclasses import dataclass
@@ -42,7 +42,7 @@ GROUPS = ("approval", "mail", "chat", "invitation", "waiting", "biz", "attendanc
 MATCH_KEYS = ("group", "person", "approval", "chat", "system")
 LEADER_TTL = timedelta(days=7)
 LEADER_DEPTH = 4  # 往上找几级上级（直属上级 → … → CEO）
-REPEAT_COOLDOWN = timedelta(minutes=30)  # 同一件事这么久内又有动静：原地更新卡片，不另发
+REPEAT_COOLDOWN = timedelta(days=3)  # 一件事一张卡片：发过卡片 3 天内又有动静，原地更新那张卡片，不另发
 STATE = "attention"  # SourceState.source：存上级是谁、最近几次打扰、上次汇总时间
 
 GROUP_OF_KIND = {
@@ -141,6 +141,36 @@ def _leader_of(f: dict, leaders: list[dict] | None) -> dict | None:
     return None
 
 
+ASK_KINDS = ("request", "mention", "reply")  # 有具体的人在等他答复/办事的
+WAIT_ESCALATE = timedelta(hours=4)  # 已经等了这么久：不再攒到汇总
+WAIT_STALE = timedelta(days=3)  # 再久的是旧事（回填进来的），不因为“等得久”打断他
+
+
+def asker(item: FollowUp, f: dict) -> str | None:
+    """在等他的那个人（只看有具体的人提出的事，审批、系统通知不算）。"""
+    if item.owner != "me" or item.kind not in ASK_KINDS:
+        return None
+    people = [p for p in f.get("people") or [] if p and "@" not in str(p)]
+    return str(people[0]) if people else None
+
+
+def asks_count(item: FollowUp) -> int:
+    """同一个人就这件事问了几次：聊天里合并进来的追问（「…」），或者同一封邮件线程里又来了一封。"""
+    if item.kind == "reply":
+        return len(item.signal_ids or [])
+    return (item.summary or "").count("「")
+
+
+def waited(item: FollowUp, signal: Signal | None, now: datetime) -> timedelta | None:
+    asked = (signal.occurred_at if signal is not None and signal.occurred_at else None) or item.created_at
+    return now - asked if asked else None
+
+
+def _span(delta: timedelta) -> str:
+    hours = int(delta.total_seconds() // 3600)
+    return f"{hours} 小时" if hours < 24 else f"{hours // 24} 天"
+
+
 @dataclass
 class Decision:
     level: str
@@ -175,13 +205,21 @@ def decide(
         return Decision("now", f"来自{title}" + (f" {boss['name']}" if boss.get("name") else ""), critical=True)
     if item.kind == "attendance":
         return Decision("now", "今天要补卡")
+    # 谁在问、等了多久：有人当面找他办事/问他，追问了、或者已经等了半天，就不该再攒到汇总
+    waiting = waited(item, signal, now)
+    person = asker(item, f)
+    if person and waiting is not None:
+        if asks_count(item) >= 2:
+            return Decision("now", f"{person} 追问了")
+        if WAIT_ESCALATE <= waiting <= WAIT_STALE:
+            return Decision("now", f"{person} 已经等了 {_span(waiting)}")
     if item.due_at and now - timedelta(hours=12) <= item.due_at <= _end_of_today(user, now):
         return Decision("now", "今天要处理" if item.kind != "invitation" else "今天的会")
     return Decision("batch")
 
 
 def is_repeat(item: FollowUp, now: datetime | None = None) -> bool:
-    """刚为这件事发过消息、又有了新动静（对方又来一封、事件又更新）：原地更新那张卡片就够了。升级成紧急的除外。"""
+    """为这件事发过卡片、又有了新动静（对方又来一封、事件又更新）：原地更新那张卡片就够了。升级成紧急的除外。"""
     now = now or datetime.now(UTC)
     if item.pushed_at is None or now - item.pushed_at >= REPEAT_COOLDOWN:
         return False

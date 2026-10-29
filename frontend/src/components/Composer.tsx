@@ -11,14 +11,15 @@ export default function Composer({
   onModel,
   draft,
 }: {
-  draft?: string;
+  /** 从“Relay 在跟进”里点“在对话里问”：把这件事带进输入框（n 变了就重新带入） */
+  draft?: { text: string; n: number } | null;
   busy: boolean;
   placeholder: string;
   onSend: (text: string) => void;
   model: string | null;
   onModel: (model: string) => void;
 }) {
-  const [text, setText] = useState(draft ?? "");
+  const [text, setText] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const area = useRef<HTMLTextAreaElement>(null);
 
@@ -30,6 +31,12 @@ export default function Composer({
     // 只在挂载时取一次模型列表
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!draft) return;
+    setText(draft.text);
+    area.current?.focus();
+  }, [draft]);
 
   useEffect(() => {
     if (area.current) {
