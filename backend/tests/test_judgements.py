@@ -108,6 +108,37 @@ async def test_calls_are_recorded_and_labelled_from_real_feedback(monkeypatch):
             assert verdicts == sorted([("right", "feedback:handled_after"), ("wrong", "feedback:not_mine"), ("right", "draft:sent"),
                                        ("right", "rule:accepted"), ("wrong", "rule:rejected")])
 
+        # 长期任务完成核对：全自动——结束 8 天没重做 = 对；结束后又开了几乎一样的任务 = 错；才结束 1 天的不计
+        from datetime import timedelta
+
+        from app.models import Conversation, Mission, MissionLog
+
+        async with SessionLocal() as session:
+            now = datetime.now(UTC)
+            talk = Conversation(user_id=user_id, channel="mission")
+            session.add(talk)
+            await session.flush()
+            held = Mission(user_id=user_id, conversation_id=talk.id, title="催 Nikki 交运单", goal="让 Nikki 交 9 月运单明细", instruction="让 Nikki 交 9 月运单明细", status="done")
+            redone = Mission(user_id=user_id, conversation_id=talk.id, title="约 Budi 开会", goal="约 Budi 下周开会", instruction="约 Budi 下周二开会讨论报价", status="done")
+            fresh = Mission(user_id=user_id, conversation_id=talk.id, title="催 Kevin", goal="催 Kevin 回复", instruction="催 Kevin 回复报价", status="done")
+            session.add_all([held, redone, fresh])
+            await session.flush()
+            session.add_all([MissionLog(mission_id=held.id, kind="done", text="完成", created_at=now - timedelta(days=8)),
+                             MissionLog(mission_id=redone.id, kind="done", text="完成", created_at=now - timedelta(days=3)),
+                             MissionLog(mission_id=fresh.id, kind="done", text="完成", created_at=now - timedelta(days=1))])
+            session.add(Mission(user_id=user_id, conversation_id=talk.id, title="再约 Budi", goal="约 Budi 开会", instruction="约 Budi 下周二开会讨论报价单", status="active",
+                                created_at=now - timedelta(days=2)))
+            checks = [JudgementRun(name="mission_completion_check", user_id=user_id, subject=f"mission:{m.id}", prompt_version="v",
+                                   input="p", output={"goal_supported": True}) for m in (held, redone, fresh)]
+            session.add_all(checks)
+            await session.commit()
+            found = {s.why for s in await labels.samples(session, checks)}
+            assert found == {"mission:held", "mission:redone"}
+            await session.execute(delete(JudgementRun).where(JudgementRun.id.in_([c.id for c in checks])))
+            await session.execute(delete(Mission).where(Mission.user_id == user_id))
+            await session.execute(delete(Conversation).where(Conversation.user_id == user_id))
+            await session.commit()
+
         # 管理员看到的只有数字，按判断和提示词版本分组
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://relay") as c:
             await c.post("/api/auth/login", json={"email": f"judge-{tag}@x.test", "password": "judge-pass-1"})
@@ -123,3 +154,14 @@ async def test_calls_are_recorded_and_labelled_from_real_feedback(monkeypatch):
             await session.execute(delete(Account).where(Account.email.like(f"%{tag}%")))
             await session.commit()
         await engine.dispose()
+
+
+def test_string_booleans_and_numbers_from_the_model_are_coerced_by_schema():
+    from app.proactive.engine import TRIAGE_TOOL
+    from app.proactive.llm import coerce
+
+    raw = {"importance": "normal", "notify_now": "true", "needs_reply": "False", "action_type": "reply", "due": "none",
+           "summary": "s", "reason": "r"}
+    fixed = coerce(raw, TRIAGE_TOOL["input_schema"])
+    assert fixed["notify_now"] is True and fixed["needs_reply"] is False and fixed["summary"] == "s"
+    assert coerce({"n": "3", "flag": "maybe"}, {"type": "object", "properties": {"n": {"type": "integer"}, "flag": {"type": "boolean"}}}) == {"n": 3, "flag": "maybe"}

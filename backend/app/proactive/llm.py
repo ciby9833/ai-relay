@@ -86,6 +86,29 @@ async def complete_text(system: str, prompt: str, light: bool = False) -> str:
     return text
 
 
+def coerce(value, schema: dict):
+    """模型偶尔把布尔值、数字写成字符串（"true"、"3"）：按工具的 schema 改回正确的类型再校验。
+    只改类型明确、写法明确的情况；其他不动，交给校验去拒绝。"""
+    kind = schema.get("type")
+    if kind == "object" and isinstance(value, dict):
+        props = schema.get("properties") or {}
+        return {k: coerce(v, props[k]) if k in props else v for k, v in value.items()}
+    if kind == "array" and isinstance(value, list) and isinstance(schema.get("items"), dict):
+        return [coerce(v, schema["items"]) for v in value]
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if kind == "boolean" and text in ("true", "false"):
+            return text == "true"
+        if kind == "integer" and text.lstrip("-").isdigit():
+            return int(text)
+        if kind == "number":
+            try:
+                return float(text)
+            except ValueError:
+                return value
+    return value
+
+
 async def complete_structured(system: str, prompt: str, tool: dict) -> dict:
     """让模型调用唯一的工具来给出结构化结果（不依赖各家不同的 JSON 模式）。"""
     provider, model, _ = _model()
@@ -105,9 +128,10 @@ async def complete_structured(system: str, prompt: str, tool: dict) -> dict:
         completion = await _with_retry(call)
         for block in (completion.blocks if completion else []):
             if block["type"] == "tool_use" and block["name"] == tool["name"]:
-                jsonschema.validate(block["input"], tool["input_schema"])
-                await record.save(system, prompt, model, block["input"], None, since)
-                return block["input"]
+                result = coerce(block["input"], tool["input_schema"])
+                jsonschema.validate(result, tool["input_schema"])
+                await record.save(system, prompt, model, result, None, since)
+                return result
         raise LLMError("模型没有给出结构化结果")
     except Exception as exc:
         await record.save(system, prompt, model, None, f"{type(exc).__name__}: {exc}", since)

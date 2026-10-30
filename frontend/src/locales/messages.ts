@@ -3144,9 +3144,9 @@ export const messages: Record<string, readonly [string, string]> = {
     "Background judgement accuracy",
     "Akurasi penilaian di latar belakang"
   ],
-  "每次后台判断都会记下；对错来自真实反馈（卡片上的“处理了 / 不归我”、草稿发出还是取消、复盘、规则启用与否），拿不准的不计。": [
-    "Every background judgement is recorded; right or wrong comes from real feedback (\"handled / not mine\" on cards, drafts sent or cancelled, reviews, rules switched on or not). Uncertain cases are not counted.",
-    "Setiap penilaian di latar belakang dicatat; benar atau salah berasal dari umpan balik nyata (\"sudah ditangani / bukan tugas saya\" di kartu, draf dikirim atau dibatalkan, tinjauan, aturan diaktifkan atau tidak). Kasus yang tidak pasti tidak dihitung."
+  "每次后台判断都会记下；对错全部自动来自正常使用时的反馈（卡片上的“处理了 / 不归我”、草稿发出还是取消、任务结束后是否重做、规则启用与否），不需要人专门标注；拿不准的不计。": [
+    "Every background judgement is recorded. Right or wrong comes automatically from normal use (\"handled / not mine\" on cards, drafts sent or cancelled, whether a finished task was redone, rules switched on or not); nobody labels anything by hand. Uncertain cases are not counted.",
+    "Setiap penilaian di latar belakang dicatat. Benar atau salah otomatis berasal dari pemakaian biasa (\"sudah ditangani / bukan tugas saya\" di kartu, draf dikirim atau dibatalkan, apakah tugas yang selesai dikerjakan ulang, aturan diaktifkan atau tidak); tidak ada yang perlu melabeli secara manual. Kasus yang tidak pasti tidak dihitung."
   ],
   "这段时间还没有记录。": [
     "No records in this period yet.",

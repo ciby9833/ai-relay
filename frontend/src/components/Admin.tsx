@@ -45,7 +45,7 @@ function Judgements({ days }: { days: number }) {
   if (!rows) return null;
   return <section aria-labelledby="admin-judgements-title">
     <div className="admin-section-head"><div><h2 id="admin-judgements-title">{t("后台判断的准确率")}</h2>
-      <p className="muted small">{t("每次后台判断都会记下；对错来自真实反馈（卡片上的“处理了 / 不归我”、草稿发出还是取消、复盘、规则启用与否），拿不准的不计。")}</p></div></div>
+      <p className="muted small">{t("每次后台判断都会记下；对错全部自动来自正常使用时的反馈（卡片上的“处理了 / 不归我”、草稿发出还是取消、任务结束后是否重做、规则启用与否），不需要人专门标注；拿不准的不计。")}</p></div></div>
     {rows.length === 0 ? <p className="empty-note">{t("这段时间还没有记录。")}</p> : (
       <table className="team-summary">
         <thead><tr><th>{t("判断")}</th><th>{t("版本")}</th><th>{t("调用")}</th><th>{t("失败")}</th><th>{t("有对错的样本")}</th><th>{t("准确率")}</th><th>{t("耗时中位数")}</th></tr></thead>

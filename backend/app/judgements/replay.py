@@ -80,7 +80,10 @@ async def replay_golden(name: str) -> dict:
     _, decide = REPLAY[name]
     cases, right, wrong = golden_cases(name), 0, []
     for case in cases:
-        got = decide(await _run(name, build_input(name, case["fields"])))
+        try:
+            got = decide(await _run(name, build_input(name, case["fields"])))
+        except Exception as exc:  # noqa: BLE001 - 模型没给出合格的结果也算错，并记下原因
+            got = f"error: {type(exc).__name__}: {str(exc)[:120]}"
         if got == case["expect"]:
             right += 1
         else:
@@ -106,7 +109,10 @@ async def replay_recorded(name: str, days: int, limit: int) -> dict:
     before = after = changed = 0
     for run in runs:
         old = decide(run.output or {})
-        new = decide(await _run(name, run.input))
+        try:
+            new = decide(await _run(name, run.input))
+        except Exception:  # noqa: BLE001 - 没给出合格的结果算错
+            new = None
         before += old == truth[run.id]
         after += new == truth[run.id]
         changed += old != new

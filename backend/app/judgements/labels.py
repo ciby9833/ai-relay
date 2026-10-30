@@ -1,26 +1,26 @@
 """从真实反馈推出每次判断的对错（不靠人去读别人的内容）。
 
 只用确定的信号；拿不准的一律算“未知”，不猜：
-- mail_triage：这封信变成的事项上，他在卡片上的反馈 / 评估页的标注
+- mail_triage：这封信变成的事项上，他在卡片上的反馈（正常使用时点的，不需要专门标注）
   处理了（提醒后、自己标的、提醒前就处理了）= 对；不归我 / 不值得提醒 / 重复 = 错；“这类少提醒”不算对错
 - reply_draft：草稿后来原样发出 = 对；改过再发 = 部分对；取消 = 错；还没处理 = 未知
-- mission_completion_check：管理员的结案复盘；核对说“通过”而复盘是误关闭 = 错，复盘正确 = 对；核对退回的不知道对错
+- mission_completion_check：全自动，不用人复盘。核对说“通过”、任务结束后 7 天内，他又开了一个几乎一样的任务
+  （说明其实没办成）= 错；7 天过去没有重做 = 对；不到 7 天、或任务最后没有结束的不计
 - rule_proposal：整理出来的候选规则，他启用 = 对；不用 = 错（每条规则一个样本）
 
 每个样本的结论：right / partly / wrong，以及模型“该给出”的关键判断（truth），回放时拿来比。
 """
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AssuranceEvent, AttentionRule, EvalLabel, FollowUp, ItemFeedback, JudgementRun, PendingAction
+from app.models import AttentionRule, FollowUp, ItemFeedback, JudgementRun, Mission, MissionLog, PendingAction
 
 RIGHT_FEEDBACK = ("handled", "handled_after", "handled_before")
 WRONG_FEEDBACK = ("not_mine", "not_worth", "duplicate")
-NOISE_LABELS = ("not_mine", "duplicate", "too_old")
 LABELED = ("mail_triage", "reply_draft", "mission_completion_check", "rule_proposal")
 
 
@@ -62,15 +62,7 @@ async def _mail_triage(session: AsyncSession, run: JudgementRun) -> list[Sample]
         return [Sample(run.id, "right" if surfaced(run.output) else "wrong", {"surface": True}, f"feedback:{feedback}")]
     if feedback in WRONG_FEEDBACK:
         return [Sample(run.id, "wrong" if surfaced(run.output) else "right", {"surface": False}, f"feedback:{feedback}")]
-    label = (await session.execute(select(EvalLabel).where(
-        EvalLabel.user_id == run.user_id, EvalLabel.target == "followup", EvalLabel.target_key == str(item.id)))).scalars().first()
-    if label is None:
-        return []
-    if label.label == "up":
-        return [Sample(run.id, "right" if surfaced(run.output) else "wrong", {"surface": True}, "eval:up")]
-    if label.reason in NOISE_LABELS:
-        return [Sample(run.id, "wrong" if surfaced(run.output) else "right", {"surface": False}, f"eval:{label.reason}")]
-    return [Sample(run.id, "partly", {"surface": True}, f"eval:{label.reason or 'down'}")]  # 事是真的，细节不对
+    return []  # 没有反馈：不计（不靠人去标注）
 
 
 async def _reply_draft(session: AsyncSession, run: JudgementRun) -> list[Sample]:
@@ -92,18 +84,38 @@ async def _reply_draft(session: AsyncSession, run: JudgementRun) -> list[Sample]
     return []
 
 
+REDO_WINDOW = timedelta(days=7)
+REDO_SIMILARITY = 0.5
+
+
+def similarity(a: str, b: str) -> float:
+    """两段话有多像：按相邻两个字（中文）/ 词（英文）的重合程度，0 到 1。"""
+    def grams(text: str) -> set[str]:
+        text = "".join((text or "").lower().split())
+        return {text[i:i + 2] for i in range(len(text) - 1)} or ({text} if text else set())
+
+    x, y = grams(a), grams(b)
+    return len(x & y) / len(x | y) if x and y else 0.0
+
+
 async def _completion_check(session: AsyncSession, run: JudgementRun) -> list[Sample]:
     mission_id = _ref(run, "mission")
     passed = (run.output or {}).get("goal_supported")
     if mission_id is None or passed is not True:
         return []
-    review = (await session.execute(select(AssuranceEvent).where(
-        AssuranceEvent.kind == "closure_review", AssuranceEvent.mission_id == mission_id).order_by(AssuranceEvent.id.desc()).limit(1))).scalars().first()
-    verdict = (review.detail or {}).get("verdict") if review else None
-    if verdict == "correct":
-        return [Sample(run.id, "right", {"goal_supported": True}, "review:correct")]
-    if verdict == "false_close":
-        return [Sample(run.id, "wrong", {"goal_supported": False}, "review:false_close")]
+    mission = await session.get(Mission, mission_id)
+    if mission is None or mission.status != "done":
+        return []
+    closed_at = await session.scalar(select(func.max(MissionLog.created_at)).where(
+        MissionLog.mission_id == mission_id, MissionLog.kind == "done")) or run.created_at
+    text = mission.instruction or mission.goal or mission.title
+    later = (await session.execute(select(Mission).where(
+        Mission.user_id == mission.user_id, Mission.id != mission.id, Mission.created_at > closed_at,
+        Mission.created_at <= closed_at + REDO_WINDOW))).scalars().all()
+    if any(similarity(text, m.instruction or m.goal or m.title) >= REDO_SIMILARITY for m in later):
+        return [Sample(run.id, "wrong", {"goal_supported": False}, "mission:redone")]
+    if datetime.now(UTC) - closed_at >= REDO_WINDOW:
+        return [Sample(run.id, "right", {"goal_supported": True}, "mission:held")]
     return []
 
 
