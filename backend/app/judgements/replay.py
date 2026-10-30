@@ -2,7 +2,7 @@
 
     # 真实样本：最近 N 天里能从反馈判断对错的那些（只输出数字，不输出内容）
     python -m app.judgements.replay mail_triage --days 14
-    # 固定样本：tests/judgements/golden/<判断>.jsonl 里的虚构用例（不碰任何真实数据）
+    # 固定样本：app/judgements/golden/<判断>.jsonl 里的虚构用例（不碰任何真实数据）
     python -m app.judgements.replay mail_triage --golden
 
 需要配置模型（在服务器上的容器里运行）。每次回放都真的调用模型，会产生费用：样本数用 --limit 控制。
@@ -38,7 +38,7 @@ REPLAY = {
     "reply_state": (Replayable("app.proactive.items:REPLY_STATE_SYSTEM", "app.proactive.items:REPLY_STATE_TOOL", "state"),
                     lambda output: output.get("state")),
 }
-GOLDEN = pathlib.Path(__file__).resolve().parents[2] / "tests" / "judgements" / "golden"
+GOLDEN = pathlib.Path(__file__).resolve().parent / "golden"  # 虚构的固定样本，随应用一起发布
 
 
 def _load(path: str):
