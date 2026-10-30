@@ -29,9 +29,10 @@ async def quality(session: SessionDep, user: UserDep, days: int = 7, offset: int
     days, offset = max(1, min(days, 30)), max(0, min(offset, 30))
     end = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=offset)
     start = end - timedelta(days=days)
+    members = select(User.id).where(User.tenant_id == user.tenant_id)  # 只看本工作区
     events = list((await session.scalars(select(AssuranceEvent).where(
-        AssuranceEvent.created_at >= start, AssuranceEvent.created_at < end))).all())
-    coverage = await session.scalar(select(func.min(AssuranceEvent.created_at)))
+        AssuranceEvent.created_at >= start, AssuranceEvent.created_at < end, AssuranceEvent.user_id.in_(members)))).all())
+    coverage = await session.scalar(select(func.min(AssuranceEvent.created_at)).where(AssuranceEvent.user_id.in_(members)))
     checks = [e for e in events if e.kind == "completion_check"]
     writes = [e for e in events if e.kind in ("write_verification", "business_verification")]
     known = [e for e in writes if e.detail.get("ok") is not None]
@@ -41,7 +42,8 @@ async def quality(session: SessionDep, user: UserDep, days: int = 7, offset: int
     handoffs = {e.mission_id for e in events if e.kind == "human_takeover"}
     closed = (await session.execute(select(Mission, User.name, func.max(MissionLog.created_at).label("closed_at"))
         .join(User, Mission.user_id == User.id).join(MissionLog, MissionLog.mission_id == Mission.id)
-        .where(Mission.status == "done", MissionLog.kind == "done", MissionLog.created_at >= start, MissionLog.created_at < end)
+        .where(Mission.status == "done", MissionLog.kind == "done", MissionLog.created_at >= start, MissionLog.created_at < end,
+               User.tenant_id == user.tenant_id)
         .group_by(Mission.id, User.name).order_by(func.max(MissionLog.created_at).desc()))).all()
     ids = [m.id for m, _, _ in closed]
     reviews = {}
@@ -89,9 +91,10 @@ class ReviewBody(BaseModel):
 @router.post("/missions/{mission_id}/review")
 async def review_closure(mission_id: int, body: ReviewBody, session: SessionDep, user: UserDep):
     require_admin(user)
-    mission = await session.scalar(select(Mission).where(Mission.id == mission_id).with_for_update())
+    mission = await session.scalar(select(Mission).join(User, Mission.user_id == User.id)
+                                   .where(Mission.id == mission_id, User.tenant_id == user.tenant_id).with_for_update(of=Mission))
     if mission is None:
-        raise HTTPException(status_code=404, detail="任务不存在")
+        raise HTTPException(status_code=404, detail="任务不存在")  # 别的工作区的任务：当作不存在
     if mission.status != "done":
         raise HTTPException(status_code=400, detail="只能复盘已完成的任务")
     assurance.record(session, mission.user_id, "closure_review",

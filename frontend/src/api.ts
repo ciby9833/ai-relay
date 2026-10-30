@@ -6,6 +6,25 @@ export interface User {
   email: string | null;
   avatar_url: string | null;
   missing_scopes?: string[]; // 应用新开通、他的登录还没包含的权限：需要重新登录一次
+  role?: "owner" | "admin" | "member";
+  tenant?: { id: string; name: string; slug: string } | null;
+  has_password?: boolean;
+  login_email?: string | null;
+  feishu_linked?: boolean;
+  workspaces?: number;
+}
+
+export interface WorkspaceChoice { tenant_id: string; name: string; slug: string; current?: boolean }
+export interface Member {
+  id: string; name: string; email: string | null; role: "owner" | "admin" | "member"; status: "active" | "deactivated";
+  feishu: boolean; password: boolean; last_login_at: string | null; me: boolean;
+}
+export interface Invitation { id: number; email: string; role: string; expires_at: string }
+export interface FeishuConnection {
+  provider: "feishu"; configured: boolean; status: "none" | "unverified" | "ok" | "failed" | "disabled"; last_error?: string | null;
+  config: { app_id?: string | null; tenant_key?: string | null };
+  secrets: { app_secret: boolean; verification_token: boolean; encrypt_key: boolean };
+  verified_at?: string | null; redirect_uri?: string; managed?: boolean;
 }
 
 export interface Conversation {
@@ -483,7 +502,30 @@ export const api = {
   notificationStats: (days: number, offset = 0) => request<NotificationStats[]>(`/insights/notifications?days=${days}&offset=${offset}`),
   qualityStats: (days: number, offset = 0) => request<QualityStats>(`/insights/quality?days=${days}&offset=${offset}`),
   reviewClosure: (id: number, verdict: ReviewVerdict, reason: string) => request(`/insights/missions/${id}/review`, json("POST", { verdict, reason })),
-  authConfig: () => request<{ dev_login: boolean }>("/auth/config"),
+  authConfig: () => request<{ dev_login: boolean; signup?: boolean; feishu?: boolean }>("/auth/config"),
+  passwordLogin: (email: string, password: string, tenantId?: string) =>
+    request<User | { choose: WorkspaceChoice[] }>("/auth/login", json("POST", { email, password, tenant_id: tenantId ?? null })),
+  signup: (name: string, email: string, password: string, workspace: string) =>
+    request<User>("/auth/signup", json("POST", { name, email, password, workspace })),
+  workspaces: () => request<WorkspaceChoice[]>("/auth/workspaces"),
+  switchWorkspace: (tenantId: string) => request<User>("/auth/switch", json("POST", { tenant_id: tenantId })),
+  setPassword: (password: string, currentPassword?: string, email?: string) =>
+    request<User>("/auth/password", json("POST", { password, current_password: currentPassword ?? null, email: email ?? null })),
+  invitationInfo: (token: string) =>
+    request<{ workspace: string; email: string; role: string; has_account: boolean }>(`/auth/invitations/${encodeURIComponent(token)}`),
+  acceptInvitation: (token: string, password: string, name?: string) =>
+    request<User>(`/auth/invitations/${encodeURIComponent(token)}/accept`, json("POST", { password, name: name ?? null })),
+  workspace: () => request<{ id: string; name: string; slug: string; role: string; members: number }>("/tenant"),
+  renameWorkspace: (name: string) => request<{ name: string }>("/tenant", json("PATCH", { name })),
+  members: () => request<Member[]>("/tenant/members"),
+  changeMember: (id: string, change: { role?: Member["role"]; status?: Member["status"] }) =>
+    request<{ role: string; status: string }>(`/tenant/members/${id}`, json("PATCH", change)),
+  invite: (email: string, role: Member["role"]) => request<{ link: string }>("/tenant/invitations", json("POST", { email, role })),
+  invitations: () => request<Invitation[]>("/tenant/invitations"),
+  revokeInvitation: (id: number) => request(`/tenant/invitations/${id}`, { method: "DELETE" }),
+  feishuConnection: () => request<FeishuConnection>("/tenant/connections/feishu"),
+  saveFeishu: (values: Record<string, string>) => request<FeishuConnection>("/tenant/connections/feishu", json("PUT", values)),
+  testFeishu: () => request<FeishuConnection>("/tenant/connections/feishu/test", { method: "POST" }),
   me: () => request<User>("/auth/me"),
   devLogin: () => request<User>("/auth/dev-login", { method: "POST" }),
   logout: () => request("/auth/logout", { method: "POST" }),

@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from app.models import DEFAULT_TENANT_ID
+
 from app import deps, telemetry
 from app.api import performance as perf
 from app.llm.base import Completion, LLMError, TextDelta
@@ -31,7 +33,7 @@ def settings(monkeypatch):
 @pytest.fixture
 async def client():
     app.dependency_overrides[deps.get_session] = lambda: SimpleNamespace(close=AsyncMock())
-    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=True)
+    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=True, tenant_id=DEFAULT_TENANT_ID)
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://relay") as client:
             yield client
@@ -42,11 +44,11 @@ async def client():
 async def test_auth_and_disabled_do_not_touch_collectors(client, settings, monkeypatch):
     read = AsyncMock(side_effect=AssertionError("must not collect"))
     monkeypatch.setattr(perf, "read_prometheus", read)
-    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=False)
+    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=False, tenant_id=DEFAULT_TENANT_ID)
     assert (await client.get("/api/admin/performance")).status_code == 403
     del app.dependency_overrides[deps.get_current_user]
     assert (await client.get("/api/admin/performance")).status_code == 401
-    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=True)
+    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=True, tenant_id=DEFAULT_TENANT_ID)
     settings.monitoring_enabled = False
     body = (await client.get("/api/admin/performance")).json()
     assert body["status"] == "disabled" and body["queue"] is None
@@ -81,7 +83,7 @@ async def test_cache_and_stale_targets(client, settings, monkeypatch):
     assert responses[0].json()["status"] == "partial"
     assert responses[0].json()["targets"]["worker"] == "down"
     assert responses[0].headers["cache-control"] == "no-store"
-    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=False)
+    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(is_admin=False, tenant_id=DEFAULT_TENANT_ID)
     assert (await client.get("/api/admin/performance?window=24h")).status_code == 403
     assert read.await_count == 1  # cached admin data cannot bypass role checks
 

@@ -494,7 +494,7 @@ async def notification_stats(session: SessionDep, user: UserDep, days: int = 7, 
         raise HTTPException(status_code=403, detail="只有管理员可以查看")
     days, offset = max(1, min(days, 30)), max(0, min(offset, 30))
     now = datetime.now(UTC)
-    users = {u.id: u for u in (await session.execute(select(User))).scalars()}
+    users = {u.id: u for u in (await session.execute(select(User).where(User.tenant_id == user.tenant_id))).scalars()}  # 只看本工作区
     stats, windows = {}, {}
     keys = ("pushes", "interrupt", "digest", "brief", "meeting", "mission", "other", "items", "handled")
     for uid, person in users.items():

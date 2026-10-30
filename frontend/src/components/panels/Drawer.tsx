@@ -4,6 +4,8 @@ import { api, type AttentionLevel, type Memory, type NotifyRule, type Settings, 
 import { dayLabel, relative, timeOf } from "../../format";
 import Icon from "../Icon";
 import type { PanelKind } from "../Sidebar";
+import type { User } from "../../api";
+import Workspace from "./Workspace";
 import LanguageSelect from "../LanguageSelect";
 import Automations from "./Automations";
 import Integrations from "./Integrations";
@@ -351,8 +353,11 @@ function SettingsForm() {
   );
 }
 
-export default function Drawer({ kind, onClose }: { kind: PanelKind; onClose: () => void }) {
+export default function Drawer({ kind, onClose, me, onUserChanged }: {
+  kind: PanelKind; onClose: () => void; me?: User; onUserChanged?: () => void;
+}) {
   const titles: Record<PanelKind, string> = {
+    workspace: me?.is_admin ? t("工作区设置") : t("账号与工作区"),
     memories: t("Relay 记住的事"),
     tasks: t("定时任务"),
     automations: t("自动办的事"),
@@ -366,6 +371,7 @@ export default function Drawer({ kind, onClose }: { kind: PanelKind; onClose: ()
       {kind === "automations" && <Automations />}
       {kind === "settings" && <SettingsForm />}
       {kind === "integrations" && <Integrations />}
+      {kind === "workspace" && me && <Workspace me={me} onChanged={() => onUserChanged?.()} />}
     </Shell>
   );
 }

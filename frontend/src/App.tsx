@@ -160,7 +160,7 @@ export default function App() {
           </div>
         )}
       </div>
-      {panel && <Drawer kind={panel} onClose={() => setPanel(null)} />}
+      {panel && <Drawer kind={panel} onClose={() => setPanel(null)} me={user} onUserChanged={loadUser} />}
     </div>
   );
 }

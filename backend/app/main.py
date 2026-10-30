@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from app.api import assistant, auth, blog, conversations, feishu_events, integrations, missions, proactive
 from app import insights
-from app.api import quality, performance, evaluation, workspace
+from app.api import quality, performance, evaluation, workspace, tenant
 from app import telemetry
 from app.config import get_settings
 from app.feishu.client import FeishuClient
@@ -40,7 +40,16 @@ async def lifespan(app: FastAPI):
     monitoring = telemetry.start()
     try:
         async with httpx.AsyncClient(timeout=30) as http:
-            app.state.feishu = FeishuClient(get_settings(), http)
+            app.state.feishu = FeishuClient(get_settings(), http)  # 默认工作区（服务器配置的飞书应用）
+            app.state.http = http
+            try:
+                from app import tenancy
+                from app.db import SessionLocal
+
+                async with SessionLocal() as session:
+                    await tenancy.ensure_default_connection(session)
+            except Exception:
+                logging.getLogger("relay.tenancy").exception("登记默认工作区的飞书连接失败")
             yield
     finally:
         refresher.cancel()
@@ -62,6 +71,7 @@ app.include_router(assistant.router)
 app.include_router(feishu_events.router)
 app.include_router(proactive.router)
 app.include_router(workspace.router)
+app.include_router(tenant.router)
 app.include_router(missions.router)
 app.include_router(integrations.router)
 app.include_router(blog.router)

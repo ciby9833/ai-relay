@@ -78,7 +78,7 @@ class IntegrationBody(BaseModel):
 
 @router.get("/api/integrations")
 async def list_integrations(session: SessionDep, admin: User = Depends(require_admin)):
-    rows = (await session.execute(select(Integration).order_by(Integration.id))).scalars().all()
+    rows = (await session.execute(select(Integration).where(Integration.tenant_id == admin.tenant_id).order_by(Integration.id))).scalars().all()
     return [_json(i, reveal=True) for i in rows]
 
 
@@ -86,7 +86,7 @@ async def list_integrations(session: SessionDep, admin: User = Depends(require_a
 async def create_integration(body: IntegrationBody, session: SessionDep, admin: User = Depends(require_admin)):
     integration = Integration(
         key=secrets.token_urlsafe(12), name=body.name, description=body.description,
-        secret_enc=encrypt(secrets.token_hex(32)), created_by=admin.id,
+        secret_enc=encrypt(secrets.token_hex(32)), created_by=admin.id, tenant_id=admin.tenant_id,
     )
     session.add(integration)
     await session.commit()
@@ -96,7 +96,7 @@ async def create_integration(body: IntegrationBody, session: SessionDep, admin: 
 @router.post("/api/integrations/{integration_id}/rotate")
 async def rotate_secret(integration_id: int, session: SessionDep, admin: User = Depends(require_admin)):
     integration = await session.get(Integration, integration_id)
-    if integration is None:
+    if integration is None or integration.tenant_id != admin.tenant_id:
         raise HTTPException(status_code=404)
     integration.secret_enc = encrypt(secrets.token_hex(32))
     await session.commit()
@@ -106,7 +106,7 @@ async def rotate_secret(integration_id: int, session: SessionDep, admin: User = 
 @router.delete("/api/integrations/{integration_id}")
 async def delete_integration(integration_id: int, session: SessionDep, admin: User = Depends(require_admin)):
     integration = await session.get(Integration, integration_id)
-    if integration:
+    if integration and integration.tenant_id == admin.tenant_id:
         await session.delete(integration)
         await session.commit()
     return {"ok": True}
@@ -114,6 +114,9 @@ async def delete_integration(integration_id: int, session: SessionDep, admin: Us
 
 @router.get("/api/integrations/{integration_id}/events")
 async def recent_events(integration_id: int, session: SessionDep, admin: User = Depends(require_admin)):
+    integration = await session.get(Integration, integration_id)
+    if integration is None or integration.tenant_id != admin.tenant_id:
+        raise HTTPException(status_code=404)
     rows = (await session.execute(
         select(IntegrationEvent).where(IntegrationEvent.integration_id == integration_id)
         .order_by(IntegrationEvent.id.desc()).limit(30)
@@ -158,13 +161,13 @@ def verify(secret: str, timestamp: str | None, signature: str | None, body: byte
         raise HTTPException(status_code=401, detail="签名不正确")
 
 
-async def _resolve(session, feishu, recipient: Recipient) -> tuple[str | None, str]:
-    """收件人 → (open_id, 展示名)。"""
+async def _resolve(session, feishu, recipient: Recipient, tenant_id) -> tuple[str | None, str]:
+    """收件人 → (open_id, 展示名)。只在这个接入所属的工作区里找人。"""
     label = recipient.name or recipient.email or recipient.open_id or "?"
     if recipient.open_id:
         return recipient.open_id, label
     if recipient.email:
-        user = (await session.execute(select(User).where(User.email == recipient.email))).scalars().first()
+        user = (await session.execute(select(User).where(User.email == recipient.email, User.tenant_id == tenant_id))).scalars().first()
         if user:
             return user.feishu_open_id, user.name
         found = await people.find(session, feishu, recipient.email)
@@ -204,21 +207,27 @@ async def inbound(key: str, request: Request):
         if log_id is None:
             return {"duplicate": True}
 
-        feishu = request.app.state.feishu
+        from app import tenancy
+
+        feishu = await tenancy.feishu_for(session, integration.tenant_id, getattr(request.app.state, "http", None),
+                                          fallback=request.app.state.feishu)
         delivered, unmatched = [], []
         group = event.group_key or event.event_id
         for recipient in event.recipients:
             try:
-                open_id, label = await _resolve(session, feishu, recipient)
+                open_id, label = await _resolve(session, feishu, recipient, integration.tenant_id) if feishu else (None, recipient.name or "?")
             except FeishuError:
                 open_id, label = None, recipient.name or recipient.email or "?"
             if not open_id:
                 unmatched.append(label)
                 continue
             user = (await session.execute(select(User).where(User.feishu_open_id == open_id))).scalars().first()
+            if user is not None and user.tenant_id != integration.tenant_id:
+                unmatched.append(label)  # 别的工作区的人：不投递
+                continue
             if user is None:
                 # 还没用过 Relay 的同事也能收到（通过 Relay 机器人推送）
-                user = User(feishu_open_id=open_id, name=label, timezone=get_settings().default_timezone)
+                user = User(feishu_open_id=open_id, name=label, timezone=get_settings().default_timezone, tenant_id=integration.tenant_id)
                 session.add(user)
                 await session.flush()
             if event.status == "resolved":

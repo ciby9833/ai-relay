@@ -2327,3 +2327,31 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .item-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .ws-group .ws-row.static { border-bottom: 1px solid var(--border); border-radius: 0; padding: 10px 6px; }
 @media (max-width: 760px) { .item-row { min-height: 52px; } }
+
+/* 登录：邮箱 + 密码 */
+.login-form { display: flex; flex-direction: column; gap: 10px; width: 100%; text-align: left; }
+.login-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
+.login-form input { font: inherit; font-size: 16px; padding: 9px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); }
+.login-divider { display: flex; align-items: center; gap: 10px; width: 100%; color: var(--muted); font-size: 12px; }
+.login-divider::before, .login-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.brand-workspace { margin-left: 4px; font: 400 12px/1.2 var(--sans); color: var(--muted); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 工作区设置 */
+.ws-section { margin: 18px 0; }
+.ws-section h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.ws-form { display: flex; flex-direction: column; gap: 8px; }
+.ws-fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ws-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
+.ws-form input, .ws-inline input, .ws-inline select, .ws-member-actions select, .ws-link input {
+  font: inherit; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); min-width: 0; }
+.ws-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ws-inline input { flex: 1; }
+.ws-switch { display: flex; gap: 8px; flex-wrap: wrap; }
+.ws-members { list-style: none; padding: 0; margin: 0; }
+.ws-members li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.ws-member-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.ws-member-main b .badge, .ws-member-main .badge { margin-left: 6px; }
+.ws-member-actions { display: flex; gap: 6px; align-items: center; }
+.ws-link { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ws-link input { flex: 1; min-width: 200px; }
+.ws-me { margin-left: 6px; }

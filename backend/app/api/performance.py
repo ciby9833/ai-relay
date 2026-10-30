@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Response
+from fastapi import HTTPException, APIRouter, Response
 from sqlalchemy import func, select
 
 from app.api.quality import require_admin
@@ -154,6 +154,11 @@ _lock = asyncio.Lock()
 @router.get("")
 async def performance(session: SessionDep, user: UserDep, response: Response, window: Window = "1h"):
     require_admin(user)
+    from app.models import DEFAULT_TENANT_ID
+
+    if user.tenant_id != DEFAULT_TENANT_ID:
+        # 服务器和容器的运行状况是整个平台的，不属于任何一家客户：只给平台方（默认工作区）的管理员看
+        raise HTTPException(status_code=403, detail="只有平台管理员可以查看")
     response.headers["Cache-Control"] = "no-store"
     settings = get_settings()
     if not settings.monitoring_enabled:

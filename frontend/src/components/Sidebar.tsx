@@ -5,7 +5,7 @@ import { relative } from "../format";
 import Icon, { RelayMark } from "./Icon";
 
 export type View = { type: "admin" } | { type: "eval" } | { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
-export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations";
+export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations" | "workspace";
 
 const CHANNEL: Record<string, string | null> = { web: null, feishu: "飞书群", task: "定时", home: null };
 
@@ -63,6 +63,7 @@ export default function Sidebar({
       <div className="brand">
         <RelayMark size={20} />
         <span>Relay</span>
+        {user.tenant && <span className="brand-workspace" title={user.tenant.name}>{user.tenant.name}</span>}
         <button className="icon-button sidebar-close" onClick={onClose} aria-label={t("关闭")}><Icon name="x" /></button>
       </div>
 
@@ -128,6 +129,9 @@ export default function Sidebar({
         </button>
         <button className="nav-item" onClick={(event) => showPanel("settings", event)}>
           <Icon name="settings" /> {t("提醒设置")}
+        </button>
+        <button className="nav-item" onClick={(event) => showPanel("workspace", event)}>
+          <Icon name="home" /> {user.is_admin ? t("工作区设置") : t("账号与工作区")}
         </button>
 
         {user.is_admin && (

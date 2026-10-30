@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     default_timezone: str = "Asia/Jakarta"
     session_ttl_hours: int = 168
     dev_login: bool = False
+    # 自助注册（新建账号和工作区）：默认关闭，成员通过管理员的邀请加入
+    allow_signup: bool = False
 
     feishu_app_id: str = ""
     feishu_app_secret: str = ""

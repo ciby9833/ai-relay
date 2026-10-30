@@ -23,6 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
 EMBEDDING_DIM = 1536
+DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 class BlogPost(Base):
@@ -52,11 +53,82 @@ class BlogAsset(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
 
 
+class Tenant(Base):
+    """一家公司 / 一个工作区（类似 Slack 的 workspace）。成员、助理、连接、数据都归属于某个工作区，工作区之间互相隔离。"""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255))
+    slug: Mapped[str] = mapped_column(String(64), unique=True)
+    status: Mapped[str] = mapped_column(String(16), server_default="active")  # active | suspended
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Account(Base):
+    """登录账号：一个人（邮箱 + 密码）。一个账号可以是多个工作区的成员，在每个工作区里各有一份成员资料（User）。"""
+
+    __tablename__ = "accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(255), unique=True)  # 小写
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(16), server_default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TenantInvitation(Base):
+    """邀请加入工作区：管理员生成链接，对方用链接设置密码（或用已有账号）加入。只存令牌的哈希。"""
+
+    __tablename__ = "tenant_invitations"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    invited_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TenantConnection(Base):
+    """工作区接入的外部渠道（目前是飞书）：管理员填写的应用配置。非机密的放 config，密钥加密后放 secrets_enc，接口只返回是否已填。"""
+
+    __tablename__ = "tenant_connections"
+    __table_args__ = (UniqueConstraint("tenant_id", "provider", name="uq_tenant_connection"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"))
+    provider: Mapped[str] = mapped_column(String(32))  # feishu
+    config: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    secrets_enc: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), server_default="unverified")  # unverified | ok | failed | disabled
+    last_error: Mapped[str | None] = mapped_column(Text)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class User(Base):
+    """工作区里的一位成员（他在这个工作区里的资料、助理和全部数据都挂在这里）。
+
+    以前只有飞书登录，所以叫 User 且必须有飞书身份；现在飞书身份可选，登录账号（Account）另存。"""
+
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    feishu_open_id: Mapped[str] = mapped_column(String(64), unique=True)
+    # 没指定工作区时归入默认工作区（迁移前的所有用户都在这里），旧代码创建用户的地方不用改
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), index=True, default=lambda: DEFAULT_TENANT_ID,
+                                                 server_default=str(DEFAULT_TENANT_ID))
+    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), index=True)
+    role: Mapped[str] = mapped_column(String(16), server_default="member")  # owner | admin | member
+    status: Mapped[str] = mapped_column(String(16), server_default="active")  # active | deactivated
+    feishu_open_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     feishu_union_id: Mapped[str | None] = mapped_column(String(64))
     feishu_user_id: Mapped[str | None] = mapped_column(String(64))
     tenant_key: Mapped[str | None] = mapped_column(String(64))
@@ -70,7 +142,7 @@ class User(Base):
     feishu_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # 用户这次授权给 Relay 的权限（空格分隔）；应用新开通了权限时据此提醒他重新授权
     feishu_scopes: Mapped[str | None] = mapped_column(Text)
-    # 管理员：可以管理业务系统接入。第一位用飞书登录的用户自动成为管理员
+    # 管理员（工作区的 owner / admin）：和 role 保持一致，旧代码按 is_admin 判断的地方不用改
     is_admin: Mapped[bool] = mapped_column(Boolean, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -445,6 +517,8 @@ class Integration(Base):
     description: Mapped[str | None] = mapped_column(Text)
     secret_enc: Mapped[str] = mapped_column(Text)  # 签名密钥（加密存储）
     enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), default=lambda: DEFAULT_TENANT_ID,
+                                                 server_default=str(DEFAULT_TENANT_ID))  # 属于哪个工作区：只推给这个工作区的成员
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

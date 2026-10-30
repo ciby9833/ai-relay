@@ -152,19 +152,21 @@ async def add_feedback(body: FeedbackBody, session: SessionDep, user: UserDep):
 async def eval_overview(session: SessionDep, user: UserDep):
     """（管理员）每个人的评估汇总：只有数字，没有内容。"""
     require_admin(user)
-    users = {u.id: u.name for u in (await session.execute(select(User))).scalars()}
+    users = {u.id: u.name for u in (await session.execute(select(User).where(User.tenant_id == user.tenant_id))).scalars()}
     enrolled = {s.user_id: s.cursor or {} for s in (await session.execute(
-        select(SourceState).where(SourceState.source == engine.STATE))).scalars()}
+        select(SourceState).where(SourceState.source == engine.STATE, SourceState.user_id.in_(list(users))))).scalars()}
     counts: dict = {}
     for uid, target, label, reason, n in (await session.execute(
         select(EvalLabel.user_id, EvalLabel.target, EvalLabel.label, EvalLabel.reason, func.count())
+        .where(EvalLabel.user_id.in_(list(users)))
         .group_by(EvalLabel.user_id, EvalLabel.target, EvalLabel.label, EvalLabel.reason)
     )).all():
         bucket = counts.setdefault(uid, {}).setdefault(target, {})
         key = "up" if label == "up" else f"down:{reason or 'unspecified'}"
         bucket[key] = bucket.get(key, 0) + n
     missed = dict((await session.execute(
-        select(EvalFeedback.user_id, func.count()).where(EvalFeedback.kind == "missed").group_by(EvalFeedback.user_id))).all())
+        select(EvalFeedback.user_id, func.count()).where(EvalFeedback.kind == "missed", EvalFeedback.user_id.in_(list(users)))
+        .group_by(EvalFeedback.user_id))).all())
 
     def rates(c: dict) -> dict:
         """correct = 👍 的占比；real = 事是真的（👍 + 原因是“判断错了”那三种）的占比；没写原因的 👎 不计入 real。"""
@@ -209,7 +211,7 @@ async def reminder_quality(session: SessionDep, user: UserDep, days: int = 7):
     require_admin(user)
     days = max(1, min(days, 30))
     since = datetime.now(UTC) - timedelta(days=days)
-    names = {u.id: u.name for u in (await session.execute(select(User))).scalars()}
+    names = {u.id: u.name for u in (await session.execute(select(User).where(User.tenant_id == user.tenant_id))).scalars()}  # 只看本工作区
     per_user: dict = {}
 
     def row(uid):
@@ -218,13 +220,13 @@ async def reminder_quality(session: SessionDep, user: UserDep, days: int = 7):
 
     fb_items: set[int] = set()
     by_source: dict = {}
-    for f in (await session.execute(select(ItemFeedback).where(ItemFeedback.created_at > since))).scalars():
+    for f in (await session.execute(select(ItemFeedback).where(ItemFeedback.created_at > since, ItemFeedback.user_id.in_(list(names))))).scalars():
         r = row(f.user_id)
         r["feedback"][f.outcome] = r["feedback"].get(f.outcome, 0) + 1
         by_source.setdefault(f.source, {}).setdefault(f.outcome, 0)
         by_source[f.source][f.outcome] += 1
         fb_items.add(f.item_id)
-    created = (await session.execute(select(FollowUp).where(FollowUp.created_at > since))).scalars().all()
+    created = (await session.execute(select(FollowUp).where(FollowUp.created_at > since, FollowUp.user_id.in_(list(names))))).scalars().all()
     for item in created:
         r = row(item.user_id)
         source = await source_of(session, item)
@@ -234,7 +236,7 @@ async def reminder_quality(session: SessionDep, user: UserDep, days: int = 7):
                 r["promoted"] += 1  # 候选后来有了证据，转成正式事项
             continue
         r["created"][source] = r["created"].get(source, 0) + 1
-    pushed = (await session.execute(select(FollowUp.user_id, FollowUp.id).where(FollowUp.pushed_at > since))).all()
+    pushed = (await session.execute(select(FollowUp.user_id, FollowUp.id).where(FollowUp.pushed_at > since, FollowUp.user_id.in_(list(names))))).all()
     for uid, item_id in pushed:
         r = row(uid)
         r["pushed"] += 1

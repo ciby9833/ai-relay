@@ -2279,5 +2279,241 @@ export const messages: Record<string, readonly [string, string]> = {
   "读取失败，没用到": [
     "Couldn't read — not used",
     "Gagal dibaca — tidak dipakai"
+  ],
+  "这个飞书账号不属于这个工作区，无法登录。": [
+    "This Feishu account doesn't belong to this workspace.",
+    "Akun Feishu ini bukan bagian dari workspace ini."
+  ],
+  "这个工作区还没有接入飞书，请用邮箱登录。": [
+    "This workspace isn't connected to Feishu yet — sign in with email.",
+    "Workspace ini belum terhubung ke Feishu — masuk dengan email."
+  ],
+  "你在这个工作区的账号已停用，请联系管理员。": [
+    "Your account in this workspace is deactivated. Contact an admin.",
+    "Akun Anda di workspace ini dinonaktifkan. Hubungi admin."
+  ],
+  "选择要进入的工作区": [
+    "Choose a workspace",
+    "Pilih workspace"
+  ],
+  "你的名字": [
+    "Your name",
+    "Nama Anda"
+  ],
+  "工作区名称（公司或团队）": [
+    "Workspace name (company or team)",
+    "Nama workspace (perusahaan atau tim)"
+  ],
+  "邮箱": [
+    "Email",
+    "Email"
+  ],
+  "密码": [
+    "Password",
+    "Kata sandi"
+  ],
+  "请稍候…": [
+    "Please wait…",
+    "Mohon tunggu…"
+  ],
+  "创建工作区": [
+    "Create workspace",
+    "Buat workspace"
+  ],
+  "登录": [
+    "Sign in",
+    "Masuk"
+  ],
+  "新建一个工作区": [
+    "Create a new workspace",
+    "Buat workspace baru"
+  ],
+  "已有账号，去登录": [
+    "Have an account? Sign in",
+    "Sudah punya akun? Masuk"
+  ],
+  "或": [
+    "or",
+    "atau"
+  ],
+  "你被邀请加入工作区「{name}」": [
+    "You've been invited to join \"{name}\"",
+    "Anda diundang bergabung ke \"{name}\""
+  ],
+  "你的登录密码": [
+    "Your password",
+    "Kata sandi Anda"
+  ],
+  "设置登录密码（至少 8 位）": [
+    "Set a password (at least 8 characters)",
+    "Buat kata sandi (minimal 8 karakter)"
+  ],
+  "加入工作区": [
+    "Join workspace",
+    "Gabung workspace"
+  ],
+  "邀请链接无效": [
+    "Invalid invitation link",
+    "Tautan undangan tidak valid"
+  ],
+  "所有者": [
+    "Owner",
+    "Pemilik"
+  ],
+  "管理员": [
+    "Admin",
+    "Admin"
+  ],
+  "成员": [
+    "Member",
+    "Anggota"
+  ],
+  "已保存。之后也可以用邮箱和密码登录。": [
+    "Saved. You can now also sign in with email and password.",
+    "Tersimpan. Anda kini juga bisa masuk dengan email dan kata sandi."
+  ],
+  "切换工作区": [
+    "Switch workspace",
+    "Ganti workspace"
+  ],
+  "修改登录密码": [
+    "Change password",
+    "Ubah kata sandi"
+  ],
+  "设置邮箱登录": [
+    "Set up email sign-in",
+    "Atur masuk dengan email"
+  ],
+  "登录邮箱": [
+    "Sign-in email",
+    "Email masuk"
+  ],
+  "登录邮箱：{email}": [
+    "Sign-in email: {email}",
+    "Email masuk: {email}"
+  ],
+  "当前密码": [
+    "Current password",
+    "Kata sandi saat ini"
+  ],
+  "新密码（至少 8 位）": [
+    "New password (at least 8 characters)",
+    "Kata sandi baru (minimal 8 karakter)"
+  ],
+  "工作区名称": [
+    "Workspace name",
+    "Nama workspace"
+  ],
+  "成员（{count}）": [
+    "Members ({count})",
+    "Anggota ({count})"
+  ],
+  "你": [
+    "You",
+    "Anda"
+  ],
+  "飞书": [
+    "Feishu",
+    "Feishu"
+  ],
+  "邮箱登录": [
+    "Email sign-in",
+    "Masuk dengan email"
+  ],
+  "角色": [
+    "Role",
+    "Peran"
+  ],
+  "停用": [
+    "Deactivate",
+    "Nonaktifkan"
+  ],
+  "恢复": [
+    "Reactivate",
+    "Aktifkan kembali"
+  ],
+  "邀请成员": [
+    "Invite members",
+    "Undang anggota"
+  ],
+  "生成邀请链接": [
+    "Create invite link",
+    "Buat tautan undangan"
+  ],
+  "邀请链接": [
+    "Invite link",
+    "Tautan undangan"
+  ],
+  "7 天内有效，只能用一次。目前需要你把链接发给对方。": [
+    "Valid for 7 days, single use. Send the link to them yourself for now.",
+    "Berlaku 7 hari, sekali pakai. Untuk saat ini kirimkan tautannya sendiri."
+  ],
+  "等待接受": [
+    "Pending",
+    "Menunggu"
+  ],
+  "撤回": [
+    "Revoke",
+    "Cabut"
+  ],
+  "飞书接入": [
+    "Feishu connection",
+    "Koneksi Feishu"
+  ],
+  "飞书是可选的外部渠道：接入后成员可以用飞书登录，Relay 能读取飞书里的邮件、日程、审批和消息，并通过飞书提醒。没接入时，Relay 本身的对话、记忆和任务照常可用。": [
+    "Feishu is an optional external channel: once connected, members can sign in with Feishu and Relay can read mail, calendar, approvals and messages there and remind via Feishu. Without it, Relay's chat, memory and tasks still work.",
+    "Feishu adalah kanal eksternal opsional: setelah terhubung, anggota bisa masuk dengan Feishu dan Relay bisa membaca email, kalender, persetujuan, dan pesan di sana serta mengingatkan lewat Feishu. Tanpanya, obrolan, memori, dan tugas Relay tetap berjalan."
+  ],
+  "状态": [
+    "Status",
+    "Status"
+  ],
+  "已连通": [
+    "Connected",
+    "Terhubung"
+  ],
+  "连接失败": [
+    "Connection failed",
+    "Koneksi gagal"
+  ],
+  "未验证": [
+    "Not verified",
+    "Belum diverifikasi"
+  ],
+  "未接入": [
+    "Not connected",
+    "Belum terhubung"
+  ],
+  "企业 Tenant Key（只允许这家企业的飞书账号登录）": [
+    "Tenant Key (only this company's Feishu accounts can sign in)",
+    "Tenant Key (hanya akun Feishu perusahaan ini yang bisa masuk)"
+  ],
+  "默认工作区沿用服务器上的飞书配置，这里只读；需要更换时请联系平台运维。": [
+    "The default workspace uses the server's Feishu settings, so they're read-only here. Contact the platform team to change them.",
+    "Workspace default memakai pengaturan Feishu dari server, jadi hanya bisa dilihat di sini. Hubungi tim platform untuk mengubahnya."
+  ],
+  "已填写（留空表示不改）": [
+    "Set (leave blank to keep)",
+    "Sudah diisi (kosongkan untuk tetap)"
+  ],
+  "飞书后台的重定向 URL 填：{url}": [
+    "Set the redirect URL in Feishu to: {url}",
+    "Isi URL pengalihan di Feishu dengan: {url}"
+  ],
+  "测试连接": [
+    "Test connection",
+    "Uji koneksi"
+  ],
+  "当前工作区：{name}": [
+    "Current workspace: {name}",
+    "Workspace saat ini: {name}"
+  ],
+  "工作区设置": [
+    "Workspace settings",
+    "Pengaturan workspace"
+  ],
+  "账号与工作区": [
+    "Account & workspace",
+    "Akun & workspace"
   ]
 };
