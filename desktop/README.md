@@ -34,13 +34,15 @@ RELAY_SMOKE_SHOT=/tmp/relay.png npx electron .
 ## 打包、签名、公证、发布
 
 1. 本机钥匙串里安装 **Developer ID Application** 证书（Apple 开发者账号里生成）。electron-builder 会自动找到它签名。
-2. 公证需要三个环境变量（App 专用密码在 appleid.apple.com 生成）：
+2. 公证凭据（只做一次）：在终端运行下面的命令，按提示输入 App 专用密码（appleid.apple.com → 登录与安全 → App 专用密码），
+   它会存进钥匙串，名字叫 `relay`；之后打包时用 `APPLE_KEYCHAIN_PROFILE=relay` 引用，密码不出现在命令和环境变量里：
 
    ```bash
-   export APPLE_ID=you@example.com
-   export APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx
-   export APPLE_TEAM_ID=XXXXXXXXXX
+   xcrun notarytool store-credentials relay --apple-id 你的AppleID邮箱 --team-id VWQT77VXY4
+   export APPLE_KEYCHAIN_PROFILE=relay
    ```
+
+   （也可以改用 APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID 三个环境变量。）
 
 3. 自动更新的地址（一个能放静态文件的目录，例如服务器上的 `/desktop/`）：
 
@@ -49,6 +51,6 @@ RELAY_SMOKE_SHOT=/tmp/relay.png npx electron .
    ```
 
 4. 出包：`npm run dist`，产物在 `dist/`：Apple 芯片和 Intel 各一个 `.dmg`（给同事安装）和 `.zip`（自动更新用），以及 `latest-mac.yml`。
-5. 发布新版本：改 `package.json` 里的 `version`，出包后把 `dist/` 里的 `.zip`、`.dmg`、`latest-mac.yml` 放到更新地址。已安装的客户端每 6 小时检查一次，下载后在下次重启时更新。
+5. 发布新版本：改 `package.json` 里的 `version`，出包后把 `dist/` 里的 `.zip`、`.dmg`、`.blockmap`、`latest-mac.yml` 放到服务器的 `/var/www/relay/desktop-releases/`（就是 `https://translation.jtcargo.co.id/desktop/`）。先放安装包，最后放 `latest-mac.yml`。已安装的客户端每 6 小时检查一次，下载后在下次重启时更新。
 
 Windows 版以后用同一套代码出包（electron-builder 加 `--win` 和 Windows 代码签名证书）。
