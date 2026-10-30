@@ -18,7 +18,7 @@ from app.db import SessionLocal
 from app.feishu.client import FeishuClient, FeishuError
 from app.llm.base import LLMError
 from app.llm.google import keep_fresh
-from app.models import DEFAULT_TENANT_ID, Conversation, PendingAction, ScheduledTask, User
+from app.models import Conversation, PendingAction, ScheduledTask, User
 from app.missions import service as mission_service
 from app.proactive import chats
 from app.proactive.engine import run_for_user
@@ -64,6 +64,7 @@ async def run_task(task_id: int, feishu: FeishuClient) -> None:
         if task is None:
             return
         user = await session.get(User, task.user_id)
+        feishu = await tenancy.client_for(session, user, feishu)  # 他自己工作区的飞书；没有飞书就只在 Relay 里
         result = await session.execute(
             select(Conversation).where(
                 Conversation.user_id == user.id,
@@ -122,11 +123,8 @@ async def run_user(feishu: FeishuClient, user_id) -> str:
             user = await session.get(User, user_id)
             if user is None or user.status != "active":
                 return "gone"
-            if not user.feishu_open_id:
-                return "no_channel"  # 没接入飞书的成员：主动同步和推送依赖飞书，先跳过（网页里的对话和任务照常）
-            client = feishu if user.tenant_id == DEFAULT_TENANT_ID else await tenancy.feishu_for(session, user.tenant_id, feishu.http)
-            if client is None and user.tenant_id != DEFAULT_TENANT_ID:
-                return "no_channel"  # 他所在的工作区没配飞书：不能用别的公司的飞书应用替他同步
+            # 没有飞书的成员也跑同一套流程（他自己接的邮箱、日历；提醒写在 Relay 里），只是不发飞书
+            client = await tenancy.client_for(session, user, feishu)
             try:
                 with telemetry.work("user"):
                     await asyncio.wait_for(run_for_user(session, client, user), USER_TIMEOUT)

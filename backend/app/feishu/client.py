@@ -56,6 +56,37 @@ def needs_reauth(exc: Exception) -> bool:
     return isinstance(exc, FeishuAuthError) or "user identity" in str(exc)
 
 
+class NoFeishu:
+    """没有飞书可用（工作区没接入，或这位成员没有飞书身份）：用到飞书的功能时明确报错，不用别的公司的飞书应用去做。"""
+
+    settings = None
+    http = None
+
+    def __getattr__(self, name):
+        async def unavailable(*args, **kwargs):
+            raise FeishuError("这个工作区还没有接入飞书，请管理员在“工作区设置”里配置")
+
+        return unavailable
+
+
+class WebOnly(NoFeishu):
+    """后台替一位没有飞书的成员工作时用：提醒、卡片、文件本来就写在 Relay 网页里，飞书那一份不发（不是故障）；
+    其他要用飞书的操作（给同事发飞书消息、读飞书文档……）照样明确报错。"""
+
+    async def send_text(self, *args, **kwargs):
+        return None
+
+    async def send_card(self, *args, **kwargs):
+        return None
+
+    async def send_file(self, *args, **kwargs):
+        return None
+
+
+def has_feishu(client) -> bool:
+    return not isinstance(client, NoFeishu)
+
+
 class FeishuClient:
     def __init__(self, settings: Settings, http: httpx.AsyncClient):
         self.settings = settings

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { notifyNew } from "./notify";
 import { api, type Board, type FollowUp, type HomeStatus, type Meeting, type MeetingsData, type ProgressData } from "./api";
 
 /** 待处理、会议、进展的同一份数据：顶部入口、侧栏列表、详情都读它，状态只有一份。 */
@@ -25,6 +26,7 @@ export function useWork(enabled: boolean): Work {
       const [b, home, m, p] = await Promise.all([api.board(), api.home(), api.meetings(), api.progress()]);
       setBoard({ me: b?.me ?? [], others: b?.others ?? [], relay: b?.relay ?? [] });
       setStatus(home?.status ?? null);
+      notifyNew(home?.messages);  // 新的主动提醒：标签页在后台时弹浏览器通知（他打开了开关的话）
       setMeetings({ upcoming: m?.upcoming ?? [], recent: m?.recent ?? [] });
       setProgress({ days: p?.days ?? [], notes: p?.notes ?? [] });
       setError(false);

@@ -746,3 +746,23 @@ class DelegationEvent(Base):
     note: Mapped[str | None] = mapped_column(Text)
     data: Mapped[dict] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserConnection(Base):
+    """成员自己接入的数据源（不依赖飞书）：标准邮箱（IMAP 收 / SMTP 发）、日历订阅链接（ICS）。
+
+    接了之后，同一套助理行为（判断、待处理、提醒、简报、会前准备、代拟回复）就能用这些数据工作。
+    密码 / 订阅链接加密保存，接口只告诉“填了没有”。"""
+
+    __tablename__ = "user_connections"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_connection"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(16))  # imap | ics
+    config: Mapped[dict] = mapped_column(JSONB, server_default="{}")  # 公开配置：服务器、端口、账号、邮箱地址
+    secrets_enc: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), server_default="unverified")  # unverified | ok | failed
+    last_error: Mapped[str | None] = mapped_column(Text)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

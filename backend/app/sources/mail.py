@@ -1,6 +1,12 @@
-"""飞书邮箱：收件箱里的新邮件；回复以草稿形式放进用户邮箱，确认后发送。"""
+"""邮件：收件箱里的新邮件；回复确认后发送。
+
+两种邮箱，同一套行为：成员接了自己的标准邮箱（IMAP/SMTP，见 app/sources/imap.py）就用它，否则用飞书邮箱
+（回复以草稿形式放进飞书邮箱再发送）。下面每个函数先看他接的是哪种。
+"""
 
 import base64
+import email
+import email.policy
 import html
 import re
 from datetime import UTC, datetime, timedelta
@@ -11,8 +17,10 @@ from email.utils import formataddr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import connections
 from app.feishu.client import FeishuClient, FeishuError
 from app.models import Signal, SourceState, User
+from app.sources import imap
 from app.sources.base import add_signal, existing_ids
 
 MAILBOX = "/mail/v1/user_mailboxes/me"
@@ -33,7 +41,14 @@ def _address(entry: dict | None) -> str:
     return f"{name} <{address}>" if name else address
 
 
+async def mailbox(user: User) -> dict | None:
+    """他自己接入的标准邮箱（没接返回 None，用飞书邮箱）。"""
+    return await connections.account(user, "imap")
+
+
 async def get_message(feishu: FeishuClient, user: User, message_id: str) -> dict:
+    if (box := await mailbox(user)) is not None:
+        return await imap.get_message(box, message_id)
     data = await feishu.user_api(
         user, "GET", f"{MAILBOX}/messages/{message_id}", params={"format": "plain_text_full"}
     )
@@ -81,6 +96,11 @@ async def attachment_text(feishu: FeishuClient, user: User, message_id: str, att
         return text
     if files.kind_of(attachment["filename"]) is None:
         raise files.FileError(f"暂不支持读取这种附件：{attachment['filename']}（支持 xlsx、docx、pdf、csv、txt）")
+    if (box := await mailbox(user)) is not None:
+        _, content, content_type = await imap.attachment(box, message_id, attachment["id"])
+        text = files.to_text(content, attachment["filename"], content_type)
+        files.cache.put(key, text)
+        return text
     data = await feishu.user_api(
         user, "GET", f"{MAILBOX}/messages/{message_id}/attachments/download_url", params={"attachment_ids": attachment["id"]}
     )
@@ -102,7 +122,9 @@ FOLDERS = {"INBOX": "收件箱", "SENT": "已发送", "DRAFT": "草稿", "TRASH"
 
 
 async def search(feishu: FeishuClient, user: User, query: str, folder: str | None = None, limit: int = 10) -> list[dict]:
-    """实时搜索用户的整个飞书邮箱（所有文件夹，或指定文件夹）。"""
+    """实时搜索用户的整个邮箱（所有文件夹，或指定文件夹）。"""
+    if (box := await mailbox(user)) is not None:
+        return [_summary(m) for m in await imap.search(box, query, folder, limit)]
     async def run(q: str) -> list[dict]:
         body: dict = {"query": q}
         if folder:
@@ -132,6 +154,10 @@ async def search(feishu: FeishuClient, user: User, query: str, folder: str | Non
 
 async def list_folder(feishu: FeishuClient, user: User, folder: str, limit: int = 10) -> list[dict]:
     """某个文件夹里最近的邮件（只取主题、发件人、时间等，不取正文）。"""
+    if (box := await mailbox(user)) is not None:
+        if folder not in ("INBOX", "SENT"):
+            raise imap.MailboxError("接入的邮箱目前只能看收件箱和已发送")
+        return [_summary(m) for m in await imap.recent(box, folder, limit, full=False)]
     data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages", params={"folder_id": folder, "page_size": limit})
     results = []
     for message_id in data.get("items") or []:
@@ -146,6 +172,13 @@ async def list_folder(feishu: FeishuClient, user: User, folder: str, limit: int 
             "thread_id": meta.get("thread_id"),
         })
     return results
+
+
+def _summary(mail: dict) -> dict:
+    received = mail.get("internal_date")
+    return {"message_id": mail["message_id"], "subject": mail["subject"], "from": mail["from"], "to": mail["to"],
+            "time": datetime.fromtimestamp(int(received) / 1000, UTC) if received else None, "thread_id": mail.get("thread_id"),
+            "snippet": (mail.get("body") or "")[:200]}
 
 
 QUOTE = re.compile(
@@ -167,13 +200,17 @@ async def _sync_sent(session: AsyncSession, feishu: FeishuClient, user: User) ->
 
     正文也要存（去掉引用的历史）：只知道“他回了”不够，要知道他回了什么，才能判断还需不需要等对方。
     """
-    data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages", params={"folder_id": "SENT", "page_size": 20})
-    ids = data.get("items") or []
+    if (box := await mailbox(user)) is not None:
+        fetched = {m["message_id"]: m for m in await imap.recent(box, "SENT", 20)}
+        ids = list(fetched)
+    else:
+        data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages", params={"folder_id": "SENT", "page_size": 20})
+        ids, fetched = data.get("items") or [], {}
     known = await existing_ids(session, user, "mail_sent", ids)
     for message_id in ids:
         if message_id in known:
             continue
-        mail = await get_message(feishu, user, message_id)
+        mail = fetched.get(message_id) or await get_message(feishu, user, message_id)
         sent = mail.get("internal_date")
         await add_signal(
             session, user, "mail_sent", message_id, kind="mail_sent", title=mail["subject"],
@@ -204,8 +241,12 @@ async def ensure_signal(session: AsyncSession, feishu: FeishuClient, user: User,
 
 async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: SourceState) -> int:
     # 不只看未读：他在飞书邮箱里先打开过的信（往往正是对方的回复）也要进来，否则“等对方回复”永远等不到
-    data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages", params={"folder_id": "INBOX", "page_size": 20})
-    ids = data.get("items") or []
+    if (box := await mailbox(user)) is not None:
+        fetched = {m["message_id"]: m for m in await imap.recent(box, "INBOX", 20)}
+        ids = list(fetched)
+    else:
+        data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages", params={"folder_id": "INBOX", "page_size": 20})
+        ids, fetched = data.get("items") or [], {}
     known = await existing_ids(session, user, "mail", ids)
     first_sync = not state.cursor.get("initialized")
     # 正在跟进的邮件线程：对方在这些线程里的新信，即使他已经在飞书里看过，也要拿来推进对应的事
@@ -218,7 +259,7 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
     for message_id in ids:
         if message_id in known:
             continue
-        mail = await get_message(feishu, user, message_id)
+        mail = fetched.get(message_id) or await get_message(feishu, user, message_id)
         received = (
             datetime.fromtimestamp(int(mail["internal_date"]) / 1000, UTC)
             if mail["internal_date"] else datetime.now(UTC)
@@ -239,6 +280,8 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
 async def own_addresses(feishu: FeishuClient, user: User) -> set[str]:
     """用户自己的邮箱地址（回复全部时从抄送里去掉）。"""
     addresses = {user.email.lower()} if user.email else set()
+    if (box := await mailbox(user)) is not None:
+        return addresses | {box["email"].lower()}
     try:
         profile = await feishu.user_api(user, "GET", f"{MAILBOX}/profile")
         if profile.get("primary_email_address"):
@@ -275,6 +318,11 @@ def _addresses(entries: list[dict]) -> str:
 def build_reply(user: User, mail: dict, body: str, cc: list[dict] | None = None, to_extra: list[dict] | None = None) -> str:
     """构造回复邮件的 EML（带 In-Reply-To / References，归入原线程），返回 base64url。
     回复全部时 to_extra 是原来的其他收件人、cc 是原来的抄送；只回发件人时两者都为空。"""
+    # SMTP 策略：CRLF 换行、非 ASCII 头按 RFC 2047 编码
+    return base64.urlsafe_b64encode(reply_message(user, mail, body, cc, to_extra).as_bytes(policy=SMTP)).decode()
+
+
+def reply_message(user: User, mail: dict, body: str, cc: list[dict] | None = None, to_extra: list[dict] | None = None) -> EmailMessage:
     message = EmailMessage()
     subject = mail["subject"]
     message["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
@@ -289,8 +337,20 @@ def build_reply(user: User, mail: dict, body: str, cc: list[dict] | None = None,
         message["In-Reply-To"] = original
         message["References"] = f"{mail.get('references') or ''} {original}".strip()
     message.set_content(body)
-    # SMTP 策略：CRLF 换行、非 ASCII 头按 RFC 2047 编码
-    return base64.urlsafe_b64encode(message.as_bytes(policy=SMTP)).decode()
+    return message
+
+
+async def send_reply(feishu: FeishuClient, user: User, mail: dict, body: str, cc: list[dict] | None = None,
+                     to_extra: list[dict] | None = None) -> None:
+    """发出回复：接了标准邮箱就用 SMTP 发（发件人是他的邮箱），否则放进飞书邮箱草稿再发送。"""
+    if (box := await mailbox(user)) is not None:
+        message = reply_message(user, mail, body, cc, to_extra)
+        del message["From"]
+        message["From"] = formataddr((user.name, box["email"]))
+        await imap.send(box, message)
+        return
+    draft_id = await create_reply_draft(feishu, user, mail, body, cc, to_extra)
+    await send_draft(feishu, user, draft_id)
 
 
 async def create_reply_draft(feishu: FeishuClient, user: User, mail: dict, body: str, cc: list[dict] | None = None,
@@ -326,6 +386,15 @@ async def attachment_bytes(feishu: FeishuClient, user: User, message_id: str, at
     """下载原邮件的附件原件（转发时带上），总大小不超过 20MB。"""
     if not attachments:
         return []
+    if (box := await mailbox(user)) is not None:
+        result, total = [], 0
+        for a in attachments:
+            name, content, _ = await imap.attachment(box, message_id, a["id"])
+            total += len(content)
+            if total > FORWARD_LIMIT:
+                raise imap.MailboxError("附件合计超过 20MB，没法随转发带上")
+            result.append((name, content))
+        return result
     data = await feishu.user_api(user, "GET", f"{MAILBOX}/messages/{message_id}/attachments/download_url",
                                  params={"attachment_ids": ",".join(a["id"] for a in attachments)})
     names = {a["id"]: a["filename"] for a in attachments}
@@ -340,6 +409,12 @@ async def attachment_bytes(feishu: FeishuClient, user: User, message_id: str, at
 
 
 async def send_raw(feishu: FeishuClient, user: User, raw: str) -> None:
+    if (box := await mailbox(user)) is not None:
+        message = email.message_from_bytes(base64.urlsafe_b64decode(raw), policy=email.policy.default)
+        del message["From"]
+        message["From"] = formataddr((user.name, box["email"]))
+        await imap.send(box, message)
+        return
     data = await feishu.user_api(user, "POST", f"{MAILBOX}/drafts", json={"raw": raw})
     await send_draft(feishu, user, (data.get("draft") or {})["id"])
 

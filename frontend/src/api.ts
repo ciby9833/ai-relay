@@ -27,6 +27,12 @@ export interface FeishuConnection {
   verified_at?: string | null; redirect_uri?: string; managed?: boolean; events_url?: string; login_url?: string;
 }
 
+export interface OwnConnection {
+  provider: "imap" | "ics"; connected: boolean; status: "none" | "unverified" | "ok" | "failed"; last_error?: string | null;
+  config: Record<string, string | number | null>; secrets: Record<string, boolean>; verified_at?: string | null; note?: string | null;
+}
+export interface OwnConnections { imap: OwnConnection; ics: OwnConnection; feishu: { linked: boolean } }
+
 export type CollabAction = "accept" | "decline" | "counter" | "submit" | "agree" | "revise" | "approve" | "return" | "cancel";
 export interface CollabMaterial { title: string; url?: string; text?: string }
 export interface Delegation {
@@ -545,6 +551,12 @@ export const api = {
   feishuConnection: () => request<FeishuConnection>("/tenant/connections/feishu"),
   saveFeishu: (values: Record<string, string>) => request<FeishuConnection>("/tenant/connections/feishu", json("PUT", values)),
   testFeishu: () => request<FeishuConnection>("/tenant/connections/feishu/test", { method: "POST" }),
+  ownConnections: () => request<OwnConnections>("/connections"),
+  mailPreset: (email: string) => request<Record<string, string | number>>(`/connections/imap/preset?email=${encodeURIComponent(email)}`),
+  saveMailbox: (values: Record<string, string | number | null>) => request<OwnConnection>("/connections/imap", json("PUT", values)),
+  saveCalendar: (values: { url?: string; label?: string }) => request<OwnConnection>("/connections/ics", json("PUT", values)),
+  testConnection: (provider: "imap" | "ics") => request<OwnConnection>(`/connections/${provider}/test`, { method: "POST" }),
+  disconnect: (provider: "imap" | "ics") => request<OwnConnection>(`/connections/${provider}`, { method: "DELETE" }),
   colleagues: () => request<{ id: string; name: string; email: string | null }[]>("/collab/members"),
   delegations: (closed = false) => request<Delegation[]>(`/collab${closed ? "?closed=true" : ""}`),
   delegation: (id: number) => request<Delegation>(`/collab/${id}`),

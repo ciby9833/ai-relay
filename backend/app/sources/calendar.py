@@ -1,4 +1,7 @@
-"""日历：未来几天的日程，以及待回复的会议邀请。"""
+"""日历：未来几天的日程，以及待回复的会议邀请。
+
+两种日历，同一套行为：成员接了日历订阅链接（ICS，见 app/sources/ics.py）就用它（只读），否则用飞书日历。
+"""
 
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -7,8 +10,10 @@ from sqlalchemy import cast, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import connections
 from app.feishu.client import FeishuClient, FeishuError
 from app.models import Signal, SourceState, User
+from app.sources import ics
 from app.sources.base import add_signal
 
 WINDOW_DAYS = 3
@@ -37,6 +42,8 @@ async def primary_calendar_id(feishu: FeishuClient, user: User, state: SourceSta
 async def list_events(
     feishu: FeishuClient, user: User, state: SourceState, start: datetime, end: datetime
 ) -> list[dict]:
+    if (account := await connections.account(user, "ics")) is not None:
+        return await ics.list_events(account, user.timezone, start, end)
     calendar_id = await primary_calendar_id(feishu, user, state)
     data = await feishu.user_api(
         user,
@@ -124,6 +131,7 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
 
 
 async def reply_invitation(feishu: FeishuClient, user: User, calendar_id: str, event_id: str, status: str) -> None:
+    _writable(calendar_id)
     await feishu.user_api(
         user, "POST", f"/calendar/v4/calendars/{calendar_id}/events/{event_id}/reply",
         json={"rsvp_status": status},
@@ -139,6 +147,11 @@ async def attendees_for(feishu: FeishuClient, user: User, event: dict) -> list[d
         )
     except (FeishuError, KeyError):
         return []
+
+
+def _writable(calendar_id: str) -> None:
+    if calendar_id == "ics":
+        raise ics.CalendarError("这是订阅的日历（只读），不能在 Relay 里改，请到原来的日历里操作")
 
 
 RSVP_TEXT = {"accept": "接受", "decline": "拒绝", "tentative": "待定", "needs_action": "还没回复", "removed": "已移除"}
@@ -170,6 +183,7 @@ async def event_attendees(
 async def update_event(
     feishu: FeishuClient, user: User, calendar_id: str, event_id: str, start: datetime, end: datetime
 ) -> None:
+    _writable(calendar_id)
     await feishu.user_api(
         user, "PATCH", f"/calendar/v4/calendars/{calendar_id}/events/{event_id}",
         json={"start_time": {"timestamp": str(int(start.timestamp()))}, "end_time": {"timestamp": str(int(end.timestamp()))},
@@ -178,12 +192,14 @@ async def update_event(
 
 
 async def delete_event(feishu: FeishuClient, user: User, calendar_id: str, event_id: str) -> None:
+    _writable(calendar_id)
     await feishu.user_api(
         user, "DELETE", f"/calendar/v4/calendars/{calendar_id}/events/{event_id}", params={"need_notification": "true"}
     )
 
 
 async def add_attendees(feishu: FeishuClient, user: User, calendar_id: str, event_id: str, open_ids: list[str]) -> None:
+    _writable(calendar_id)
     await feishu.user_api(
         user, "POST", f"/calendar/v4/calendars/{calendar_id}/events/{event_id}/attendees",
         params={"user_id_type": "open_id"},

@@ -82,19 +82,42 @@ async def _alert_reauth(session: AsyncSession, feishu: FeishuClient, user: User,
     state.cursor = {**state.cursor, "alerted_at": datetime.now(UTC).isoformat()}
 
 
+# 不用飞书也能接的数据源：邮件（标准邮箱）、日历（订阅链接）
+OWN_SOURCES = {"mail": "imap", "calendar": "ics"}
+
+
+async def available_sources(feishu: FeishuClient, user: User) -> dict[str, str]:
+    """这位成员现在能同步哪些数据源，各走哪一种：feishu | imap | ics。他自己接的优先。"""
+    from app import connections
+    from app.feishu.client import has_feishu
+
+    out = {}
+    for source in SYNCERS:
+        own = OWN_SOURCES.get(source)
+        if own and await connections.account(user, own) is not None:
+            out[source] = own
+        elif has_feishu(feishu):
+            out[source] = "feishu"
+    return out
+
+
 async def sync_sources(session: AsyncSession, feishu: FeishuClient, user: User, settings: dict, force: bool = False) -> None:
+    from app import connections
+    from app.feishu.client import has_feishu
+
     now = datetime.now(UTC)
     reauth = False
+    available = await available_sources(feishu, user)
     for source, (sync, interval) in SYNCERS.items():
-        if not settings["sources"].get(source):
-            continue
+        if not settings["sources"].get(source) or source not in available:
+            continue  # 关掉了，或者他没有这个来源（没有飞书、也没自己接）
         state = await _state(session, user, source)
         if not force and state.last_synced_at and state.last_synced_at > now - timedelta(seconds=interval):
             continue
         cursor = state.cursor or {}
         if cursor.get("unavailable_until") and datetime.fromisoformat(cursor["unavailable_until"]) > now:
             continue  # 他没有开通这项服务（例如没有邮箱）：先跳过，到时间再试一次
-        needed = REQUIRED_SCOPES.get(source)
+        needed = REQUIRED_SCOPES.get(source) if available[source] == "feishu" else None
         if needed and not set(needed) & set((user.feishu_scopes or "").split()):
             # 没授权这一项：设置页里说明，不当作故障、不反复提醒重新登录（应用开通后会按“新增能力”提醒一次）
             state.last_error = f"需要重新登录一次，授权 Relay 读取这一项（{' 或 '.join(needed)}）"
@@ -105,6 +128,8 @@ async def sync_sources(session: AsyncSession, feishu: FeishuClient, user: User, 
             async with session.begin_nested():
                 created = await sync(session, feishu, user, state)
             state.last_error = None
+            if available[source] != "feishu":
+                await connections.record_ok(user, available[source])
             if cursor.get("unavailable_until"):
                 state.cursor = {k: v for k, v in (state.cursor or {}).items() if k != "unavailable_until"}
                 logger.info("%s 的 %s 已恢复", user.name, source)
@@ -119,11 +144,15 @@ async def sync_sources(session: AsyncSession, feishu: FeishuClient, user: User, 
                 await session.commit()
                 continue
             state.last_error = str(exc)[:500]
+            if available[source] != "feishu":
+                await connections.record_error(user, available[source], str(exc))
             # 授权过期，或 token 缺少用户身份权限（报错里写着 "under the user identity"）：都要重新登录
             reauth |= needs_reauth(exc)
             logger.warning("%s 同步 %s 失败: %s", user.name, source, exc)
         state.last_synced_at = now
         await session.commit()
+    if not has_feishu(feishu):
+        return
     if reauth:
         await _alert_reauth(session, feishu, user)
         await session.commit()

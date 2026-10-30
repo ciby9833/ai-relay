@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from app.api import assistant, auth, blog, conversations, feishu_events, integrations, missions, proactive
 from app import insights
-from app.api import collab, quality, performance, evaluation, workspace, tenant
+from app.api import collab, connections as connections_api, quality, performance, evaluation, workspace, tenant
 from app import telemetry
 from app.config import get_settings
 from app.feishu.client import FeishuClient
@@ -73,6 +73,7 @@ app.include_router(proactive.router)
 app.include_router(workspace.router)
 app.include_router(tenant.router)
 app.include_router(collab.router)
+app.include_router(connections_api.router)
 app.include_router(missions.router)
 app.include_router(integrations.router)
 app.include_router(blog.router)

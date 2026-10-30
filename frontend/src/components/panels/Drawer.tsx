@@ -7,6 +7,7 @@ import type { PanelKind } from "../Sidebar";
 import type { User } from "../../api";
 import Workspace from "./Workspace";
 import Collab from "./Collab";
+import Sources from "./Sources";
 import LanguageSelect from "../LanguageSelect";
 import Automations from "./Automations";
 import Integrations from "./Integrations";
@@ -205,6 +206,9 @@ function SettingsForm() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
+  // 没有飞书的成员：只显示他自己能接的来源（邮件、日历），飞书才有的（审批、考勤……）不出现
+  const [feishuLinked, setFeishuLinked] = useState(true);
+  const onSources = useCallback((data: { feishu: { linked: boolean } }) => setFeishuLinked(data.feishu.linked), []);
 
   const load = useCallback(() => {
     setError(false);
@@ -235,9 +239,11 @@ function SettingsForm() {
         </span>
       </label>
 
+      <Sources onLoaded={onSources} />
+
       <section>
         <h3>{t("留意哪些事")}</h3>
-        {Object.entries(SOURCES).map(([key, label]) => (
+        {Object.entries(SOURCES).filter(([key]) => feishuLinked || key === "mail" || key === "calendar").map(([key, label]) => (
           <label key={key} className="toggle">
             <input
               type="checkbox"
@@ -254,7 +260,7 @@ function SettingsForm() {
             </span>
           </label>
         ))}
-        <label className="toggle">
+        {feishuLinked && <label className="toggle">
           <input
             type="checkbox"
             checked={settings.sources.private_chat ?? true}
@@ -271,7 +277,7 @@ function SettingsForm() {
               <span className="muted">{t("syncedAt", { time: relative(status.private_chat.last_synced_at) })}</span>
             ) : null}
           </span>
-        </label>
+        </label>}
       </section>
 
       <section>

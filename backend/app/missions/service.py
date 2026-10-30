@@ -140,7 +140,9 @@ async def wake_reason(session: AsyncSession, mission: Mission, feishu: FeishuCli
                 return f"{REPLY_MARK}（邮件）{mail.payload.get('from')}《{mail.title}》（邮件 #{mail.id}）：\n{(mail.body or '')[:2000]}"
         elif kind == "chat_message":
             waiting_since = datetime.fromisoformat(wait["since"]) if wait.get("since") else since
-            lines = await _poll_chat(session, feishu, mission, wait, waiting_since) if feishu else []
+            from app.feishu.client import has_feishu
+
+            lines = await _poll_chat(session, feishu, mission, wait, waiting_since) if feishu is not None and has_feishu(feishu) else []
             if not lines:
                 # 机器人在群里时收到的消息（拉取失败时的兜底）
                 statement = select(ChatMessage).where(
@@ -362,8 +364,12 @@ async def due(session: AsyncSession, limit: int = 5, feishu: FeishuClient | None
         select(Mission).where(Mission.status.in_(OPEN)).order_by(Mission.next_run_at.asc().nulls_last())
     )).scalars().all()
     ready = []
+    from app import tenancy
+
     for mission in missions:
-        reason = await wake_reason(session, mission, feishu)
+        owner = await session.get(User, mission.user_id)
+        client = await tenancy.client_for(session, owner, feishu) if owner is not None else None
+        reason = await wake_reason(session, mission, client)
         if reason:
             ready.append((mission, reason))
         if len(ready) >= limit:
@@ -374,10 +380,13 @@ async def due(session: AsyncSession, limit: int = 5, feishu: FeishuClient | None
 async def run_due(session: AsyncSession, feishu: FeishuClient) -> None:
     from app import telemetry
 
+    from app import tenancy
+
     for mission, reason in await due(session, feishu=feishu):
         try:
+            client = await tenancy.client_for(session, await session.get(User, mission.user_id), feishu)
             with telemetry.work("mission"):
-                await run(session, feishu, mission, reason)
+                await run(session, client, mission, reason)
         except Exception:
             logger.exception("任务 #%s 执行失败", mission.id)
             await session.rollback()

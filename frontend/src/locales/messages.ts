@@ -2756,6 +2756,106 @@ export const messages: Record<string, readonly [string, string]> = {
     "Sent back — needs changes",
     "Dikembalikan — perlu diperbaiki"
   ],
+  "邮箱地址": [
+    "Email address",
+    "Alamat email"
+  ],
+  "密码（Gmail、Outlook 等要用“应用专用密码”）": [
+    "Password (Gmail, Outlook and others need an app password)",
+    "Kata sandi (Gmail, Outlook, dll. perlu sandi aplikasi)"
+  ],
+  "服务器设置": [
+    "Server settings",
+    "Pengaturan server"
+  ],
+  "收信服务器（IMAP）": [
+    "Incoming server (IMAP)",
+    "Server masuk (IMAP)"
+  ],
+  "端口": [
+    "Port",
+    "Port"
+  ],
+  "发信服务器（SMTP）": [
+    "Outgoing server (SMTP)",
+    "Server keluar (SMTP)"
+  ],
+  "登录名（通常就是邮箱地址）": [
+    "Username (usually your email address)",
+    "Nama pengguna (biasanya alamat email)"
+  ],
+  "“已发送”文件夹（找不到时才需要填）": [
+    "Sent folder (only if it isn't found automatically)",
+    "Folder Terkirim (isi hanya jika tidak ditemukan otomatis)"
+  ],
+  "正在连接…": [
+    "Connecting…",
+    "Menghubungkan…"
+  ],
+  "保存并测试": [
+    "Save and test",
+    "Simpan dan uji"
+  ],
+  "接入": [
+    "Connect",
+    "Hubungkan"
+  ],
+  "断开这个邮箱？已经读进来的邮件和事项会保留。": [
+    "Disconnect this mailbox? Mail and items already read in are kept.",
+    "Putuskan kotak surat ini? Email dan item yang sudah dibaca tetap disimpan."
+  ],
+  "断开": [
+    "Disconnect",
+    "Putuskan"
+  ],
+  "日历订阅链接（ICS）": [
+    "Calendar subscription link (ICS)",
+    "Tautan langganan kalender (ICS)"
+  ],
+  "Google 日历：设置 → 你的日历 → “iCal 格式的私密地址”；Outlook：设置 → 日历 → 共享日历 → 发布日历 → ICS 链接。只读：Relay 用它做会前准备和简报，不会改你的日历。": [
+    "Google Calendar: Settings → your calendar → \"Secret address in iCal format\". Outlook: Settings → Calendar → Shared calendars → Publish a calendar → ICS link. Read-only: Relay uses it for meeting prep and briefs and never changes your calendar.",
+    "Google Kalender: Setelan → kalender Anda → \"Alamat rahasia dalam format iCal\". Outlook: Pengaturan → Kalender → Kalender bersama → Terbitkan kalender → tautan ICS. Hanya-baca: Relay memakainya untuk persiapan rapat dan ringkasan, tidak mengubah kalender Anda."
+  ],
+  "断开这个日历？": [
+    "Disconnect this calendar?",
+    "Putuskan kalender ini?"
+  ],
+  "邮箱和日历": [
+    "Mail and calendar",
+    "Email dan kalender"
+  ],
+  "你在用飞书的邮箱和日历。如果你的工作邮箱不是飞书邮箱，可以在这里接入，Relay 就读这个邮箱。": [
+    "You're using Feishu mail and calendar. If your work mailbox isn't Feishu Mail, connect it here and Relay will read that one.",
+    "Anda memakai email dan kalender Feishu. Jika email kerja Anda bukan Feishu Mail, hubungkan di sini dan Relay akan membacanya."
+  ],
+  "接入你自己的工作邮箱和日历，Relay 就能替你读信、跟进要你处理的事、代拟回复、做会前准备和简报。": [
+    "Connect your work mailbox and calendar so Relay can read your mail, track what needs you, draft replies, and prepare meetings and briefs.",
+    "Hubungkan email dan kalender kerja Anda agar Relay bisa membaca email, mengikuti hal yang perlu Anda tangani, menyiapkan balasan, persiapan rapat, dan ringkasan."
+  ],
+  "最近验证 {time}": [
+    "Last checked {time}",
+    "Terakhir diperiksa {time}"
+  ],
+  "浏览器通知": [
+    "Browser notifications",
+    "Notifikasi browser"
+  ],
+  "这个浏览器不支持通知": [
+    "This browser doesn't support notifications",
+    "Browser ini tidak mendukung notifikasi"
+  ],
+  "Relay 有需要你马上知道的事时，在浏览器里弹出通知（打开着 Relay 的标签页时）。": [
+    "Show a browser notification when Relay has something you need to know now (while a Relay tab is open).",
+    "Tampilkan notifikasi browser saat Relay punya hal yang perlu segera Anda ketahui (selama tab Relay terbuka)."
+  ],
+  "今天的简报好了": [
+    "Today's brief is ready",
+    "Ringkasan hari ini sudah siap"
+  ],
+  "有事需要你看一下": [
+    "Something needs your attention",
+    "Ada yang perlu Anda lihat"
+  ],
   "已填写（留空表示不改）": [
     "Set (leave blank to keep)",
     "Sudah diisi (kosongkan untuk tetap)"

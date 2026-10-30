@@ -86,6 +86,9 @@ async def process(session: AsyncSession, feishu: FeishuClient, file_id) -> Gener
     if record is None:
         return None
     user = await session.get(User, record.user_id)
+    from app import tenancy
+
+    feishu = await tenancy.client_for(session, user, feishu)  # 他自己工作区的飞书；没有飞书就只在 Relay 里告诉他
     record.status, record.attempts, record.updated_at, record.error = "running", record.attempts + 1, now, None
     await session.commit()
     try:

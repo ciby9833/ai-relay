@@ -316,6 +316,19 @@ async def feishu_for(session: AsyncSession, tenant_id: uuid.UUID, http, fallback
     return client
 
 
+async def client_for(session: AsyncSession, user: User, default):
+    """后台替这位成员工作时用哪个飞书客户端：他所在工作区自己的飞书应用；他没有飞书身份或工作区没接飞书时，
+    返回只在 Relay 里提醒的替身（WebOnly），绝不用别的公司的飞书应用。"""
+    from app.feishu.client import WebOnly, has_feishu
+
+    if not user.feishu_open_id:
+        return WebOnly()
+    if user.tenant_id == DEFAULT_TENANT_ID:
+        return default if default is not None and has_feishu(default) else WebOnly()
+    client = await feishu_for(session, user.tenant_id, getattr(default, "http", None))
+    return client or WebOnly()
+
+
 async def test_feishu(session: AsyncSession, actor: User, http) -> TenantConnection:
     """用填写的 App ID / Secret 向飞书换一次应用 token，验证配置可用。"""
     from app.feishu.client import FeishuClient, FeishuError

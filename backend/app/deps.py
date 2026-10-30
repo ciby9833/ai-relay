@@ -5,7 +5,7 @@ from fastapi import Cookie, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import SessionLocal
-from app.feishu.client import FeishuClient
+from app.feishu.client import FeishuClient, NoFeishu
 from app.models import DEFAULT_TENANT_ID, Tenant, User
 from app.security import SESSION_COOKIE, parse_session_token
 
@@ -45,17 +45,6 @@ async def get_feishu(
     client = await tenancy.feishu_for(session, user.tenant_id, getattr(request.app.state, "http", None), fallback=default)
     return client or NoFeishu()
 
-
-class NoFeishu:
-    """工作区没接入飞书：用到飞书的功能时明确报错，而不是用别的公司的飞书应用去做。"""
-
-    def __getattr__(self, name):
-        async def unavailable(*args, **kwargs):
-            from app.feishu.client import FeishuError
-
-            raise FeishuError("这个工作区还没有接入飞书，请管理员在“工作区设置”里配置")
-
-        return unavailable
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]

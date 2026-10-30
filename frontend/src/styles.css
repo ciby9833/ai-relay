@@ -2376,3 +2376,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .collab-form select { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
 .collab-log ol { padding-left: 18px; margin: 6px 0 0; font-size: 13px; }
 @media (max-width: 520px) { .collab-fields { grid-template-columns: 1fr; } .collab-fields dd { margin-bottom: 6px; } }
+.ws-advanced { display: flex; flex-direction: column; gap: 8px; }
+.ws-advanced summary { cursor: pointer; font-size: 13px; color: var(--text-2); }
+.ws-advanced label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); margin-top: 6px; }

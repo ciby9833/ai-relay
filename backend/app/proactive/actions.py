@@ -378,8 +378,7 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
                     await _with_addresses(session, feishu, user, signal), await mail.own_addresses(feishu, user))
             else:
                 to_extra, cc = None, None
-            draft_id = await mail.create_reply_draft(feishu, user, signal.payload, p["body"], cc, to_extra)
-            await mail.send_draft(feishu, user, draft_id)
+            await mail.send_reply(feishu, user, signal.payload, p["body"], cc, to_extra)
             result = f"已发送：{action.summary}"
         elif action.kind == "forward_mail":
             signal = await session.get(Signal, action.signal_id) if action.signal_id else None
