@@ -270,10 +270,15 @@ async def _person(feishu: FeishuClient, user: User, open_id: str) -> dict:
 
 
 async def leaders(session: AsyncSession, feishu: FeishuClient | None, user: User) -> list[dict]:
-    """他的上级链（飞书通讯录里的 leader，往上最多 LEADER_DEPTH 级，直属上级在前）。
+    """他的上级链（往上最多 LEADER_DEPTH 级，直属上级在前）。
 
-    查到了一周更新一次；查不到（权限、网络）就当没有，一天后再试。
+    以 Relay 自己的组织架构为准（工作区里设了上级）；没设时才查飞书通讯录（一周更新一次，查不到一天后再试）。
     """
+    from app import org
+
+    chain = await org.manager_chain(session, user, LEADER_DEPTH)
+    if chain:
+        return chain
     state = await _state(session, user)
     cursor = dict(state.cursor or {})
     retry_at = cursor.get("leaders_next_check")

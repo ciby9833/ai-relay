@@ -1,5 +1,14 @@
 # Relay Mac 客户端
 
+## 下载与更新入口
+
+- 面向用户的下载页：Web 服务发布后访问 `https://translation.jtcargo.co.id/download/`（无需登录）。本地预览运行 `frontend/` 的 `npm run dev`，打开 `/download/`。页面从 `/desktop/latest-mac.yml` 读取已发布版本、两个架构的 DMG 链接及文件大小，不在网页中写死版本号。
+- 安装包和自动更新源：`https://translation.jtcargo.co.id/desktop/`。这个目录继续服务 `.dmg`、`.zip`、`.blockmap` 和 `latest-mac.yml`，不改成网页路由。
+- 0.1.0 提供 Apple 芯片和 Intel 两个版本，最低 macOS 13。下载 DMG 后将 Relay 拖入 Applications。
+- 打包客户端在启动时检查更新，并在运行期间每 6 小时检查一次、自动下载。完全退出 Relay 后重新打开以使用新版；关闭窗口只是隐藏，仍驻留菜单栏。
+
+## 客户端能力
+
 同一个 Relay（界面直接用网页版），加上桌面才有的能力：
 
 - **菜单栏常驻**：关窗口只是隐藏，Relay 主动提醒时弹 **macOS 系统通知**（点通知回到窗口）。
@@ -52,5 +61,15 @@ RELAY_SMOKE_SHOT=/tmp/relay.png npx electron .
 
 4. 出包：`npm run dist`，产物在 `dist/`：Apple 芯片和 Intel 各一个 `.dmg`（给同事安装）和 `.zip`（自动更新用），以及 `latest-mac.yml`。
 5. 发布新版本：改 `package.json` 里的 `version`，出包后把 `dist/` 里的 `.zip`、`.dmg`、`.blockmap`、`latest-mac.yml` 放到服务器的 `/var/www/relay/desktop-releases/`（就是 `https://translation.jtcargo.co.id/desktop/`）。先放安装包，最后放 `latest-mac.yml`。已安装的客户端每 6 小时检查一次，下载后在下次重启时更新。
+
+发布时的完整性要求：
+
+- 在 `desktop/` 中设置上面的 `RELAY_UPDATE_URL`，运行 `APPLE_KEYCHAIN_PROFILE=relay npm run dist`。须等两个架构及 DMG、ZIP 全部构建完成；某一个架构公证通过不代表整次发布完成。
+- 验证两个 `.app` 的签名、公证票据和 Gatekeeper 接受状态，并实际启动检查。
+- 先上传两个架构的 DMG、ZIP 和 blockmap，校验远端大小与校验和。已有版本的文件保持不变。
+- 最后将新清单上传为临时文件，再在服务器同目录原子重命名为 `latest-mac.yml`，避免用户读到半份清单。下载页面与自动更新使用同一份清单，同时切换到新版本。
+- 从外网检查下载页、两个 DMG 及清单中的 ZIP 链接。更新清单响应保持 `Cache-Control: no-cache`。
+
+网页内容和前端 UI 的更新只需发布 Web 服务；Electron 主进程、预加载桥接、本机文件执行逻辑及打包依赖的更新，需要提升客户端版本、重新签名公证并发布安装包。
 
 Windows 版以后用同一套代码出包（electron-builder 加 `--win` 和 Windows 代码签名证书）。

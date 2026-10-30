@@ -2936,6 +2936,178 @@ export const messages: Record<string, readonly [string, string]> = {
     "Revoke \"{name}\"? It disconnects immediately and the assistant can no longer use its folders.",
     "Cabut \"{name}\"? Langsung terputus dan asisten tidak bisa lagi memakai foldernya."
   ],
+  "已保存。助理会用这些信息理解你的工作。": [
+    "Saved. Your assistant uses this to understand your work.",
+    "Tersimpan. Asisten memakai ini untuk memahami pekerjaan Anda."
+  ],
+  "我的资料": [
+    "My profile",
+    "Profil saya"
+  ],
+  "部门：{dept} · 直属上级：{manager}": [
+    "Department: {dept} · Manager: {manager}",
+    "Departemen: {dept} · Atasan: {manager}"
+  ],
+  "岗位": [
+    "Job title",
+    "Jabatan"
+  ],
+  "负责什么（客户、线路、项目……）": [
+    "Responsibilities (customers, routes, projects…)",
+    "Tanggung jawab (pelanggan, rute, proyek…)"
+  ],
+  "新建工作区": [
+    "New workspace",
+    "Workspace baru"
+  ],
+  "创建": [
+    "Create",
+    "Buat"
+  ],
+  "未设置": [
+    "Not set",
+    "Belum diatur"
+  ],
+  "部门": [
+    "Department",
+    "Departemen"
+  ],
+  "已从飞书同步 {depts} 个部门、{members} 位成员；手工改过的没有覆盖。": [
+    "Synced {depts} departments and {members} members from Feishu; manual edits were kept.",
+    "Tersinkron {depts} departemen dan {members} anggota dari Feishu; perubahan manual tetap dipertahankan."
+  ],
+  "从飞书通讯录同步": [
+    "Sync from Feishu directory",
+    "Sinkronkan dari direktori Feishu"
+  ],
+  "同步部门、上级和岗位；你在这里手工改过的不会被覆盖。": [
+    "Syncs departments, managers and job titles; anything you edited here is never overwritten.",
+    "Menyinkronkan departemen, atasan, dan jabatan; yang Anda ubah di sini tidak akan ditimpa."
+  ],
+  "还没有部门。": [
+    "No departments yet.",
+    "Belum ada departemen."
+  ],
+  "负责人：{name}": [
+    "Lead: {name}",
+    "Pimpinan: {name}"
+  ],
+  "来自飞书": [
+    "From Feishu",
+    "Dari Feishu"
+  ],
+  "部门负责人": [
+    "Department lead",
+    "Pimpinan departemen"
+  ],
+  "新的部门名称": [
+    "New department name",
+    "Nama departemen baru"
+  ],
+  "改名": [
+    "Rename",
+    "Ganti nama"
+  ],
+  "删除部门「{name}」？下级部门会挂到它的上级，成员不会被删除。": [
+    "Delete department \"{name}\"? Sub-departments move up to its parent; no members are removed.",
+    "Hapus departemen \"{name}\"? Sub-departemen dipindah ke induknya; anggota tidak dihapus."
+  ],
+  "部门名称": [
+    "Department name",
+    "Nama departemen"
+  ],
+  "上级部门": [
+    "Parent department",
+    "Departemen induk"
+  ],
+  "顶级部门": [
+    "Top level",
+    "Tingkat teratas"
+  ],
+  "添加部门": [
+    "Add department",
+    "Tambah departemen"
+  ],
+  "成员的部门与上级": [
+    "Members' departments and managers",
+    "Departemen dan atasan anggota"
+  ],
+  "上级用来判断谁的事更重要（上级找他的事会优先告诉他）；不用于派任务。": [
+    "Managers decide what matters more (requests from a manager are surfaced first); not for assigning tasks.",
+    "Atasan dipakai untuk menentukan prioritas (permintaan atasan didahulukan); bukan untuk membagi tugas."
+  ],
+  "未填岗位": [
+    "No job title",
+    "Belum ada jabatan"
+  ],
+  "未设置部门": [
+    "No department",
+    "Belum ada departemen"
+  ],
+  "直属上级": [
+    "Manager",
+    "Atasan langsung"
+  ],
+  "团队": [
+    "Teams",
+    "Tim"
+  ],
+  "可以跨部门的一组人（例如项目组）。负责人能看成员的事项数量，看不到内容。": [
+    "A group of people across departments (e.g. a project group). Leads see how many items members have, never the content.",
+    "Sekelompok orang lintas departemen (mis. tim proyek). Pimpinan melihat jumlah item anggota, bukan isinya."
+  ],
+  "还没有团队。": [
+    "No teams yet.",
+    "Belum ada tim."
+  ],
+  "完成": [
+    "Done",
+    "Selesai"
+  ],
+  "看汇总": [
+    "Summary",
+    "Ringkasan"
+  ],
+  "删除团队「{name}」？": [
+    "Delete team \"{name}\"?",
+    "Hapus tim \"{name}\"?"
+  ],
+  "负责人": [
+    "Lead",
+    "Pimpinan"
+  ],
+  "团队负责人": [
+    "Team lead",
+    "Pimpinan tim"
+  ],
+  "还没有成员": [
+    "No members yet",
+    "Belum ada anggota"
+  ],
+  "团队名称": [
+    "Team name",
+    "Nama tim"
+  ],
+  "建立团队": [
+    "Create team",
+    "Buat tim"
+  ],
+  "要处理": [
+    "To do",
+    "Perlu ditangani"
+  ],
+  "逾期": [
+    "Overdue",
+    "Terlambat"
+  ],
+  "我负责的团队": [
+    "Teams I lead",
+    "Tim yang saya pimpin"
+  ],
+  "{field}：未设置": [
+    "{field}: not set",
+    "{field}: belum diatur"
+  ],
   "已填写（留空表示不改）": [
     "Set (leave blank to keep)",
     "Sudah diisi (kosongkan untuk tetap)"

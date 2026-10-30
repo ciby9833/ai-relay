@@ -272,6 +272,31 @@ async def workspaces(session: SessionDep, user: UserDep):
             for _, t in await tenancy.memberships(session, user.account_id)]
 
 
+class NewWorkspaceBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+MAX_OWNED_WORKSPACES = 5
+
+
+@router.post("/workspaces")
+async def create_workspace(body: NewWorkspaceBody, session: SessionDep, user: UserDep, response: Response):
+    """已登录的账号新建一个工作区（自己是所有者），并切换过去。每个账号最多拥有 5 个。"""
+    if not user.account_id:
+        raise HTTPException(status_code=400, detail="先给账号设置邮箱和密码，才能新建工作区")
+    account = await session.get(Account, user.account_id)
+    owned = sum(1 for member, _ in await tenancy.memberships(session, account.id) if member.role == "owner")
+    if owned >= MAX_OWNED_WORKSPACES:
+        raise HTTPException(status_code=400, detail=f"每个账号最多拥有 {MAX_OWNED_WORKSPACES} 个工作区")
+    try:
+        member = await tenancy.create_workspace(session, account, body.name)
+    except tenancy.TenancyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await session.commit()
+    _set_session_cookie(response, member)
+    return await _describe(session, member)
+
+
 class SwitchBody(BaseModel):
     tenant_id: uuid.UUID
 

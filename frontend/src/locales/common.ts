@@ -2,6 +2,7 @@ import { admin } from "./admin";
 // Entries: Chinese, English, Indonesian.
 export const common: Record<string, readonly [string, string, string]> = {
   ...admin,
+  "downloadClient": ["下载客户端", "Download app", "Unduh aplikasi"],
   "blogTitle": ["博客", "Blog", "Blog"],
   "blogArticles": ["文章", "Articles", "Artikel"],
   "blogArticle": ["文章", "Article", "Artikel"],

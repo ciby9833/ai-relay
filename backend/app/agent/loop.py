@@ -155,6 +155,13 @@ async def build_context(
         f"渠道：{conversation.channel}",
         f"用户常用语言：{i18n.LANGUAGES[await language_of(session, user)]}",
     ]
+    from app import org
+
+    place = await org.profile(session, user)  # 组织资料：工作区里登记的事实，不是规则
+    facts = [f"{label}：{place[key]}" for key, label in (("department", "部门"), ("title", "岗位"), ("manager", "直属上级"),
+                                                       ("responsibilities", "负责")) if place.get(key)]
+    if facts:
+        lines.append("用户的组织资料：" + "；".join(facts))
     profile = await memory_service.list_memories(
         session, user.id, "profile", memory_service.PROFILE_LIMIT
     )

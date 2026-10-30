@@ -3,6 +3,7 @@ import { useEffect, useRef, type MouseEvent } from "react";
 import type { Conversation, User } from "../api";
 import { relative } from "../format";
 import Icon, { RelayMark } from "./Icon";
+import { desktop } from "../desktop";
 
 export type View = { type: "admin" } | { type: "eval" } | { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
 export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations" | "workspace" | "collab";
@@ -117,6 +118,9 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-foot">
+        {!desktop() && <a className="nav-item blog-link" href="/download/">
+          <Icon name="download" /> {t("downloadClient")}
+        </a>}
         <a className="nav-item blog-link" href="/blog/">
           <Icon name="doc" /> {t("blogTitle")}
         </a>

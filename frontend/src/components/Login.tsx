@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, type User, type WorkspaceChoice } from "../api";
 import LanguageSelect from "./LanguageSelect";
 import { RelayMark } from "./Icon";
+import { desktop } from "../desktop";
 
 const ERRORS: Record<string, string> = {
   denied: "你取消了飞书授权。",
@@ -107,6 +108,7 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
           </button>
         )}
         <a className="btn ghost" href="/blog/">{t("blogTitle")}</a>
+        {!desktop() && <a className="btn ghost" href="/download/">{t("downloadClient")}</a>}
       </div>
     </div>
   );

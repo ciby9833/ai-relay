@@ -33,6 +33,15 @@ export interface OwnConnection {
 }
 export interface OwnConnections { imap: OwnConnection; ics: OwnConnection; feishu: { linked: boolean } }
 
+export interface OrgDepartment { id: string; name: string; parent_id: string | null; lead_id: string | null; source: "manual" | "feishu"; locks: string[] }
+export interface OrgMember {
+  id: string; name: string; email: string | null; title: string | null; responsibilities: string | null;
+  department_id: string | null; manager_id: string | null; role: string; status: string; feishu: boolean; locks: string[];
+}
+export interface OrgTeam { id: string; name: string; lead_id: string | null; member_ids: string[] }
+export interface OrgOverview { departments: OrgDepartment[]; members: OrgMember[]; teams: OrgTeam[]; me: string; can_edit: boolean }
+export interface OrgProfile { department: string | null; manager: string | null; title: string | null; responsibilities: string | null }
+
 export interface Device {
   id: string; name: string; platform: string; app_version: string | null; online: boolean;
   folders: { id: string; label: string; read: boolean; write: boolean }[]; last_seen_at: string | null; created_at: string | null;
@@ -561,6 +570,20 @@ export const api = {
   feishuConnection: () => request<FeishuConnection>("/tenant/connections/feishu"),
   saveFeishu: (values: Record<string, string>) => request<FeishuConnection>("/tenant/connections/feishu", json("PUT", values)),
   testFeishu: () => request<FeishuConnection>("/tenant/connections/feishu/test", { method: "POST" }),
+  org: () => request<OrgOverview>("/org"),
+  myOrgProfile: () => request<OrgProfile>("/org/me"),
+  updateOrgMember: (id: string, change: Partial<Pick<OrgMember, "department_id" | "manager_id" | "title" | "responsibilities">>) =>
+    request<OrgMember>(`/org/members/${id}`, json("PATCH", change)),
+  createDepartment: (values: { name: string; parent_id?: string | null }) => request<OrgDepartment>("/org/departments", json("POST", values)),
+  updateDepartment: (id: string, values: { name?: string; parent_id?: string | null; lead_id?: string | null }) =>
+    request<OrgDepartment>(`/org/departments/${id}`, json("PATCH", values)),
+  deleteDepartment: (id: string) => request(`/org/departments/${id}`, { method: "DELETE" }),
+  createTeam: (values: { name: string; lead_id?: string | null; member_ids?: string[] }) => request<{ id: string }>("/org/teams", json("POST", values)),
+  updateTeam: (id: string, values: { name?: string; lead_id?: string | null; member_ids?: string[] }) => request(`/org/teams/${id}`, json("PATCH", values)),
+  deleteTeam: (id: string) => request(`/org/teams/${id}`, { method: "DELETE" }),
+  teamSummary: (id: string) => request<{ id: string; name: string; open: number; overdue: number; waiting: number }[]>(`/org/teams/${id}/summary`),
+  syncOrgFromFeishu: () => request<{ departments: number; members: number; skipped_locked: number }>("/org/sync-feishu", { method: "POST" }),
+  createWorkspace: (name: string) => request<User>("/auth/workspaces", json("POST", { name })),
   pairDevice: (name: string, platform: string, app_version: string) =>
     request<Device & { token: string }>("/devices", json("POST", { name, platform, app_version })),
   devices: () => request<Device[]>("/devices"),

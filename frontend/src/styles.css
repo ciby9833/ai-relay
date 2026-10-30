@@ -2381,3 +2381,8 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .ws-advanced label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); margin-top: 6px; }
 .mac-path { overflow-wrap: anywhere; }
 .mac-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.org-members .ws-member-actions select { max-width: 170px; }
+.team-pick { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.team-summary { width: 100%; border-collapse: collapse; font-size: 13px; }
+.team-summary th, .team-summary td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.team-summary th:not(:first-child), .team-summary td:not(:first-child) { text-align: right; }

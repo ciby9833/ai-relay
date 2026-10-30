@@ -148,6 +148,12 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 组织资料（Relay 自己的组织架构是权威；接了飞书时从通讯录同步，手工改过的字段记在 org_locks 里，同步不覆盖）
+    department_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("departments.id", ondelete="SET NULL"), index=True)
+    manager_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    title: Mapped[str | None] = mapped_column(String(255))  # 岗位
+    responsibilities: Mapped[str | None] = mapped_column(Text)  # 负责什么（客户、线路、项目……），本人或管理员填写
+    org_locks: Mapped[list] = mapped_column(JSONB, server_default="[]")  # 手工改过、同步时不覆盖的字段
 
 
 class Conversation(Base):
@@ -803,3 +809,41 @@ class DeviceJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Department(Base):
+    """部门（树）。管理员维护；接了飞书时可以从通讯录同步（source=feishu，external_id 是飞书部门 ID）。"""
+
+    __tablename__ = "departments"
+    __table_args__ = (UniqueConstraint("tenant_id", "external_id", name="uq_departments_tenant_external"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("departments.id", ondelete="SET NULL"))
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    source: Mapped[str] = mapped_column(String(16), server_default="manual")  # manual | feishu
+    external_id: Mapped[str | None] = mapped_column(String(128))
+    locks: Mapped[list] = mapped_column(JSONB, server_default="[]")  # 手工改过的字段（name / parent_id / lead_id），同步不覆盖
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Team(Base):
+    """团队：可以跨部门的一组人（例如“Medan 项目组”）。负责人能看团队的事项数量汇总，看不到内容。"""
+
+    __tablename__ = "teams"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)

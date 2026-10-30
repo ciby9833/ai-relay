@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type FeishuConnection, type Invitation, type Member, type User, type WorkspaceChoice } from "../../api";
 import { relative } from "../../format";
 import { MyDevices } from "./ThisMac";
+import { MyProfile, MyTeams, NewWorkspace, OrgAdmin } from "./Org";
 
 const ROLE: Record<Member["role"], string> = { owner: "所有者", admin: "管理员", member: "成员" };
 
@@ -219,9 +220,13 @@ export default function Workspace({ me, onChanged }: { me: User; onChanged: () =
   return (
     <>
       <p className="muted small">{t("当前工作区：{name}", { name: me.tenant?.name ?? "—" })} · {t(ROLE[me.role ?? "member"])}</p>
+      <MyProfile me={me} />
+      {!me.is_admin && <MyTeams me={me} />}
       <AccountPart me={me} onChanged={onChanged} />
       <MyDevices />
+      <NewWorkspace me={me} />
       {me.is_admin && <AdminPart me={me} />}
+      {me.is_admin && <OrgAdmin feishu={!!me.feishu_linked} />}
     </>
   );
 }
