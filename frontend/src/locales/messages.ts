@@ -2492,6 +2492,18 @@ export const messages: Record<string, readonly [string, string]> = {
     "The default workspace uses the server's Feishu settings, so they're read-only here. Contact the platform team to change them.",
     "Workspace default memakai pengaturan Feishu dari server, jadi hanya bisa dilihat di sini. Hubungi tim platform untuk mengubahnya."
   ],
+  "事件订阅和卡片回调的请求地址（订阅“接收消息”事件和“卡片回传交互”）": [
+    "Request URL for event subscriptions and card callbacks (subscribe to \"Receive messages\" and \"Card action\")",
+    "URL permintaan untuk langganan event dan callback kartu (langganan \"Terima pesan\" dan \"Aksi kartu\")"
+  ],
+  "成员用飞书登录这个工作区的链接": [
+    "Link for members to sign in to this workspace with Feishu",
+    "Tautan bagi anggota untuk masuk ke workspace ini dengan Feishu"
+  ],
+  "这个飞书应用已经接入了另一个工作区。每个工作区需要使用自己的飞书应用。": [
+    "This Feishu app is already connected to another workspace. Each workspace needs its own Feishu app.",
+    "Aplikasi Feishu ini sudah terhubung ke workspace lain. Setiap workspace perlu aplikasi Feishu sendiri."
+  ],
   "已填写（留空表示不改）": [
     "Set (leave blank to keep)",
     "Sudah diisi (kosongkan untuk tetap)"

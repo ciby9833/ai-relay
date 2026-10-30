@@ -120,6 +120,8 @@ class User(Base):
     以前只有飞书登录，所以叫 User 且必须有飞书身份；现在飞书身份可选，登录账号（Account）另存。"""
 
     __tablename__ = "users"
+    # 每个工作区接的是它自己的飞书应用，同一个飞书身份只在一个工作区内唯一
+    __table_args__ = (UniqueConstraint("tenant_id", "feishu_open_id", name="uq_users_tenant_open_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     # 没指定工作区时归入默认工作区（迁移前的所有用户都在这里），旧代码创建用户的地方不用改
@@ -128,7 +130,7 @@ class User(Base):
     account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), index=True)
     role: Mapped[str] = mapped_column(String(16), server_default="member")  # owner | admin | member
     status: Mapped[str] = mapped_column(String(16), server_default="active")  # active | deactivated
-    feishu_open_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    feishu_open_id: Mapped[str | None] = mapped_column(String(64), index=True)  # 每个工作区内唯一（见 __table_args__）
     feishu_union_id: Mapped[str | None] = mapped_column(String(64))
     feishu_user_id: Mapped[str | None] = mapped_column(String(64))
     tenant_key: Mapped[str | None] = mapped_column(String(64))
@@ -414,10 +416,14 @@ class ChatMessage(Base):
     只用来理解要处理的事：从中提取谁让谁做什么，以及起草回复时作为背景。保留 14 天。"""
 
     __tablename__ = "chat_messages"
-    __table_args__ = (Index("ix_chat_messages_chat_created", "chat_id", "created_at"),)
+    __table_args__ = (Index("ix_chat_messages_chat_created", "chat_id", "created_at"),
+                      UniqueConstraint("tenant_id", "message_id", name="uq_chat_messages_tenant_message"))
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    message_id: Mapped[str] = mapped_column(String(128), unique=True)
+    # 哪个工作区的飞书应用收到的：跨公司的外部群里同一条消息，每个工作区各存一份、各自处理，互相看不到
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True,
+                                                 default=lambda: DEFAULT_TENANT_ID, server_default=str(DEFAULT_TENANT_ID))
+    message_id: Mapped[str] = mapped_column(String(128))
     chat_id: Mapped[str] = mapped_column(String(128))
     chat_name: Mapped[str | None] = mapped_column(String(255))
     sender_open_id: Mapped[str] = mapped_column(String(64))
@@ -500,6 +506,9 @@ class Person(Base):
 
     __tablename__ = "people"
 
+    # 每个工作区一份名册：别的公司的人不会被找到、也不会被发消息
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True,
+                                                 default=lambda: DEFAULT_TENANT_ID, server_default=str(DEFAULT_TENANT_ID))
     open_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     source: Mapped[str] = mapped_column(String(32))  # mention | sender | contact | user

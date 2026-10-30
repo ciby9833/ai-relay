@@ -5,6 +5,17 @@ import { relative } from "../../format";
 
 const ROLE: Record<Member["role"], string> = { owner: "所有者", admin: "管理员", member: "成员" };
 
+function CopyLine({ label, value }: { label: string; value: string }) {
+  return (
+    <label className="ws-copy">{label}
+      <span className="ws-link">
+        <input readOnly value={value} aria-label={label} onFocus={(e) => e.currentTarget.select()} />
+        <button type="button" className="btn secondary small" onClick={() => void navigator.clipboard?.writeText(value)}>{t("复制")}</button>
+      </span>
+    </label>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="ws-section"><h3>{title}</h3>{children}</section>;
 }
@@ -185,6 +196,12 @@ function AdminPart({ me }: { me: User }) {
           ))}
           </fieldset>
           {feishu?.redirect_uri && <p className="muted small">{t("飞书后台的重定向 URL 填：{url}", { url: feishu.redirect_uri })}</p>}
+          {feishu?.events_url && (
+            <div className="ws-urls">
+              <CopyLine label={t("事件订阅和卡片回调的请求地址（订阅“接收消息”事件和“卡片回传交互”）")} value={feishu.events_url} />
+              {feishu.login_url && <CopyLine label={t("成员用飞书登录这个工作区的链接")} value={feishu.login_url} />}
+            </div>
+          )}
           <span className="ws-inline">
             {!feishu?.managed && <button className="btn primary small" disabled={busy}>{t("保存")}</button>}
             <button type="button" className="btn secondary small" disabled={busy || !feishu?.configured} onClick={() => void run(() => api.testFeishu())}>

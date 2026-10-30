@@ -4,6 +4,7 @@
 """
 
 import re
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
@@ -27,13 +28,13 @@ class Ambiguous(Exception):
         self.query, self.candidates = query, candidates
 
 
-async def remember(session: AsyncSession, people: list[tuple[str | None, str | None, str]]) -> None:
-    """记下 (open_id, 名字, 来源)；同一个人以最新的名字为准。"""
+async def remember(session: AsyncSession, tenant_id: uuid.UUID, people: list[tuple[str | None, str | None, str]]) -> None:
+    """在这个工作区的名册里记下 (open_id, 名字, 来源)；同一个人以最新的名字为准。"""
     rows = {open_id: (name, source) for open_id, name, source in people if open_id and name}
     for open_id, (name, source) in rows.items():
         await session.execute(
-            insert(Person).values(open_id=open_id, name=name[:255], source=source, updated_at=datetime.now(UTC))
-            .on_conflict_do_update(index_elements=["open_id"], set_={"name": name[:255], "updated_at": datetime.now(UTC)})
+            insert(Person).values(tenant_id=tenant_id, open_id=open_id, name=name[:255], source=source, updated_at=datetime.now(UTC))
+            .on_conflict_do_update(index_elements=["tenant_id", "open_id"], set_={"name": name[:255], "updated_at": datetime.now(UTC)})
         )
 
 
@@ -55,9 +56,15 @@ async def _search_feishu(feishu: FeishuClient, user: User, query: str) -> list[d
 
 
 async def find(
-    session: AsyncSession, feishu: FeishuClient, query: str, limit: int = 5, user: User | None = None
+    session: AsyncSession, feishu: FeishuClient, query: str, limit: int = 5, user: User | None = None,
+    tenant_id: uuid.UUID | None = None,
 ) -> list[dict]:
-    """按名字或企业邮箱找同事。先查名册，再以用户身份搜飞书；同名多人时抛出 Ambiguous。"""
+    """按名字或企业邮箱找同事。先查这个工作区的名册，再以用户身份搜飞书；同名多人时抛出 Ambiguous。
+
+    只在一个工作区里找（user 所在的，或者明确给的 tenant_id）：别的公司的人不会被找到。"""
+    tenant = user.tenant_id if user is not None else tenant_id
+    if tenant is None:
+        raise ValueError("people.find 需要 user 或 tenant_id")
     query = query.strip().lstrip("@")
     if EMAIL.fullmatch(query):
         try:
@@ -67,7 +74,7 @@ async def find(
         except FeishuError:
             return []
         found = [{"name": query, "open_id": u["user_id"], "source": "通讯录"} for u in data.get("user_list") or [] if u.get("user_id")]
-        await remember(session, [(p["open_id"], await feishu.user_name(p["open_id"]) or query, "contact") for p in found])
+        await remember(session, tenant, [(p["open_id"], await feishu.user_name(p["open_id"]) or query, "contact") for p in found])
         return found
     variants = _variants(query)
     if not variants:
@@ -75,7 +82,7 @@ async def find(
     # 写了中文名或括号里的名字时，单独的英文名太弱（公司里可能有好几个 Andrew），不拿来在名册里直接认人
     strong = [v for v in variants if _CJK.search(v) or v == query.strip()] or variants
     # 1. 名册里名字完全一致的
-    exact = (await session.execute(select(Person).where(Person.name.in_(strong)).limit(limit))).scalars().all()
+    exact = (await session.execute(select(Person).where(Person.tenant_id == tenant, Person.name.in_(strong)).limit(limit))).scalars().all()
     if len({p.open_id for p in exact}) == 1:
         return [{"name": exact[0].name, "open_id": exact[0].open_id, "source": "名册"}]
     # 2. 以用户身份搜飞书：先用最能确定人的写法（中文名）搜
@@ -91,17 +98,17 @@ async def find(
             same = {r["open_id"]: r for r in results if r["name"] in variants or r["name"].lower() == variant.lower()}
             pick = list(same.values()) if same else (results if len(results) == 1 else [])
             if len(pick) == 1:
-                await remember(session, [(pick[0]["open_id"], pick[0]["name"], "search")])
+                await remember(session, tenant, [(pick[0]["open_id"], pick[0]["name"], "search")])
                 return [{**pick[0], "source": "飞书搜索"}]
         if len(seen) > 1:
             raise Ambiguous(query, list(seen.values())[:6])
         if len(seen) == 1:
             only = next(iter(seen.values()))
-            await remember(session, [(only["open_id"], only["name"], "search")])
+            await remember(session, tenant, [(only["open_id"], only["name"], "search")])
             return [{**only, "source": "飞书搜索"}]
     # 3. 名册里的模糊匹配
     fuzzy = (await session.execute(
-        select(Person).where(or_(*[Person.name.ilike(f"%{v}%") for v in variants]))
+        select(Person).where(Person.tenant_id == tenant, or_(*[Person.name.ilike(f"%{v}%") for v in variants]))
         .order_by(Person.updated_at.desc()).limit(limit)
     )).scalars().all()
     return [{"name": p.name, "open_id": p.open_id, "source": "名册"} for p in fuzzy]

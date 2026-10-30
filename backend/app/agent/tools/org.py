@@ -42,7 +42,7 @@ async def list_department_members(ctx: ToolContext, args: dict) -> str:
         raise ToolError(f"查询成员失败：{exc}") from exc
     if not members:
         return "这个部门没有直属成员（成员可能都在下级部门里）"
-    await people.remember(ctx.session, [(m["open_id"], m["name"], "contact") for m in members])
+    await people.remember(ctx.session, ctx.user.tenant_id, [(m["open_id"], m["name"], "contact") for m in members])
     return "\n".join(f"- {m['name']}" + (f"：{m['title']}" if m["title"] else "") for m in members)
 
 

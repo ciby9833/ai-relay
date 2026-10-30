@@ -106,7 +106,7 @@ async def _background(session: AsyncSession, feishu: FeishuClient, user: User, s
             background.append(f"文档《{doc['title']}》：{doc['summary']}")
     except FeishuError:
         pass
-    for message in await chats.related(session, words, limit=5):
+    for message in await chats.related(session, user, words, limit=5):
         references.append(f"群聊里 {message.sender_name or '某人'} 的消息")
         background.append(f"群聊 {message.sender_name or '某人'}（{message.created_at:%m-%d}）：{message.text[:300]}")
     return background, references

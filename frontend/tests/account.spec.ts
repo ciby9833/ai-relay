@@ -37,7 +37,8 @@ async function mockApi(page: Page, signedIn: boolean, user = me()) {
     if (path === "/api/tenant/invitations") return route.fulfill({ json: [] });
     if (path === "/api/tenant/connections/feishu") {
       return route.fulfill({ json: { provider: "feishu", configured: true, status: "ok", config: { app_id: "cli_123", tenant_key: "tk" },
-        secrets: { app_secret: true, verification_token: true, encrypt_key: false }, redirect_uri: "https://relay.example/api/auth/feishu/callback" } });
+        secrets: { app_secret: true, verification_token: true, encrypt_key: false }, redirect_uri: "https://relay.example/api/auth/feishu/callback",
+        events_url: "https://relay.example/api/feishu/events/t1", login_url: "https://relay.example/api/auth/feishu/login?workspace=jt" } });
     }
     if (path.startsWith("/api/tenant/members/")) return route.fulfill({ json: { role: "admin", status: "active" } });
     if (path === "/api/home") return route.fulfill({ json: { conversation: { id: "home" }, messages: [], status: { source_errors: 0 } } });

@@ -121,7 +121,7 @@ async def _in_group(session: AsyncSession, feishu: FeishuClient | None, user: Us
     if chat_id in cache:
         return cache[chat_id]
     rows = list((await session.execute(
-        select(ChatMessage).where(ChatMessage.chat_id == chat_id, ChatMessage.owner_user_id.is_(None))
+        select(ChatMessage).where(ChatMessage.tenant_id == user.tenant_id, ChatMessage.chat_id == chat_id, ChatMessage.owner_user_id.is_(None))
         .order_by(ChatMessage.created_at.desc()).limit(300)
     )).scalars())
     member = any(m.sender_open_id == user.feishu_open_id or any(x.get("open_id") == user.feishu_open_id for x in m.mentions or [])
@@ -229,7 +229,8 @@ async def build(
     if own_chats:
         who.append(ChatMessage.chat_id.in_(own_chats))
     messages = list((await session.execute(
-        select(ChatMessage).where(or_(ChatMessage.owner_user_id.is_(None), ChatMessage.owner_user_id == user.id),
+        select(ChatMessage).where(ChatMessage.tenant_id == user.tenant_id,
+                                  or_(ChatMessage.owner_user_id.is_(None), ChatMessage.owner_user_id == user.id),
                                   ChatMessage.created_at > since, or_(*who))
         .order_by(ChatMessage.created_at.desc()).limit(200)
     )).scalars()) if who else []
@@ -405,7 +406,7 @@ async def open_ref(session: AsyncSession, feishu: FeishuClient, user: User, item
             content = "\n".join(f"{x.get('name')}：{x.get('value')}" for x in fields) or (signal.body or "表单内容暂时读不到，需要在飞书里看原单")
             url = signal.url
         elif kind == "chat":
-            rows = list((await session.execute(select(ChatMessage.owner_user_id).where(ChatMessage.chat_id == rest).distinct())).scalars())
+            rows = list((await session.execute(select(ChatMessage.owner_user_id).where(ChatMessage.tenant_id == user.tenant_id, ChatMessage.chat_id == rest).distinct())).scalars())
             if any(owner is not None and owner != user.id for owner in rows) and user.id not in rows:
                 raise RefError("这是别人的私聊")
             messages = await im.recent_messages(feishu, user, rest, hours=168, limit=50)  # 以他本人身份读：不在群里就读不到

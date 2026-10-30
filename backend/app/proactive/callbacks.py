@@ -7,13 +7,14 @@ import asyncio
 import time
 import json
 import logging
+import uuid
 
 from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.feishu.client import FeishuClient, FeishuError
 from app.llm.base import LLMError
-from app.models import FeishuCard, FollowUp, User, ScheduledTask
+from app.models import DEFAULT_TENANT_ID, FeishuCard, FollowUp, User, ScheduledTask
 from app import automation, i18n, insights
 from app.proactive.settings import language_of
 from app.proactive import actions, attention, feedback, items
@@ -23,7 +24,8 @@ logger = logging.getLogger("relay.callbacks")
 
 
 async def handle_card_action(
-    feishu: FeishuClient, operator_open_id: str, value: dict, message_id: str | None = None
+    feishu: FeishuClient, operator_open_id: str, value: dict, message_id: str | None = None,
+    tenant_id: uuid.UUID = DEFAULT_TENANT_ID,
 ) -> dict | None:
     """执行按钮对应的操作，返回 {"ok", "message", "card"}；card 是按最新状态重新渲染的卡片。
 
@@ -31,9 +33,9 @@ async def handle_card_action(
     """
     async with SessionLocal() as session:
         user = (
-            await session.execute(select(User).where(User.feishu_open_id == operator_open_id))
+            await session.execute(select(User).where(User.tenant_id == tenant_id, User.feishu_open_id == operator_open_id))
         ).scalars().first()
-        if user is None:
+        if user is None or user.status != "active":
             return None
         user_id, open_id = user.id, user.feishu_open_id
         i18n.current.set(await language_of(session, user))
@@ -170,7 +172,7 @@ _pending: set[asyncio.Task] = set()
 
 async def respond(
     feishu: FeishuClient, operator: str, value: dict, message_id: str | None,
-    created_us: int | str | None = None, update_token: str | None = None,
+    created_us: int | str | None = None, update_token: str | None = None, tenant_id: uuid.UUID = DEFAULT_TENANT_ID,
 ) -> dict:
     """处理一次卡片按钮点击，返回给飞书的回调响应（长连接和 HTTP 回调共用）。
 
@@ -188,7 +190,7 @@ async def respond(
     wait = CALLBACK_WAIT_SECONDS if lag is None else max(0.0, min(CALLBACK_WAIT_SECONDS, CALLBACK_DEADLINE - SAFETY - lag))
     logger.info("收到卡片回调 operator=%s relay=%s message=%s 路上用时=%s 可等=%.1fs", operator, value.get("relay"), message_id,
                 f"{lag:.1f}s" if lag is not None else "未知", wait)
-    task = asyncio.ensure_future(handle_card_action(feishu, operator, value, message_id))
+    task = asyncio.ensure_future(handle_card_action(feishu, operator, value, message_id, tenant_id=tenant_id))
     _pending.add(task)
     task.add_done_callback(_pending.discard)
     try:

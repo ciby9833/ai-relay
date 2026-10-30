@@ -24,7 +24,10 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [choose, setChoose] = useState<WorkspaceChoice[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loginError = new URLSearchParams(window.location.search).get("login_error");
+  const query = new URLSearchParams(window.location.search);
+  const loginError = query.get("login_error");
+  // 其他工作区的飞书登录：/?workspace=slug 或管理员给的登录链接
+  const feishuHref = query.get("workspace") ? `/api/auth/feishu/login?workspace=${encodeURIComponent(query.get("workspace") ?? "")}` : "/api/auth/feishu/login";
 
   useEffect(() => {
     api.authConfig().then(setConfig).catch(() => undefined);
@@ -95,7 +98,7 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
         {config.feishu !== false && mode === "login" && !choose && (
           <>
             <div className="login-divider"><span>{t("或")}</span></div>
-            <a className="btn secondary large" href="/api/auth/feishu/login">{t("使用飞书登录")}</a>
+            <a className="btn secondary large" href={feishuHref}>{t("使用飞书登录")}</a>
           </>
         )}
         {config.dev_login && (

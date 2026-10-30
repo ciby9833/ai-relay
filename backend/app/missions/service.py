@@ -143,7 +143,9 @@ async def wake_reason(session: AsyncSession, mission: Mission, feishu: FeishuCli
             lines = await _poll_chat(session, feishu, mission, wait, waiting_since) if feishu else []
             if not lines:
                 # 机器人在群里时收到的消息（拉取失败时的兜底）
-                statement = select(ChatMessage).where(ChatMessage.chat_id == wait.get("chat_id"), ChatMessage.created_at > waiting_since)
+                statement = select(ChatMessage).where(
+                    ChatMessage.tenant_id == select(User.tenant_id).where(User.id == mission.user_id).scalar_subquery(),
+                    ChatMessage.chat_id == wait.get("chat_id"), ChatMessage.created_at > waiting_since)
                 if wait.get("from_open_id"):
                     statement = statement.where(ChatMessage.sender_open_id == wait["from_open_id"])
                 messages = (await session.execute(statement.order_by(ChatMessage.created_at).limit(10))).scalars().all()

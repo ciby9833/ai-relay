@@ -2,11 +2,17 @@
 
 可以走长连接（app.feishu.longconn），也可以走这里的 HTTP 回调（飞书后台配置请求地址）。
 同一个应用若有多个长连接在线，飞书会把事件随机分给其中一个；HTTP 回调只发到配置的地址，不会被分走。
+
+每个工作区接的是自己的飞书应用：
+- 默认工作区：/api/feishu/events 或长连接，用服务器上的飞书配置（原来的行为）；
+- 其他工作区：/api/feishu/events/{工作区 ID}，用管理员在“飞书接入”里填的配置校验和解密，
+  收到的消息、@、卡片按钮都只在这个工作区里找人、建档、记名册。
 """
 
 import asyncio
 import logging
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
@@ -22,7 +28,8 @@ from app.feishu.events import decrypt_event, extract_text, mentioned_people, tex
 from app.home import home_conversation, turn_lock
 from app.proactive.callbacks import respond
 from app.llm.base import LLMError
-from app.models import ChatMessage, Conversation, FeishuCard, FeishuEvent, FollowUp, Signal, User
+from app import tenancy
+from app.models import DEFAULT_TENANT_ID, ChatMessage, Conversation, FeishuCard, FeishuEvent, FollowUp, Signal, Tenant, User
 from app.sources import people
 from app.sources.base import add_signal
 
@@ -37,30 +44,54 @@ _background: set[asyncio.Task] = set()
 
 @router.post("/events")
 async def feishu_events(request: Request):
+    """默认工作区：用服务器上的飞书配置（原来的地址，行为不变）。"""
     settings = get_settings()
     if not settings.feishu_verification_token:
         raise HTTPException(status_code=503, detail="未配置 FEISHU_VERIFICATION_TOKEN")
+    return await _receive(request, DEFAULT_TENANT_ID, request.app.state.feishu,
+                          settings.feishu_verification_token, settings.feishu_encrypt_key)
 
+
+@router.post("/events/{tenant_id}")
+async def workspace_events(tenant_id: uuid.UUID, request: Request):
+    """其他工作区：飞书后台“事件订阅”和“卡片回调”的请求地址填这个（在“工作区设置 → 飞书接入”里能看到）。"""
+    if tenant_id == DEFAULT_TENANT_ID:
+        return await feishu_events(request)
+    async with SessionLocal() as session:
+        tenant = await session.get(Tenant, tenant_id)
+        conn = await tenancy.connection(session, tenant_id) if tenant is not None and tenant.status == "active" else None
+        stored = tenancy.secrets_of(conn) if conn is not None and conn.status != "disabled" else {}
+        client = await tenancy.feishu_for(session, tenant_id, getattr(request.app.state, "http", None)) if stored else None
+    if not stored.get("verification_token"):
+        raise HTTPException(status_code=404, detail="这个工作区没有配置飞书事件订阅")
+    return await _receive(request, tenant_id, client, stored["verification_token"], stored.get("encrypt_key"))
+
+
+async def _receive(request: Request, tenant_id: uuid.UUID, feishu: FeishuClient | None,
+                   verification_token: str, encrypt_key: str | None):
+    """校验、解密一条飞书推送，按类型交给卡片按钮或消息处理。只用这个工作区自己的密钥。"""
     body = await request.json()
     if "encrypt" in body:
-        if not settings.feishu_encrypt_key:
-            raise HTTPException(status_code=400, detail="收到加密事件但未配置 FEISHU_ENCRYPT_KEY")
+        if not encrypt_key:
+            raise HTTPException(status_code=400, detail="收到加密事件但未配置 Encrypt Key")
         try:
-            body = decrypt_event(settings.feishu_encrypt_key, body["encrypt"])
+            body = decrypt_event(encrypt_key, body["encrypt"])
         except Exception:
             raise HTTPException(status_code=400, detail="事件解密失败") from None
 
     header = body.get("header") or {}
     token = body.get("token") or header.get("token") or ""
-    if not secrets.compare_digest(token, settings.feishu_verification_token):
+    if not secrets.compare_digest(token, verification_token):
         raise HTTPException(status_code=403, detail="verification token 不匹配")
 
     if body.get("type") == "url_verification":
         return {"challenge": body.get("challenge")}
+    if feishu is None:
+        raise HTTPException(status_code=503, detail="这个工作区的飞书应用配置不完整")
 
     if header.get("event_type") == "card.action.trigger":
         # 卡片按钮：走 HTTP 回调时飞书只发到这个地址，不会被其他用同一个应用的长连接分走
-        if header.get("tenant_key") and header.get("tenant_key") != settings.feishu_tenant_key:
+        if header.get("tenant_key") and header.get("tenant_key") != feishu.settings.feishu_tenant_key:
             return {}
         event = body.get("event") or {}
         operator = (event.get("operator") or {}).get("open_id")
@@ -68,18 +99,18 @@ async def feishu_events(request: Request):
         if not operator or "relay" not in value:
             return {}
         return await respond(
-            request.app.state.feishu, operator, value, (event.get("context") or {}).get("open_message_id"),
-            created_us=header.get("create_time"), update_token=event.get("token"),
+            feishu, operator, value, (event.get("context") or {}).get("open_message_id"),
+            created_us=header.get("create_time"), update_token=event.get("token"), tenant_id=tenant_id,
         )
 
-    await dispatch_event(request.app.state.feishu, body)
+    await dispatch_event(feishu, body, tenant_id)
     return {}
 
 
-async def dispatch_event(feishu: FeishuClient, body: dict) -> None:
-    """处理一条已验证来源的事件（HTTP 回调和长连接共用）。"""
+async def dispatch_event(feishu: FeishuClient, body: dict, tenant_id: uuid.UUID = DEFAULT_TENANT_ID) -> None:
+    """处理一条已验证来源的事件（HTTP 回调和长连接共用）。只接受这个工作区绑定的那家飞书企业的事件。"""
     header = body.get("header") or {}
-    if header.get("tenant_key") != get_settings().feishu_tenant_key:
+    if header.get("tenant_key") != feishu.settings.feishu_tenant_key:
         return
     event_id = header.get("event_id")
     if not event_id:
@@ -96,17 +127,18 @@ async def dispatch_event(feishu: FeishuClient, body: dict) -> None:
 
     if header.get("event_type") == "im.message.receive_v1":
         # 飞书要求 3 秒内确认，实际处理放到后台
-        task = asyncio.create_task(_handle_message(feishu, body.get("event") or {}))
+        task = asyncio.create_task(_handle_message(feishu, body.get("event") or {}, tenant_id))
         _background.add(task)
         task.add_done_callback(_background.discard)
 
 
-async def _get_or_create_user(session: AsyncSession, open_id: str, tenant_key: str) -> User:
-    result = await session.execute(select(User).where(User.feishu_open_id == open_id))
+async def _get_or_create_user(session: AsyncSession, tenant_id: uuid.UUID, open_id: str, tenant_key: str) -> User:
+    result = await session.execute(select(User).where(User.tenant_id == tenant_id, User.feishu_open_id == open_id))
     user = result.scalars().first()
     if user is None:
-        # 还没在网页端登录过的同事：先建档，登录后会补全姓名等信息
+        # 还没在网页端登录过的同事：先在这个工作区建档，登录后会补全姓名等信息
         user = User(
+            tenant_id=tenant_id,
             feishu_open_id=open_id,
             tenant_key=tenant_key,
             name="飞书用户",
@@ -137,7 +169,7 @@ async def _get_conversation(session: AsyncSession, user: User, chat_id: str) -> 
     return conversation
 
 
-async def _handle_message(feishu: FeishuClient, event: dict) -> None:
+async def _handle_message(feishu: FeishuClient, event: dict, tenant_id: uuid.UUID = DEFAULT_TENANT_ID) -> None:
     message = event.get("message") or {}
     sender = event.get("sender") or {}
     message_id = message.get("message_id")
@@ -147,7 +179,7 @@ async def _handle_message(feishu: FeishuClient, event: dict) -> None:
     if message.get("chat_type") != "p2p":
         mentioned = [((m.get("id") or {}).get("open_id")) for m in message.get("mentions") or []]
         try:
-            await _watch_group_message(feishu, message, open_id, mentioned)
+            await _watch_group_message(feishu, message, open_id, mentioned, tenant_id)
         except Exception:
             logger.exception("记录群消息失败")
         # 群聊里只响应 @ 机器人的消息
@@ -164,8 +196,11 @@ async def _handle_message(feishu: FeishuClient, event: dict) -> None:
         if not text:
             return
         async with SessionLocal() as session:
-            user = await _get_or_create_user(session, open_id, sender.get("tenant_key") or "")
-            await people.remember(session, [p for p in mentioned_people(message) if p[0] != bot])
+            user = await _get_or_create_user(session, tenant_id, open_id, sender.get("tenant_key") or "")
+            if user.status != "active":
+                await feishu.reply_text(message_id, "你在这个工作区的账号已停用，请联系管理员。")
+                return
+            await people.remember(session, tenant_id, [p for p in mentioned_people(message) if p[0] != bot])
             text = await _with_quote_context(session, user, message, text)
             if message.get("chat_type") == "p2p":
                 # 私聊机器人就是在主线里和 Relay 说话，和网页首页是同一条
@@ -191,7 +226,8 @@ async def _handle_message(feishu: FeishuClient, event: dict) -> None:
 
 
 async def _watch_group_message(
-    feishu: FeishuClient, message: dict, sender_open_id: str, mentioned: list[str]
+    feishu: FeishuClient, message: dict, sender_open_id: str, mentioned: list[str],
+    tenant_id: uuid.UUID = DEFAULT_TENANT_ID,
 ) -> None:
     """群里@了某位 Relay 用户就开始盯着；他之后在这个群里说话就算回复了。
 
@@ -199,20 +235,21 @@ async def _watch_group_message(
     """
     chat_id = message.get("chat_id")
     async with SessionLocal() as session:
-        sender = (await session.execute(select(User).where(User.feishu_open_id == sender_open_id))).scalars().first()
+        sender = (await session.execute(select(User).where(User.tenant_id == tenant_id,
+                                                            User.feishu_open_id == sender_open_id))).scalars().first()
         text = text_with_names(message)
         sender_name = sender.name if sender else await feishu.user_name(sender_open_id)
-        await people.remember(session, mentioned_people(message) + [(sender_open_id, sender_name, "sender")])
+        await people.remember(session, tenant_id, mentioned_people(message) + [(sender_open_id, sender_name, "sender")])
         if text:
             # 群消息只用来理解要处理的事（提取待办、起草时作背景），不推送
             await session.execute(
                 insert(ChatMessage).values(
-                    message_id=message["message_id"], chat_id=chat_id, sender_open_id=sender_open_id,
+                    tenant_id=tenant_id, message_id=message["message_id"], chat_id=chat_id, sender_open_id=sender_open_id,
                     sender_name=sender_name,
                     text=text[:4000],
                     mentions=[{"open_id": (m.get("id") or {}).get("open_id"), "name": m.get("name")} for m in message.get("mentions") or []],
                     parent_message_id=message.get("parent_id") or None,
-                ).on_conflict_do_nothing(index_elements=["message_id"])
+                ).on_conflict_do_nothing(index_elements=["tenant_id", "message_id"])
             )
         if sender:
             await session.execute(
@@ -224,7 +261,8 @@ async def _watch_group_message(
         bot = await feishu.bot_open_id()
         targets = [o for o in mentioned if o and o not in (bot, sender_open_id)]
         if targets:
-            users = (await session.execute(select(User).where(User.feishu_open_id.in_(targets)))).scalars().all()
+            users = (await session.execute(select(User).where(User.tenant_id == tenant_id, User.feishu_open_id.in_(targets),
+                                                              User.status == "active"))).scalars().all()
             chat_name = None
             for user in users:
                 if chat_name is None:

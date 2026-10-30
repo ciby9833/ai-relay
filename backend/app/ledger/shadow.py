@@ -163,11 +163,11 @@ async def collect(session: AsyncSession, user: User, start: datetime, end: datet
                                 "飞书", fact, stream))
     # 群聊：他在这段时间里说过话或被@过的群；私聊：他自己的
     my_groups = set((await session.execute(select(ChatMessage.chat_id).where(
-        ChatMessage.owner_user_id.is_(None), ChatMessage.created_at >= start, ChatMessage.created_at < end,
+        ChatMessage.tenant_id == user.tenant_id, ChatMessage.owner_user_id.is_(None), ChatMessage.created_at >= start, ChatMessage.created_at < end,
         or_(ChatMessage.sender_open_id == user.feishu_open_id,
             ChatMessage.mentions.contains([{"open_id": user.feishu_open_id}]))))).scalars())
     messages = (await session.execute(select(ChatMessage).where(
-        ChatMessage.created_at >= start, ChatMessage.created_at < end,
+        ChatMessage.tenant_id == user.tenant_id, ChatMessage.created_at >= start, ChatMessage.created_at < end,
         or_(ChatMessage.owner_user_id == user.id, ChatMessage.chat_id.in_(my_groups or {"-"}))
     ).order_by(ChatMessage.created_at))).scalars().all()
     by_id = {m.message_id: m for m in messages}

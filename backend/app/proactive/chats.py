@@ -14,7 +14,7 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.feishu.client import FeishuClient
-from app.models import ChatMessage, FollowUp, Signal, User
+from app.models import DEFAULT_TENANT_ID, ChatMessage, FollowUp, Signal, User
 from app.proactive import items
 from app.proactive.llm import complete_structured
 from app.proactive.prompts import CHAT_TASKS_SYSTEM
@@ -108,7 +108,7 @@ async def housekeeping(session: AsyncSession) -> None:
 
 async def pending_batches(session: AsyncSession, only_chats: list[str] | None = None) -> list[tuple]:
     """有未处理新消息的会话（群聊按群，私聊按“群 + 读取它的人”）。"""
-    pending = select(ChatMessage.chat_id, ChatMessage.owner_user_id).where(ChatMessage.processed.is_(False)).distinct()
+    pending = select(ChatMessage.tenant_id, ChatMessage.chat_id, ChatMessage.owner_user_id).where(ChatMessage.processed.is_(False)).distinct()
     if only_chats is not None:
         pending = pending.where(ChatMessage.chat_id.in_(only_chats))
     return list((await session.execute(pending)).all())
@@ -120,11 +120,16 @@ async def extract(session: AsyncSession, feishu: FeishuClient, only_chats: list[
     群聊：待办归到相关的每位 Relay 用户。私聊：只归到读取它的那位用户（owner_user_id），不碰别人。
     """
     await housekeeping(session)
-    users = {u.feishu_open_id: u for u in (await session.execute(select(User))).scalars()}
     done = 0
-    for chat_id, owner_id in await pending_batches(session, only_chats):
-        done += await extract_one(session, chat_id, owner_id, users)
+    for tenant_id, chat_id, owner_id in await pending_batches(session, only_chats):
+        done += await extract_one(session, chat_id, owner_id, await members(session, tenant_id), tenant_id)
     return done
+
+
+async def members(session: AsyncSession, tenant_id) -> dict:
+    """这个工作区里有飞书身份的成员（open_id → User）。群消息只归给同一个工作区的人。"""
+    rows = await session.execute(select(User).where(User.tenant_id == tenant_id, User.feishu_open_id.is_not(None)))
+    return {u.feishu_open_id: u for u in rows.scalars()}
 
 
 async def extract_parallel(feishu: FeishuClient, concurrency: int = 3) -> int:
@@ -138,26 +143,25 @@ async def extract_parallel(feishu: FeishuClient, concurrency: int = 3) -> int:
         batches = await pending_batches(session)
     gate = asyncio.Semaphore(concurrency)
 
-    async def one(chat_id, owner_id) -> int:
+    async def one(tenant_id, chat_id, owner_id) -> int:
         async with gate, SessionLocal() as session:
             try:
-                users = {u.feishu_open_id: u for u in (await session.execute(select(User))).scalars()}
-                return await extract_one(session, chat_id, owner_id, users)
+                return await extract_one(session, chat_id, owner_id, await members(session, tenant_id), tenant_id)
             except Exception:  # noqa: BLE001 - 一个会话出错不影响别的会话
                 logger.exception("提取聊天内容失败 %s", chat_id)
                 await session.rollback()
                 return 0
 
-    return sum(await asyncio.gather(*(one(c, o) for c, o in batches)))
+    return sum(await asyncio.gather(*(one(t, c, o) for t, c, o in batches)))
 
 
-async def extract_one(session: AsyncSession, chat_id: str, owner_id, users: dict) -> int:
+async def extract_one(session: AsyncSession, chat_id: str, owner_id, users: dict, tenant_id=DEFAULT_TENANT_ID) -> int:
     """处理一个会话的一批新消息并提交。涉及的人的主流程正在跑时先跳过（返回 0，消息保持未处理，下一轮再来）。"""
     from app import locks
 
     by_name = {u.name: u for u in users.values()}
     owner = next((u for u in users.values() if u.id == owner_id), None) if owner_id else None
-    same_chat = (ChatMessage.chat_id == chat_id) & (
+    same_chat = (ChatMessage.tenant_id == tenant_id) & (ChatMessage.chat_id == chat_id) & (
         ChatMessage.owner_user_id == owner_id if owner_id else ChatMessage.owner_user_id.is_(None))
     new = list((await session.execute(
         select(ChatMessage).where(same_chat, ChatMessage.processed.is_(False))
@@ -174,6 +178,8 @@ async def extract_one(session: AsyncSession, chat_id: str, owner_id, users: dict
                                         or_(FollowUp.key.like("chat:%"), FollowUp.key.like("mention:%")))
     if owner is not None:
         open_query = open_query.where(FollowUp.user_id == owner.id)
+    else:
+        open_query = open_query.where(FollowUp.user_id.in_([u.id for u in users.values()] or [None]))  # 只看本工作区的人的事
     open_items = list((await session.execute(open_query)).scalars())
     involved = {m.sender_open_id for m in new} | {x.get("open_id") for m in new for x in m.mentions}
     people = [owner] if owner else [u for u in users.values() if u.feishu_open_id in involved]
@@ -328,7 +334,8 @@ async def _parents(session, messages: list[ChatMessage]) -> dict[str, str]:
     ids = {m.parent_message_id for m in messages if m.parent_message_id}
     if not ids:
         return {}
-    parents = {p.message_id: p for p in (await session.execute(select(ChatMessage).where(ChatMessage.message_id.in_(ids)))).scalars()}
+    parents = {p.message_id: p for p in (await session.execute(select(ChatMessage).where(
+        ChatMessage.tenant_id == messages[0].tenant_id, ChatMessage.message_id.in_(ids)))).scalars()}
     return {m.message_id: f"（回复 {parents[m.parent_message_id].sender_name or '某人'}：{parents[m.parent_message_id].text[:60]}）"
             for m in messages if m.parent_message_id in parents}
 
@@ -453,13 +460,14 @@ async def apply_progress(session: AsyncSession, item: FollowUp, change: dict, us
                          kind="chat_result", title=note, payload={"item_id": item.id}, occurred_at=datetime.now(UTC), status="result")
 
 
-async def related(session: AsyncSession, keywords: list[str], limit: int = 5) -> list[ChatMessage]:
-    """起草回复时找相关的群聊背景（只用群消息：私聊属于个人，不给任何人当背景）。"""
+async def related(session: AsyncSession, user: User, keywords: list[str], limit: int = 5) -> list[ChatMessage]:
+    """起草回复时找相关的群聊背景（只用他所在工作区、他在过的群的消息：私聊属于个人，别的公司的群也不能当背景）。"""
     words = [w for w in keywords if len(w) >= 2][:4]
     if not words:
         return []
     result = await session.execute(
-        select(ChatMessage).where(ChatMessage.owner_user_id.is_(None), or_(*[ChatMessage.text.ilike(f"%{w}%") for w in words]))
+        select(ChatMessage).where(ChatMessage.tenant_id == user.tenant_id, ChatMessage.owner_user_id.is_(None),
+                                  or_(*[ChatMessage.text.ilike(f"%{w}%") for w in words]))
         .order_by(ChatMessage.created_at.desc()).limit(limit)
     )
     return list(result.scalars())

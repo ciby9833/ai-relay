@@ -136,10 +136,8 @@ async def feishu_callback(
         logger.warning("拒绝了其他租户的登录: %s", info.get("tenant_key"))
         return _login_failed("tenant")
 
-    result = await session.execute(select(User).where(User.feishu_open_id == info["open_id"]))
+    result = await session.execute(select(User).where(User.tenant_id == tenant_id, User.feishu_open_id == info["open_id"]))
     user = result.scalars().first()
-    if user is not None and user.tenant_id != tenant_id:
-        return _login_failed("tenant")
     if user is not None and user.status != "active":
         return _login_failed("deactivated")
     if user is None:
@@ -158,7 +156,7 @@ async def feishu_callback(
             and not user.is_admin:
         tenancy.set_role(user, "owner")
     await session.flush()
-    await people.remember(session, [(user.feishu_open_id, user.name, "user")])
+    await people.remember(session, tenant_id, [(user.feishu_open_id, user.name, "user")])
     await session.commit()
 
     response = RedirectResponse(settings.frontend_url)
@@ -173,7 +171,7 @@ async def dev_login(session: SessionDep, response: Response):
     settings = get_settings()
     if not settings.dev_login_enabled:
         raise HTTPException(status_code=404)
-    result = await session.execute(select(User).where(User.feishu_open_id == "dev-user"))
+    result = await session.execute(select(User).where(User.tenant_id == DEFAULT_TENANT_ID, User.feishu_open_id == "dev-user"))
     user = result.scalars().first()
     if user is None:
         user = User(feishu_open_id="dev-user", name="本地调试", timezone=settings.default_timezone)

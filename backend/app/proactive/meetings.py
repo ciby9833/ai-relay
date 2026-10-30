@@ -151,9 +151,10 @@ async def gather(session: AsyncSession, feishu: FeishuClient | None, user: User,
             found.append({"kind": "items", "title": "和这个会有关、还没结的事", "url": None, "why": "事项里提到了会名",
                           "text": "\n".join(f"- {i.title}" + (f"（{i.next_step}）" if i.next_step else "") for i in related)})
         # 他在的群（他发过言的）和他自己的私聊里，提到会名的消息
-        my_groups = select(ChatMessage.chat_id).where(ChatMessage.sender_open_id == user.feishu_open_id, ChatMessage.owner_user_id.is_(None))
+        my_groups = select(ChatMessage.chat_id).where(ChatMessage.tenant_id == user.tenant_id, ChatMessage.sender_open_id == user.feishu_open_id,
+                                                      ChatMessage.owner_user_id.is_(None))
         chats = (await session.execute(select(ChatMessage).where(
-            ChatMessage.created_at > now - timedelta(days=7), ChatMessage.text.ilike(f"%{title.strip()[:40]}%"),
+            ChatMessage.tenant_id == user.tenant_id, ChatMessage.created_at > now - timedelta(days=7), ChatMessage.text.ilike(f"%{title.strip()[:40]}%"),
             or_(ChatMessage.owner_user_id == user.id, (ChatMessage.owner_user_id.is_(None) & ChatMessage.chat_id.in_(my_groups))),
         ).order_by(ChatMessage.created_at.desc()).limit(8))).scalars().all()
         if chats:

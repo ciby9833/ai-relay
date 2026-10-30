@@ -2354,4 +2354,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .ws-member-actions { display: flex; gap: 6px; align-items: center; }
 .ws-link { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ws-link input { flex: 1; min-width: 200px; }
+.ws-urls { display: flex; flex-direction: column; gap: 8px; }
+.ws-copy { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
 .ws-me { margin-left: 6px; }

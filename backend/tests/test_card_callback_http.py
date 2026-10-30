@@ -1,5 +1,6 @@
 """卡片按钮走 HTTP 回调：飞书只发到配置的地址，不会被其他长连接分走（200671 的根因）。"""
 import asyncio
+from types import SimpleNamespace
 
 import httpx
 
@@ -20,14 +21,14 @@ def card_event(token: str, relay: str = "approval") -> dict:
 async def test_card_click_over_http_returns_new_card_or_processing(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "feishu_verification_token", "vt-test")
-    app.state.feishu = object()
+    app.state.feishu = SimpleNamespace(settings=settings)
     calls = []
 
-    async def fast(feishu, operator, value, message_id):
+    async def fast(feishu, operator, value, message_id, **_):
         calls.append((operator, value["relay"], message_id))
         return {"ok": True, "message": "已批准", "card": {"schema": "2.0", "body": {"elements": []}}, "open_id": operator}
 
-    async def slow(feishu, operator, value, message_id):
+    async def slow(feishu, operator, value, message_id, **_):
         await asyncio.sleep(3)
         return {"ok": True, "message": "已起草", "card": None, "open_id": operator}
 
@@ -53,10 +54,10 @@ async def test_late_callback_answers_at_once_and_updates_with_event_token(monkey
 
     settings = get_settings()
     monkeypatch.setattr(settings, "feishu_verification_token", "vt-test")
-    app.state.feishu = object()
+    app.state.feishu = SimpleNamespace(settings=settings)
     updates = []
 
-    async def quick_but_not_instant(feishu, operator, value, message_id):
+    async def quick_but_not_instant(feishu, operator, value, message_id, **_):
         await asyncio.sleep(0.3)
         return {"ok": True, "message": "已批准", "card": {"schema": "2.0"}, "open_id": operator}
 

@@ -28,10 +28,11 @@ async def contacts(session: AsyncSession, feishu: FeishuClient, user: User) -> l
     since = datetime.now(UTC) - timedelta(days=30)
     score: Counter = Counter()
     # 群里和他有往来的人：他发言的群里的其他发言人，以及 @ 过他的人
-    mine = select(ChatMessage.chat_id).where(ChatMessage.sender_open_id == user.feishu_open_id, ChatMessage.owner_user_id.is_(None))
+    mine = select(ChatMessage.chat_id).where(ChatMessage.tenant_id == user.tenant_id, ChatMessage.sender_open_id == user.feishu_open_id,
+                                             ChatMessage.owner_user_id.is_(None))
     rows = (await session.execute(
         select(ChatMessage.sender_open_id, ChatMessage.mentions, ChatMessage.chat_id).where(
-            ChatMessage.owner_user_id.is_(None), ChatMessage.created_at > since,
+            ChatMessage.tenant_id == user.tenant_id, ChatMessage.owner_user_id.is_(None), ChatMessage.created_at > since,
             or_(ChatMessage.chat_id.in_(mine), ChatMessage.mentions.contains([{"open_id": user.feishu_open_id}])),
         )
     )).all()
@@ -107,16 +108,17 @@ async def sync(session: AsyncSession, feishu: FeishuClient, user: User, state: S
             if m["at"] <= since or m["sender_type"] != "user" or not m.get("message_id"):
                 continue
             newest = max(newest, m["at"])
-            exists = await session.scalar(select(ChatMessage.id).where(ChatMessage.message_id == m["message_id"]))
+            exists = await session.scalar(select(ChatMessage.id).where(ChatMessage.tenant_id == user.tenant_id,
+                                                                 ChatMessage.message_id == m["message_id"]))
             if exists:
                 continue
             name = user.name if m["sender"] == user.feishu_open_id else (await feishu.user_name(m["sender"]) or "对方")
             # 两个 Relay 用户互相私聊时，两边的同步可能同时读到同一条：已经存在就跳过（并行时先查再插不够，要靠数据库去重）
             inserted = await session.execute(insert(ChatMessage).values(
-                message_id=m["message_id"], chat_id=chat_id, chat_name=f"和 {await feishu.user_name(other) or '同事'} 的私聊",
+                tenant_id=user.tenant_id, message_id=m["message_id"], chat_id=chat_id, chat_name=f"和 {await feishu.user_name(other) or '同事'} 的私聊",
                 sender_open_id=m["sender"], sender_name=name, text=m["text"][:4000], mentions=m.get("mentions") or [],
                 owner_user_id=user.id, created_at=m["at"], parent_message_id=m.get("parent_id"), processed=False,
-            ).on_conflict_do_nothing(index_elements=["message_id"]))
+            ).on_conflict_do_nothing(index_elements=["tenant_id", "message_id"]))
             created += inserted.rowcount or 0
         seen[chat_id] = newest.isoformat()
     cursor["seen"] = seen

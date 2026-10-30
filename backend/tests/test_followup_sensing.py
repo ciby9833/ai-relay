@@ -250,7 +250,7 @@ async def test_chat_progress_done_vs_committed_and_private_chat_stays_private(mo
             mine = (await session.execute(select(FollowUp).where(FollowUp.user_id == user.id, FollowUp.url == chats.chat_link(private)))).scalars().all()
             theirs = (await session.execute(select(FollowUp).where(FollowUp.user_id == other.id))).scalars().all()
             assert [i.kind for i in mine] == ["request"] and "私聊" in mine[0].next_step and theirs == []
-            assert await chats.related(session, ["报表"]) == []
+            assert await chats.related(session, other, ["报表"]) == []
         finally:
             await session.execute(delete(ChatMessage).where(ChatMessage.chat_id.in_([group, private])))
             await session.execute(delete(User).where(User.id.in_([user.id, other.id])))

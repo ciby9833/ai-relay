@@ -170,11 +170,11 @@ async def _resolve(session, feishu, recipient: Recipient, tenant_id) -> tuple[st
         user = (await session.execute(select(User).where(User.email == recipient.email, User.tenant_id == tenant_id))).scalars().first()
         if user:
             return user.feishu_open_id, user.name
-        found = await people.find(session, feishu, recipient.email)
+        found = await people.find(session, feishu, recipient.email, tenant_id=tenant_id)
         return (found[0]["open_id"], label) if found else (None, label)
     if recipient.name:
         try:
-            found = await people.find(session, feishu, recipient.name)
+            found = await people.find(session, feishu, recipient.name, tenant_id=tenant_id)
         except people.Ambiguous:
             return None, f"{label}（同名多人）"
         return (found[0]["open_id"], found[0]["name"]) if found else (None, label)
@@ -221,10 +221,8 @@ async def inbound(key: str, request: Request):
             if not open_id:
                 unmatched.append(label)
                 continue
-            user = (await session.execute(select(User).where(User.feishu_open_id == open_id))).scalars().first()
-            if user is not None and user.tenant_id != integration.tenant_id:
-                unmatched.append(label)  # 别的工作区的人：不投递
-                continue
+            user = (await session.execute(select(User).where(User.tenant_id == integration.tenant_id,
+                                                             User.feishu_open_id == open_id))).scalars().first()
             if user is None:
                 # 还没用过 Relay 的同事也能收到（通过 Relay 机器人推送）
                 user = User(feishu_open_id=open_id, name=label, timezone=get_settings().default_timezone, tenant_id=integration.tenant_id)

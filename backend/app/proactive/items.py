@@ -956,6 +956,7 @@ async def unread_context(session: AsyncSession, pending: list[FollowUp]) -> set[
             continue
         chat_id = item.url.split("openChatId=", 1)[1]
         newer = await session.scalar(select(ChatMessage.id).where(
+            ChatMessage.tenant_id == select(User.tenant_id).where(User.id == item.user_id).scalar_subquery(),
             ChatMessage.chat_id == chat_id, ChatMessage.processed.is_(False), ChatMessage.created_at >= item.created_at - timedelta(hours=1),
         ).limit(1))
         if newer is not None:

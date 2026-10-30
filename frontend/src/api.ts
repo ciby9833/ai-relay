@@ -24,7 +24,7 @@ export interface FeishuConnection {
   provider: "feishu"; configured: boolean; status: "none" | "unverified" | "ok" | "failed" | "disabled"; last_error?: string | null;
   config: { app_id?: string | null; tenant_key?: string | null };
   secrets: { app_secret: boolean; verification_token: boolean; encrypt_key: boolean };
-  verified_at?: string | null; redirect_uri?: string; managed?: boolean;
+  verified_at?: string | null; redirect_uri?: string; managed?: boolean; events_url?: string; login_url?: string;
 }
 
 export interface Conversation {

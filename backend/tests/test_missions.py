@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import delete, select
 
+from app.models import DEFAULT_TENANT_ID
+
 pytestmark = pytest.mark.skipif(not os.getenv("RUN_DB_TESTS"), reason="需要 RUN_DB_TESTS=1 和数据库")
 
 
@@ -97,7 +99,7 @@ async def test_mission_lifecycle(monkeypatch):
         # Andrew 在群里说过话，所以 Relay 认识他（收到群消息时会记进名册）
         session.add(ChatMessage(message_id=f"om_{uuid.uuid4().hex}", chat_id="oc_test_m", sender_open_id="ou_andrew",
                                 sender_name="Zorvan", text="收到"))
-        await people.remember(session, [("ou_andrew", "Zorvan", "sender")])
+        await people.remember(session, DEFAULT_TENANT_ID, [("ou_andrew", "Zorvan", "sender")])
         await session.flush()
         mission = await service.create(session, user, "催 Andrew 交运单明细", "让 Andrew 本周内交 9 月运单明细，交了就算完成")
         await session.commit()
@@ -238,7 +240,7 @@ async def test_meeting_prepare_confirm_and_track_responses(monkeypatch):
         await session.flush()
         conversation = Conversation(user_id=user.id, channel="home")
         session.add(conversation)
-        await people.remember(session, [("ou_a", "Quillan（测试甲）", "mention"), ("ou_n", "Nikki（测试乙）", "mention")])
+        await people.remember(session, DEFAULT_TENANT_ID, [("ou_a", "Quillan（测试甲）", "mention"), ("ou_n", "Nikki（测试乙）", "mention")])
         await session.commit()
         user_id = user.id
         try:

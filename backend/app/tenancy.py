@@ -245,6 +245,14 @@ async def save_feishu(session: AsyncSession, actor: User, values: dict) -> Tenan
     for key in FEISHU_PUBLIC:
         if key in values and values[key] is not None:
             config[key] = str(values[key]).strip()
+    app_id = config.get("app_id")
+    if app_id:
+        # 一个飞书应用的事件和按钮回调只能发到一个地址：不能同时接到两个工作区
+        taken = await session.scalar(select(TenantConnection.tenant_id).where(
+            TenantConnection.provider == "feishu", TenantConnection.tenant_id != actor.tenant_id,
+            TenantConnection.config["app_id"].astext == app_id).limit(1))
+        if taken is not None:
+            raise TenancyError("这个飞书应用已经接入了另一个工作区。每个工作区需要使用自己的飞书应用。")
     stored = secrets_of(conn)
     for key in FEISHU_SECRET:
         if values.get(key):

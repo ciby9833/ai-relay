@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -7,6 +8,7 @@ from app.agent.tools import tool_specs
 from app.llm.anthropic_provider import to_anthropic_messages
 from app.llm.gemini_provider import to_gemini_contents
 from app.llm.openai_provider import to_openai_messages
+from app.models import DEFAULT_TENANT_ID
 from app.scheduler.schedule import ScheduleError, next_cron_run, parse_run_at, validate_cron
 
 
@@ -213,16 +215,16 @@ async def test_find_person_prefers_chinese_name_and_reports_ambiguity():
                 "Kevin": [{"name": "Kevin A", "open_id": "ou_k1"}, {"name": "Kevin B", "open_id": "ou_k2"}],
             }.get(q, [])}
 
-    async def no_remember(session, rows):
+    async def no_remember(session, tenant_id, rows):
         pass
 
     people.remember, original = no_remember, people.remember
     try:
         feishu = _Feishu()
-        found = await people.find(_Session(), feishu, "Andrew（陈春华）", user=object())
+        found = await people.find(_Session(), feishu, "Andrew（陈春华）", user=SimpleNamespace(tenant_id=DEFAULT_TENANT_ID))
         assert found[0]["open_id"] == "ou_right" and feishu.queries[0] == "陈春华"
         try:
-            await people.find(_Session(), _Feishu(), "Kevin", user=object())
+            await people.find(_Session(), _Feishu(), "Kevin", user=SimpleNamespace(tenant_id=DEFAULT_TENANT_ID))
             raise AssertionError("应该提示同名")
         except people.Ambiguous as exc:
             assert {c["name"] for c in exc.candidates} == {"Kevin A", "Kevin B"}

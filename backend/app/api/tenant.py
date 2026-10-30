@@ -118,7 +118,14 @@ async def revoke(invitation_id: int, session: SessionDep, admin: User = AdminDep
 @router.get("/connections/feishu")
 async def feishu_connection(session: SessionDep, admin: User = AdminDep):
     data = tenancy.connection_json(await tenancy.connection(session, admin.tenant_id))
-    data["redirect_uri"] = get_settings().feishu_redirect_uri  # 飞书后台“重定向 URL”要填这个
+    settings = get_settings()
+    data["redirect_uri"] = settings.feishu_redirect_uri  # 飞书后台“重定向 URL”要填这个
+    base = settings.feishu_redirect_uri.removesuffix("/api/auth/feishu/callback")
+    tenant = await session.get(Tenant, admin.tenant_id)
+    if admin.tenant_id != DEFAULT_TENANT_ID:
+        # 飞书后台“事件订阅”和“卡片回调”的请求地址；成员用飞书登录这个工作区的入口
+        data["events_url"] = f"{base}/api/feishu/events/{admin.tenant_id}"
+        data["login_url"] = f"{base}/api/auth/feishu/login?workspace={tenant.slug}"
     data["managed"] = admin.tenant_id == DEFAULT_TENANT_ID  # 默认工作区沿用服务器配置，在这里只读
     return data
 
@@ -136,7 +143,10 @@ async def save_feishu(body: FeishuBody, session: SessionDep, admin: User = Admin
     """保存飞书应用配置。密钥留空表示不改；接口永远不返回密钥原文。"""
     if admin.tenant_id == DEFAULT_TENANT_ID:
         raise HTTPException(status_code=400, detail="默认工作区的飞书配置由服务器统一管理，不能在这里修改")
-    conn = await tenancy.save_feishu(session, admin, body.model_dump())
+    try:
+        conn = await tenancy.save_feishu(session, admin, body.model_dump())
+    except tenancy.TenancyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
     return tenancy.connection_json(conn)
 
