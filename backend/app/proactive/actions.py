@@ -325,6 +325,22 @@ async def prepare_event_change(
     return action
 
 
+async def _local_edit(session: AsyncSession, user: User, p: dict) -> str:
+    """改他 Mac 上的 Excel：按预览时的文件版本执行（文件被改过就不写），另存或覆盖（先备份）。"""
+    from app import devices
+
+    try:
+        done = await devices.request_skill(session, user, "apply_edit", {
+            "file": p["file"], "cells": [{"cell": c["cell"], "value": c["after"]} for c in p["cells"]],
+            "expected_sha256": p["expected_sha256"], "mode": p["mode"], "output_path": p.get("output_path")}, timeout=120)
+    except devices.DeviceError as exc:
+        raise ActionError(str(exc)) from exc
+    check = "，读回核对一致" if done.get("verified") else "，⚠️ 读回核对不一致，请打开看一下"
+    if done.get("mode") == "overwrite":
+        return f"已改好《{done.get('path')}》（{done.get('changed')} 个格子），原文件备份为《{done.get('backup')}》{check}"
+    return f"已另存为《{done.get('path')}》（{done.get('changed')} 个格子，原文件没动）{check}"
+
+
 async def _collab(session: AsyncSession, user: User, p: dict) -> str:
     """协作：用户本人确认后才发出请求 / 接受 / 提交……（见 app/collab.py）。准备时看到的版本已经过时就不执行。"""
     from app import collab
@@ -458,6 +474,8 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
             )
         elif action.kind == "collab":
             result = await _collab(session, user, action.payload)
+        elif action.kind == "local_edit":
+            result = await _local_edit(session, user, action.payload)
         else:
             raise ActionError(f"未知操作 {action.kind}")
     except httpx.TransportError:

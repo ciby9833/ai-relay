@@ -113,11 +113,9 @@ async def request_skill(session: AsyncSession, user: User, name: str, inputs: di
     if not supported(skill, device.app_version):
         raise DeviceError(f"你的 Mac 客户端版本太旧（{device.app_version or '未知'}），这个功能需要 {skill.min_client} 以上，请更新客户端")
     mapped = dict(inputs)
-    for key in skill.reads:
+    for key, need in [*((k, "read") for k in skill.reads), *((k, "write") for k in skill.writes)]:
         ref = inputs.get(key) or {}
-        mapped[key] = {**ref, "folder": folder(device, ref.get("folder") or "", "read")["id"], "path": _safe_path(ref.get("path"))}
-    out = inputs.get(skill.writes) or {}
-    mapped[skill.writes] = {"folder": folder(device, out.get("folder") or "", "write")["id"], "path": _safe_path(out.get("path"))}
+        mapped[key] = {**ref, "folder": folder(device, ref.get("folder") or "", need)["id"], "path": _safe_path(ref.get("path"))}
     return await _submit(user, device, "skill", {"skill": name, "input": mapped}, timeout)
 
 

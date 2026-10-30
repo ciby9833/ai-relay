@@ -177,6 +177,11 @@ TOOLS = [
        "两张表都要先确认关键列（例如先 read_local_file 看表头）；结果只给数量和示例，完整差异在生成的文件里。"),
     _T("summarize_local_table", "mac", "local_skills", "create", ("offline", "not_connected", "no_access", "not_found", "unsupported"),
        "先 read_local_file 看表头确认列名。"),
+    _T("prepare_local_edit", "mac", "local_skills", "prepare", ("offline", "not_connected", "no_access", "not_found", "unsupported", "precondition"),
+       "先 read_local_file 确认要改的格子；默认另存，他明确说覆盖才用 overwrite。"),
+    _T("inspect_local_template", "mac", "local_skills", "read", ("offline", "not_connected", "no_access", "not_found", "unsupported")),
+    _T("fill_local_template", "mac", "local_skills", "create", ("offline", "not_connected", "no_access", "not_found", "unsupported"),
+       "先 inspect_local_template 看占位符；内容只用查到的真实信息，每个占位符都要给（没有就给空字符串并告诉他）。"),
 ]
 
 CONTRACTS = {t.name: t for t in TOOLS}

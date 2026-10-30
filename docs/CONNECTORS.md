@@ -133,6 +133,9 @@
 | `read_local_file` | local_files | read | offline, not_connected, no_access, not_found, unsupported | 读取用户 Mac 上授权文件夹里的一个文件（xlsx、docx、pdf、csv、txt 等），返回文字内容和文件版本 |
 | `save_file_to_mac` | local_files | create | offline, not_connected, no_access, not_found | 把 Relay 生成的文件（Excel、Word、PPT）存进用户 Mac 上授权写入的文件夹 |
 | `compare_local_tables` | local_skills | create | offline, not_connected, no_access, not_found, unsupported | 在他的 Mac 上对比两张表（Excel / CSV），按关键列找出新增、删除和变化的格子，结果写成一个新的 Excel 文件（不改原文件）。约定：两张表都要先确认关键列（例如先 read_local_file 看表头）；结果只给数量和示例，完整差异在生成的文件里。 |
+| `fill_local_template` | local_skills | create | offline, not_connected, no_access, not_found, unsupported | 按他 Mac 上的模板生成一个新文件（例如周报）：values 里给每个占位符的内容（列表会写成一行一条）。约定：先 inspect_local_template 看占位符；内容只用查到的真实信息，每个占位符都要给（没有就给空字符串并告诉他）。 |
+| `inspect_local_template` | local_skills | read | offline, not_connected, no_access, not_found, unsupported | 看他 Mac 上一个模板（Word / Excel）里有哪些占位符（写成 {{名称}}） |
+| `prepare_local_edit` | local_skills | prepare | offline, not_connected, no_access, not_found, unsupported, precondition | 准备修改他 Mac 上的一个 Excel 文件里的格子：先读出这些格子现在的值和文件版本，做成卡片给他看（原值 → 新值），他确认后才写。约定：先 read_local_file 确认要改的格子；默认另存，他明确说覆盖才用 overwrite。 |
 | `summarize_local_table` | local_skills | create | offline, not_connected, no_access, not_found, unsupported | 在他的 Mac 上汇总一张表（Excel / CSV）：按某几列分组，计行数，对数值列求和，结果写成一个新的 Excel 文件（不改原文件）。约定：先 read_local_file 看表头确认列名。 |
 
 ## 错误码

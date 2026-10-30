@@ -1154,6 +1154,6 @@ def actions_json(action: PendingAction) -> dict:
         # 定时任务里准备、还在等确认：卡片上可以“确认，以后直接办”
         "grantable": bool(action.scheduled_task_id) and action.status == "pending",
         "shown": p.get("shown") if action.kind == "base_record" else None,
-        "cells": p.get("cells") if p.get("operation") == "fill_sheet_cells" else None,
-        "notes": p.get("notes") if p.get("operation") == "fill_sheet_cells" else None,
+        "cells": p.get("cells") if p.get("operation") == "fill_sheet_cells" or action.kind == "local_edit" else None,
+        "notes": p.get("notes") if p.get("operation") == "fill_sheet_cells" or action.kind == "local_edit" else None,
     }

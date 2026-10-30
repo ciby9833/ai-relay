@@ -188,3 +188,75 @@ async def summarize_local_table(ctx: ToolContext, args: dict) -> str:
     except devices.DeviceError as exc:
         raise ToolError(str(exc), "unsupported" if "版本太旧" in str(exc) else _code(exc)) from exc
     return json.dumps(result, ensure_ascii=False)
+
+
+# ---------- 修改已有的 Excel、按模板生成 ----------
+
+def _skill_error(exc: devices.DeviceError) -> ToolError:
+    return ToolError(str(exc), "unsupported" if "版本太旧" in str(exc) else "conflict" if "被改过" in str(exc) else _code(exc))
+
+
+@tool(
+    "prepare_local_edit",
+    "准备修改他 Mac 上的一个 Excel 文件里的格子：先读出这些格子现在的值和文件版本，做成卡片给他看（原值 → 新值），他确认后才写。"
+    "默认另存为新文件（原文件不动）；只有他明确说要覆盖原文件时用 mode=overwrite（覆盖前自动备份；文件里有图表、透视表、图片、宏时不能覆盖）。",
+    {"file": FILE_REF,
+     "cells": {"type": "array", "minItems": 1, "maxItems": 500, "items": {"type": "object", "properties": {
+         "cell": {"type": "string", "description": "格子编号，例如 C2"}, "value": {"type": ["string", "number"]}},
+         "required": ["cell", "value"], "additionalProperties": False}},
+     "mode": {"type": "string", "enum": ["save_as", "overwrite"], "description": "默认 save_as"},
+     "output_path": {"type": "string", "description": "另存时的新文件名（可选）"}},
+    ["file", "cells"],
+)
+async def prepare_local_edit(ctx: ToolContext, args: dict) -> str:
+    from app.proactive import actions
+
+    mode = args.get("mode") or "save_as"
+    try:
+        preview = await devices.request_skill(ctx.session, ctx.user, "preview_edit", {"file": args["file"], "cells": args["cells"]}, timeout=60)
+    except devices.DeviceError as exc:
+        raise _skill_error(exc) from exc
+    if mode == "overwrite" and not preview.get("overwrite_allowed"):
+        raise ToolError(f"文件里有{'、'.join(preview.get('risks') or [])}，重写可能丢失，不能覆盖；请改为另存", "precondition")
+    name = args["file"]["path"]
+    notes = ([f"覆盖原文件《{name}》（会先在同一个文件夹里备份原文件）"] if mode == "overwrite"
+             else [f"另存为新文件{('《' + args['output_path'] + '》') if args.get('output_path') else '（原文件不动）'}"])
+    if preview.get("risks"):
+        notes.append(f"文件里有{'、'.join(preview['risks'])}，所以只能另存")
+    action = actions._new(ctx.session, ctx.user, "local_edit", f"修改 Mac 上的《{name}》（{len(args['cells'])} 个格子，工作表「{preview.get('sheet')}」）", {
+        "file": {**args["file"], "sheet": preview.get("sheet")}, "cells": preview.get("cells") or [], "expected_sha256": preview.get("sha256"),
+        "mode": mode, "output_path": args.get("output_path"), "notes": notes}, getattr(ctx.mission, "id", None))
+    await ctx.session.flush()
+    ctx.cards.append({"kind": "action", "action_id": action.id})
+    return f"已准备好（待确认操作 #{action.id}）：{action.summary}。他确认后才会写。"
+
+
+@tool(
+    "inspect_local_template",
+    "看他 Mac 上一个模板（Word / Excel）里有哪些占位符（写成 {{名称}}）。按模板生成文件前先看这个，确定要准备哪些内容。",
+    {"template": FILE_REF},
+    ["template"],
+)
+async def inspect_local_template(ctx: ToolContext, args: dict) -> str:
+    try:
+        result = await devices.request_skill(ctx.session, ctx.user, "template_fields", {"template": args["template"]}, timeout=60)
+    except devices.DeviceError as exc:
+        raise _skill_error(exc) from exc
+    return json.dumps(result, ensure_ascii=False)
+
+
+@tool(
+    "fill_local_template",
+    "按他 Mac 上的模板生成一个新文件（例如周报）：values 里给每个占位符的内容（列表会写成一行一条）。模板本身不改；生成后核对没有留下占位符。",
+    {"template": FILE_REF,
+     "values": {"type": "object", "additionalProperties": {"type": ["string", "number", "array"], "items": {"type": "string"}},
+                "description": "占位符 → 内容"},
+     "output": OUTPUT_REF},
+    ["template", "values", "output"],
+)
+async def fill_local_template(ctx: ToolContext, args: dict) -> str:
+    try:
+        result = await devices.request_skill(ctx.session, ctx.user, "fill_template", args)
+    except devices.DeviceError as exc:
+        raise _skill_error(exc) from exc
+    return json.dumps(result, ensure_ascii=False)

@@ -157,7 +157,14 @@ async function summarizeTable(folders, input) {
     top: rows.slice(0, 20), totals, source: { ...input.source, sheet: table.sheet, ...table.version } };
 }
 
-const SKILLS = { compare_tables: compareTables, summarize_table: summarizeTable };
+const edit = require("./edit");
+const template = require("./template");
+
+const SKILLS = {
+  compare_tables: compareTables, summarize_table: summarizeTable,
+  preview_edit: edit.previewEdit, apply_edit: edit.applyEdit,
+  template_fields: template.templateFields, fill_template: template.fillTemplate,
+};
 
 /** 执行一个技能：只认这里实现了的；输入里的每个文件夹都要在授权列表里（读 / 写权限由 folders 再查一次）。 */
 async function run(folders, name, input) {

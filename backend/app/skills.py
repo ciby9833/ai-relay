@@ -13,16 +13,23 @@ class Skill:
     name: str
     title: str
     min_client: str  # 需要的 Mac 客户端最低版本
-    reads: tuple[str, ...]  # 输入里哪些是要读的文件（{folder, path, sheet?}）
-    writes: str  # 输入里哪个是输出位置（{folder, path}）
+    reads: tuple[str, ...]  # 输入里哪些文件要读（{folder, path, sheet?}）：文件夹要有读权限
+    writes: tuple[str, ...]  # 输入里哪些位置要写（{folder, path}）：文件夹要有写权限（可以和 reads 是同一个，例如改已有文件）
     returns: str  # 回传什么
 
 
 SKILLS = {s.name: s for s in [
-    Skill("compare_tables", "对比两张表", "0.2.0", ("left", "right"), "output",
+    Skill("compare_tables", "对比两张表", "0.2.0", ("left", "right"), ("output",),
           "两张表的行数、新增 / 删除 / 变化的数量、最多 10 条示例、参与对比的列、生成的对比文件（核对结果）"),
-    Skill("summarize_table", "汇总一张表", "0.2.0", ("source",), "output",
+    Skill("summarize_table", "汇总一张表", "0.2.0", ("source",), ("output",),
           "总行数、分组数、前 20 组、合计、生成的汇总文件（核对结果）"),
+    Skill("preview_edit", "预览修改 Excel", "0.3.0", ("file",), (),
+          "每个要改的格子现在的值、文件版本（sha256）、能不能覆盖（有图表 / 透视表 / 图片 / 宏时不能）"),
+    Skill("apply_edit", "执行修改 Excel", "0.3.0", ("file",), ("file",),
+          "另存的新文件或覆盖后的文件、备份文件（覆盖时）、核对结果；文件在预览后被改过则不写"),
+    Skill("template_fields", "查看模板的占位符", "0.3.0", ("template",), (), "模板里的占位符列表"),
+    Skill("fill_template", "按模板生成文件", "0.3.0", ("template",), ("output",),
+          "生成的新文件（核对：没有留下占位符、给的内容都在）"),
 ]}
 
 

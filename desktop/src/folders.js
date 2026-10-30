@@ -196,4 +196,25 @@ async function write(folder, relative, data, sha256) {
   throw new FolderError("同名文件太多，没有写入");
 }
 
-module.exports = { FolderStore, FolderError, resolve, list, read, write, MAX_READ };
+/** 替换已有文件（只在他明确选择“覆盖原文件”时用）：写之前再核对一次版本没变；先写临时文件再换上去，写完读回核对。 */
+async function replace(folder, relative, data, expectedSha256) {
+  if (!folder.write) throw new FolderError(`文件夹「${folder.label}」没有授权写入`);
+  const { root, real } = await resolve(folder, relative);
+  const current = await fs.readFile(real);
+  if (crypto.createHash("sha256").update(current).digest("hex") !== expectedSha256) {
+    throw new FolderError("这个文件在预览之后被改过了，没有覆盖；请重新预览");
+  }
+  const temp = path.join(path.dirname(real), `.relay-tmp-${crypto.randomUUID()}`);
+  await fs.writeFile(temp, data, { flag: "wx" });
+  try {
+    await fs.rename(temp, real);  // 同一个文件夹里换名：要么是旧文件，要么是新文件，不会只写一半
+  } catch (error) {
+    await fs.rm(temp, { force: true });
+    throw error;
+  }
+  const back = await fs.readFile(real);
+  const verified = crypto.createHash("sha256").update(back).digest("hex") === crypto.createHash("sha256").update(data).digest("hex");
+  return { path: rel(root, real), verified, full: real };
+}
+
+module.exports = { FolderStore, FolderError, resolve, list, read, write, replace, MAX_READ };
