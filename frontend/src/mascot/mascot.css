@@ -1,0 +1,30 @@
+/* Original 01 / PIP identity; SVG layers remain legible at favicon sizes. */
+.relay-mark {
+  --relay-shell: #c96442;
+  --relay-face: #fff3df;
+  --relay-eye: #25231f;
+  --relay-blush: #e7b5a0;
+  --relay-badge: #faf9f5;
+  --relay-badge-ink: #25231f;
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+  line-height: 0;
+}
+.relay-mark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.relay-mark [data-part="body"] { transform-origin: 48px 48px; }
+.relay-mark [data-eye] { transform-origin: 0 0; }
+.relay-mark .shell { fill: var(--relay-shell); }
+.relay-mark .face { fill: var(--relay-face); }
+.relay-mark .eye { fill: var(--relay-eye); }
+.relay-mark .blush { fill: var(--relay-blush); opacity: .7; }
+.relay-mark [data-part="badge"] { color: var(--relay-badge-ink); fill: currentColor; }
+.relay-mark .badge-bg { fill: var(--relay-badge); stroke: var(--relay-shell); stroke-width: 1.5; }
+.relay-mark[data-compact="true"] [data-part="badge"] { display: none; }
+.relay-mark[data-emotion="shutdown"] [data-part="body"], .relay-mark[data-emotion="offline"] [data-part="body"] { opacity: .5; }
+@media (prefers-color-scheme: dark) {
+  .relay-mark { --relay-shell: #df896b; --relay-face: #f2dfc6; --relay-eye: #211e1b; --relay-blush: #d79c89; --relay-badge: #35312c; --relay-badge-ink: #f5f4ef; }
+}
+[data-mascot-theme="light"] .relay-mark { --relay-shell: #c96442; --relay-face: #fff3df; --relay-eye: #25231f; --relay-blush: #e7b5a0; --relay-badge: #faf9f5; --relay-badge-ink: #25231f; }
+[data-mascot-theme="dark"] .relay-mark { --relay-shell: #df896b; --relay-face: #f2dfc6; --relay-eye: #211e1b; --relay-blush: #d79c89; --relay-badge: #35312c; --relay-badge-ink: #f5f4ef; }
+@media (forced-colors: active) { .relay-mark { forced-color-adjust: none; } }

@@ -8,6 +8,7 @@ import type { User } from "../../api";
 import Workspace from "./Workspace";
 import Collab from "./Collab";
 import Sources from "./Sources";
+import { ThisMac } from "./ThisMac";
 import LanguageSelect from "../LanguageSelect";
 import Automations from "./Automations";
 import Integrations from "./Integrations";
@@ -239,6 +240,7 @@ function SettingsForm() {
         </span>
       </label>
 
+      <ThisMac />
       <Sources onLoaded={onSources} />
 
       <section>

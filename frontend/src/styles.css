@@ -2379,3 +2379,5 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .ws-advanced { display: flex; flex-direction: column; gap: 8px; }
 .ws-advanced summary { cursor: pointer; font-size: 13px; color: var(--text-2); }
 .ws-advanced label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); margin-top: 6px; }
+.mac-path { overflow-wrap: anywhere; }
+.mac-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }

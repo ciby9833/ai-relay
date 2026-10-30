@@ -11,14 +11,17 @@ import Sidebar, { type PanelKind, type View } from "./components/Sidebar";
 import Inspector, { type AskContext } from "./components/Inspector";
 import WorkDock, { type WorkView } from "./components/WorkDock";
 import { useWork } from "./work";
+import { pairIfNeeded, unpairOnLogout } from "./desktop";
 import Admin from "./components/Admin";
 import Missions from "./components/Missions";
 import Thread from "./components/Thread";
+import type { EmotionId } from './mascot/engine.js';
 
 export default function App() {
   useLocale();
   useViewport();
   const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [assistantEmotion, setAssistantEmotion] = useState<EmotionId>('idle');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [view, setView] = useState<View>({ type: "home" });
   // 工作区：顶部三个入口（待处理 / 会议 / 进展）打开右侧详情栏；宽屏时详情栏和对话并排，窄屏时盖在对话上
@@ -62,6 +65,10 @@ export default function App() {
       });
   }, []);
   useEffect(loadUser, [loadUser]);
+  // 在 Mac 客户端里登录后：第一次自动把这台 Mac 和账号配对（之后本机文件夹才能给助理用）
+  useEffect(() => {
+    if (user) void pairIfNeeded().catch(() => undefined);
+  }, [user]);
 
   const refresh = useCallback(async () => setConversations(await api.conversations()), []);
 
@@ -77,7 +84,7 @@ export default function App() {
 
   if (user === undefined) return (
     <div className="login"><div className="login-card">
-      <RelayMark size={32} />
+      <RelayMark size={64} animated emotionId={loadError ? 'error' : 'boot'} />
       <p role={loadError ? "alert" : "status"}>{t(loadError ? "loadError" : "loading")}</p>
       {loadError && <button className="btn primary" onClick={loadUser}>{t("retry")}</button>}
     </div></div>
@@ -97,6 +104,7 @@ export default function App() {
         view={view}
         open={menuOpen}
         onClose={closeMenu}
+        emotionId={assistantEmotion}
         onNavigate={navigate}
         onDelete={async (id) => {
           await api.deleteConversation(id);
@@ -108,6 +116,7 @@ export default function App() {
           setMenuOpen(false);
         }}
         onLogout={async () => {
+          await unpairOnLogout().catch(() => undefined);  // Mac 客户端：退出登录时这台 Mac 也和账号断开
           await api.logout();
           setUser(null);
         }}
@@ -118,7 +127,7 @@ export default function App() {
           <button className="icon-button" onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); setMenuOpen(true); }} aria-label={t("菜单")} aria-expanded={menuOpen} aria-controls="sidebar">
             <Icon name="menu" />
           </button>
-          <RelayMark size={18} />
+          <RelayMark size={28} emotionId={assistantEmotion} animated />
           <span>Relay</span>
         </div>
         {(user.missing_scopes?.length ?? 0) > 0 && (
@@ -136,6 +145,7 @@ export default function App() {
         ) : (
           <div className={`home-split ${view.type === "home" && inspectorOpen ? "with-inspector" : ""}`}>
             <Thread
+              onEmotion={setAssistantEmotion}
               // 新对话拿到 id 时不能重新挂载（流式输出还在进行），所以只按视图类型区分
               key={view.type}
               home={view.type === "home"}

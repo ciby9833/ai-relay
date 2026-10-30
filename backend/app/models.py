@@ -766,3 +766,40 @@ class UserConnection(Base):
     last_error: Mapped[str | None] = mapped_column(Text)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Device(Base):
+    """配对的桌面客户端（第一版：Mac）。设备是一种执行者，不是另一个助理：它只替本人读写他授权的文件夹，
+    任务状态仍在云端。令牌只存哈希；本人可以在网页上随时撤销。"""
+
+    __tablename__ = "devices"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    platform: Mapped[str] = mapped_column(String(32))  # darwin | win32
+    app_version: Mapped[str | None] = mapped_column(String(32))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # 设备上报的授权文件夹：[{id, label, read, write}]。只有名字，不含完整路径（路径只留在设备上）
+    folders: Mapped[list] = mapped_column(JSONB, server_default="[]")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DeviceJob(Base):
+    """交给设备做的一步（列文件、读文件、存文件）。设备领取后执行、回传结果；同一步只执行一次。"""
+
+    __tablename__ = "device_jobs"
+    __table_args__ = (Index("ix_device_jobs_device_status", "device_id", "status"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # list | read | write
+    args: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    status: Mapped[str] = mapped_column(String(16), server_default="queued")  # queued | running | done | failed | expired
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

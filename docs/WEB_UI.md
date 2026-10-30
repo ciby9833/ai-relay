@@ -2,6 +2,43 @@
 
 管理员的「运行质量」入口包含「任务质量」「系统性能」两个视图。系统性能复用现有主题和三语言，显示主机／容器资源、到期任务、执行心跳和外部模型调用；默认未启用时显示明确空态。采集部署和指标口径见 [系统性能监控](MONITORING.md)。
 
+## Relay 01 头像与表情（2026-10-30）
+
+全应用统一使用 01 气泡角色的原创 SVG：陶土外轮廓、奶油色脸、两个纯色胶囊眼睛与浅色腮红，无嘴鼻、瞳孔或高光。`Icon.tsx` 的 `RelayMark` 统一转发至 `RelayMascot`，覆盖登录、邀请、侧栏、移动标题栏、聊天头像、欢迎页、任务、卡片和博客；浏览器与 Mac 图标从同一 SVG 导出。
+
+预览入口 `/mascot` 支持三语言、浅深色、播放/暂停/重播、16–48px 小尺寸，以及 `blob`、`wedge`、`gem` 三种形态。应用默认使用 `blob`，另两种形态可由组件 prop 或原生引擎接口切换。
+
+| 分组 | emotionId |
+| --- | --- |
+| 生命周期 | `boot`, `wake`, `idle`, `sleep`, `loading`, `shutdown` |
+| 情绪反应 | `happy`, `surprised`, `thinking`, `questioning`, `sad`, `focused`, `proud` |
+| 代理工作 | `listening`, `searching`, `working`, `speaking`, `waiting_approval`, `waiting`, `error`, `completed`, `offline` |
+
+原生引擎在 `frontend/src/mascot/engine.js`，零框架、零运行时图片或动画库依赖。React 只负责挂载与传参；SVG 与原生 Web Animations API 执行动画。独立 HTML 页面也可直接调用：
+
+```js
+import { createRelayMascot } from './engine.js';
+const avatar = createRelayMascot(document.querySelector('#avatar'), {
+  shape: 'blob', emotionId: 'idle', animated: true,
+});
+avatar.handleAIMessage({ emotionId: 'searching' }); // 也接受 JSON 字符串
+avatar.setShape('gem');
+avatar.setEmotion('waiting_approval');
+avatar.destroy(); // 移除时释放动画、可见性监听与观察器
+```
+
+宿主元素需要明确宽高。未知 ID、缺字段、无效 JSON 回退 `idle`；表达式不作为 HTML 注入。实时对话支持可选 SSE 消息 `{"type":"emotion","emotionId":"happy"}`；本轮没有修改模型提示词或要求后端额外生成该事件。
+
+`mascot/state.ts` 将现有工具开始/结束、流式回复、错误和卡片状态映射到实际表情：读取/搜索 → 检索；执行工具 → 工作；回复 → 回复中；待确认动作 → 等待审批；已完成动作/任务或校验通过的文件 → 完成。真实错误、待确认和执行状态优先于 AI 表情提示，普通回答结束不代表任务完成。最近一条助手消息、侧栏和移动标题同步；旧消息静态展示。其他生命周期和情绪由预览页或接口按场景调用。
+
+系统减少动态效果、隐藏标签页、滚出视口或组件卸载时停止动画，状态仍可通过静态眼形、角标及原有文字识别。深色模式使用独立外壳、脸部、腮红和角标文字颜色。
+
+`node frontend/scripts/build-icons.mjs` 可重建 SVG favicon、兼容 ICO、Apple Touch PNG、Mac PNG/ICNS 与菜单栏 Template 图标。位图仅用于系统图标格式兼容，动画本身始终使用 SVG。网页图标已更新版本参数；已安装的 Mac 应用需要重新打包安装才会采用新应用图标。
+
+参考 [aora-bot 的状态分类与接口思路](https://github.com/sam70361/aora-bot)，本实现的轮廓、表情参数和动画代码独立编写，未复制其角色资源或引擎。X/V2EX 链接未能读取，造型细节按本次用户给出的文字要求实现。
+
+验证：Chromium 全量 76 项、WebKit 相关 34 项测试通过；检查了桌面与 320/375px 手机截图。浏览器自动化不等于 iPhone 真机验收。本地开发服务已热更新，未发布线上。
+
 ## 界面语言
 
 Web 支持英语（en）、简体中文（zh）、印尼语（id）。第一次访问跟随浏览器向网页提供的系统首选语言：`navigator.languages[0]`，不可用时读 `navigator.language`。区域标签会归一化，如 `en-GB` → `en`、`zh-TW` → `zh`、`id-ID` → `id`；目前所有中文变体显示简体中文。不支持的首选语言回退英语。

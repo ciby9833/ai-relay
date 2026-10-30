@@ -1,0 +1,21 @@
+{
+  "name": "relay-desktop",
+  "productName": "Relay",
+  "version": "0.1.0",
+  "description": "Relay 的 Mac 客户端：同一个助理，加上本机文件夹、系统通知和菜单栏常驻",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder --mac --publish never",
+    "release": "electron-builder --mac --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0"
+  }
+}

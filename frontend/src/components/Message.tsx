@@ -6,6 +6,7 @@ import type { ThreadMessage } from "../api";
 import { relative, stepActive, stepDone } from "../format";
 import InlineCard from "./cards";
 import Icon, { RelayMark } from "./Icon";
+import { messageEmotion } from '../mascot/state';
 
 async function copyText(text: string) {
   try {
@@ -94,7 +95,7 @@ function Steps({ steps, active }: { steps: string[]; active: boolean }) {
   );
 }
 
-export default function Message({ message, onChanged }: { message: ThreadMessage; onChanged: () => void }) {
+export default function Message({ message, onChanged, active = false }: { message: ThreadMessage; onChanged: () => void; active?: boolean }) {
   if (message.role === "user") {
     return (
       <div className="msg user">
@@ -106,7 +107,7 @@ export default function Message({ message, onChanged }: { message: ThreadMessage
   return (
     <div className={`msg assistant ${message.proactive ? "proactive" : ""}`}>
       <div className="msg-head">
-        <RelayMark size={16} />
+        <RelayMark size={32} emotionId={messageEmotion(message)} animated={active || !!message.pending} />
         <span className="msg-name">Relay</span>
         {message.proactive && <span className="msg-tag">{t("主动告诉你")}</span>}
         {message.created_at && <span className="msg-time">{relative(message.created_at)}</span>}

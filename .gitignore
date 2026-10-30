@@ -48,3 +48,6 @@ htmlcov/
 frontend/test-results/
 frontend/playwright-report/
 shadow-results/
+
+# Mac 客户端安装包（在服务器上直接放，不进仓库）
+desktop-releases/

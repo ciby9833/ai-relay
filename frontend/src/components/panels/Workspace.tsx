@@ -2,6 +2,7 @@ import { t } from "../../i18n";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type FeishuConnection, type Invitation, type Member, type User, type WorkspaceChoice } from "../../api";
 import { relative } from "../../format";
+import { MyDevices } from "./ThisMac";
 
 const ROLE: Record<Member["role"], string> = { owner: "所有者", admin: "管理员", member: "成员" };
 
@@ -219,6 +220,7 @@ export default function Workspace({ me, onChanged }: { me: User; onChanged: () =
     <>
       <p className="muted small">{t("当前工作区：{name}", { name: me.tenant?.name ?? "—" })} · {t(ROLE[me.role ?? "member"])}</p>
       <AccountPart me={me} onChanged={onChanged} />
+      <MyDevices />
       {me.is_admin && <AdminPart me={me} />}
     </>
   );

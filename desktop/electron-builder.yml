@@ -1,0 +1,32 @@
+# 打包与发布：npm run dist（本地出安装包）/ npm run release（出包并上传到更新地址）
+# 签名：本机钥匙串里要有 “Developer ID Application” 证书（electron-builder 会自动找）。
+# 公证：设置环境变量 APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID 后自动公证；没设置时只签名不公证。
+appId: com.relay.desktop
+productName: Relay
+copyright: Relay
+directories:
+  output: dist
+  buildResources: build
+files:
+  - src/**
+  - build/trayTemplate*.png
+  - package.json
+mac:
+  category: public.app-category.business
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip # 自动更新要用 zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+dmg:
+  title: Relay
+publish:
+  # 更新地址：放安装包和 latest-mac.yml 的静态目录（例如 https://translation.jtcargo.co.id/desktop/）
+  provider: generic
+  url: ${env.RELAY_UPDATE_URL}

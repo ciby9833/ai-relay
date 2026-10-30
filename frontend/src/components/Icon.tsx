@@ -51,11 +51,5 @@ export default function Icon({ name, size = 16 }: { name: string; size?: number 
   );
 }
 
-/** Relay 标识：一个四芒星，暗示“替你留意” */
-export function RelayMark({ size = 20 }: { size?: number }) {
-  return (
-    <svg className="relay-mark" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2c.6 4.8 2.6 8.8 10 10-7.4 1.2-9.4 5.2-10 10-.6-4.8-2.6-8.8-10-10 7.4-1.2 9.4-5.2 10-10z" fill="currentColor" />
-    </svg>
-  );
-}
+// Keep a single identity across all existing brand call sites.
+export { default as RelayMark } from './RelayMascot';

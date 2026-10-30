@@ -60,7 +60,7 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
   return (
     <div className="login">
       <div className="login-card">
-        <RelayMark size={40} />
+        <RelayMark size={72} animated emotionId={busy ? 'loading' : error || loginError ? 'error' : choose ? 'questioning' : 'idle'} />
         <h1>Relay</h1>
         <LanguageSelect />
         <p>{t("替你留意邮件、日程和审批，该你知道的事会主动告诉你，该做的事先帮你准备好。")}</p>

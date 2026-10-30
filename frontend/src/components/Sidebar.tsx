@@ -19,6 +19,7 @@ export default function Sidebar({
   onPanel,
   onLogout,
   onClose,
+  emotionId = 'idle',
 }: {
   user: User;
   conversations: Conversation[];
@@ -29,6 +30,7 @@ export default function Sidebar({
   onPanel: (panel: PanelKind) => void;
   onLogout: () => void;
   onClose: () => void;
+  emotionId?: string;
 }) {
   const sidebar = useRef<HTMLElement>(null);
   const showPanel = (kind: PanelKind, event: MouseEvent<HTMLButtonElement>) => {
@@ -61,7 +63,7 @@ export default function Sidebar({
   return (
     <aside ref={sidebar} id="sidebar" className={`sidebar ${open ? "open" : ""}`}>
       <div className="brand">
-        <RelayMark size={20} />
+        <RelayMark size={32} emotionId={emotionId} animated />
         <span>Relay</span>
         {user.tenant && <span className="brand-workspace" title={user.tenant.name}>{user.tenant.name}</span>}
         <button className="icon-button sidebar-close" onClick={onClose} aria-label={t("关闭")}><Icon name="x" /></button>

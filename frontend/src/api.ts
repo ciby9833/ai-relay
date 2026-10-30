@@ -33,6 +33,11 @@ export interface OwnConnection {
 }
 export interface OwnConnections { imap: OwnConnection; ics: OwnConnection; feishu: { linked: boolean } }
 
+export interface Device {
+  id: string; name: string; platform: string; app_version: string | null; online: boolean;
+  folders: { id: string; label: string; read: boolean; write: boolean }[]; last_seen_at: string | null; created_at: string | null;
+}
+
 export type CollabAction = "accept" | "decline" | "counter" | "submit" | "agree" | "revise" | "approve" | "return" | "cancel";
 export interface CollabMaterial { title: string; url?: string; text?: string }
 export interface Delegation {
@@ -359,6 +364,10 @@ export interface ThreadMessage {
   created_at?: string;
   error?: string;
   pending?: boolean;
+  /** Optional expression hint; operational state takes precedence. */
+  emotionId?: string;
+  activeTool?: string | null;
+  toolFailed?: boolean;
 }
 
 export interface ReminderRates { accuracy: number | null; late: number | null; judged: number }
@@ -440,6 +449,7 @@ export interface SourceStatus {
 }
 
 export type StreamEvent =
+  | { type: "emotion"; emotionId: string }
   | { type: "text"; delta: string }
   | { type: "tool_start"; name: string }
   | { type: "tool_end"; name: string; ok: boolean }
@@ -551,6 +561,10 @@ export const api = {
   feishuConnection: () => request<FeishuConnection>("/tenant/connections/feishu"),
   saveFeishu: (values: Record<string, string>) => request<FeishuConnection>("/tenant/connections/feishu", json("PUT", values)),
   testFeishu: () => request<FeishuConnection>("/tenant/connections/feishu/test", { method: "POST" }),
+  pairDevice: (name: string, platform: string, app_version: string) =>
+    request<Device & { token: string }>("/devices", json("POST", { name, platform, app_version })),
+  devices: () => request<Device[]>("/devices"),
+  revokeDevice: (id: string) => request(`/devices/${id}`, { method: "DELETE" }),
   ownConnections: () => request<OwnConnections>("/connections"),
   mailPreset: (email: string) => request<Record<string, string | number>>(`/connections/imap/preset?email=${encodeURIComponent(email)}`),
   saveMailbox: (values: Record<string, string | number | null>) => request<OwnConnection>("/connections/imap", json("PUT", values)),

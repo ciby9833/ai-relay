@@ -2856,6 +2856,86 @@ export const messages: Record<string, readonly [string, string]> = {
     "Something needs your attention",
     "Ada yang perlu Anda lihat"
   ],
+  "这台 Mac": [
+    "This Mac",
+    "Mac ini"
+  ],
+  "已断开": [
+    "Disconnected",
+    "Terputus"
+  ],
+  "这台 Mac 在网页上被撤销了，助理现在用不了它的文件夹。": [
+    "This Mac was revoked on the web, so the assistant can't use its folders right now.",
+    "Mac ini dicabut di web, jadi asisten tidak bisa memakai foldernya saat ini."
+  ],
+  "重新连接": [
+    "Reconnect",
+    "Hubungkan lagi"
+  ],
+  "已连接到你的账号。": [
+    "Connected to your account.",
+    "Terhubung ke akun Anda."
+  ],
+  "正在连接到你的账号…": [
+    "Connecting to your account…",
+    "Menghubungkan ke akun Anda…"
+  ],
+  "助理只能使用下面授权的文件夹：读取用来看资料，写入只会新建文件、不会覆盖。完整路径只留在这台 Mac 上。": [
+    "The assistant can only use the folders authorised below: reading to look at material, writing only ever creates new files and never overwrites. Full paths stay on this Mac.",
+    "Asisten hanya bisa memakai folder yang diizinkan di bawah: baca untuk melihat materi, tulis hanya membuat file baru dan tidak pernah menimpa. Path lengkap tetap di Mac ini."
+  ],
+  "还没有授权文件夹。": [
+    "No folders authorised yet.",
+    "Belum ada folder yang diizinkan."
+  ],
+  "在访达中显示": [
+    "Show in Finder",
+    "Tampilkan di Finder"
+  ],
+  "取消授权「{name}」？": [
+    "Stop authorising \"{name}\"?",
+    "Cabut izin \"{name}\"?"
+  ],
+  "取消授权": [
+    "Remove",
+    "Cabut izin"
+  ],
+  "允许读取": [
+    "Allow reading",
+    "Izinkan baca"
+  ],
+  "允许写入新文件": [
+    "Allow writing new files",
+    "Izinkan menulis file baru"
+  ],
+  "授权一个文件夹": [
+    "Authorise a folder",
+    "Izinkan sebuah folder"
+  ],
+  "登录过的电脑": [
+    "Signed-in computers",
+    "Komputer yang pernah masuk"
+  ],
+  "在线": [
+    "Online",
+    "Online"
+  ],
+  "上次在线 {time}": [
+    "Last online {time}",
+    "Terakhir online {time}"
+  ],
+  "不在线": [
+    "Offline",
+    "Offline"
+  ],
+  "授权了 {count} 个文件夹": [
+    "{count} folders authorised",
+    "{count} folder diizinkan"
+  ],
+  "撤销「{name}」？它会立刻断开，助理不能再用它的文件夹。": [
+    "Revoke \"{name}\"? It disconnects immediately and the assistant can no longer use its folders.",
+    "Cabut \"{name}\"? Langsung terputus dan asisten tidak bisa lagi memakai foldernya."
+  ],
   "已填写（留空表示不改）": [
     "Set (leave blank to keep)",
     "Sudah diisi (kosongkan untuk tetap)"

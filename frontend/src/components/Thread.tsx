@@ -6,6 +6,8 @@ import Composer from "./Composer";
 
 import { RelayMark } from "./Icon";
 import Message from "./Message";
+import { messageEmotion } from '../mascot/state';
+import { resolveEmotion, type EmotionId } from '../mascot/engine.js';
 
 const QUICK = ["我先处理什么？", "准备下一场会议"];
 const SUGGESTIONS = ["今天有哪些会？", "有哪些邮件需要我回？", "我有什么待审批的？", "帮我搜一下报价相关的文档"];
@@ -21,6 +23,7 @@ export default function Thread({
   onOpenItems,
   context,
   onClearContext,
+  onEmotion,
 }: {
   header?: ReactNode;
   onOpenItems?: (itemIds: number[]) => void;
@@ -31,6 +34,7 @@ export default function Thread({
   userName: string;
   onCreated: (id: string) => void;
   onTurnFinished: () => void;
+  onEmotion?: (emotionId: EmotionId) => void;
 }) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [homeId, setHomeId] = useState<string | null>(null);
@@ -39,6 +43,11 @@ export default function Thread({
   const bottom = useRef<HTMLDivElement>(null);
   const streaming = useRef(false);
   const createdHere = useRef<string | null>(null);
+
+  const lastAssistant = [...messages].reverse().find(message => message.role === 'assistant');
+  const emotion = loaded ? messageEmotion(lastAssistant) : 'loading';
+  useEffect(() => { onEmotion?.(emotion); }, [onEmotion, emotion]);
+  useEffect(() => () => onEmotion?.('idle'), [onEmotion]);
 
   const load = useCallback(async () => {
     if (streaming.current) return;
@@ -75,6 +84,7 @@ export default function Thread({
     setMessages((current) => [...current.slice(0, -1), update(current[current.length - 1])]);
 
   const send = async (text: string) => {
+    let failed = false;
     setBusy(true);
     streaming.current = true;
     const now = new Date().toISOString();
@@ -92,17 +102,21 @@ export default function Thread({
       }
       await sendMessage(id, text, null, (event) => {
         if (event.type === "text") updateLast((m) => ({ ...m, text: m.text + event.delta }));
-        else if (event.type === "tool_start") updateLast((m) => ({ ...m, steps: [...(m.steps ?? []), event.name] }));
+        else if (event.type === "tool_start") updateLast((m) => ({ ...m, activeTool: event.name, toolFailed: false, steps: [...(m.steps ?? []), event.name] }));
+        else if (event.type === "tool_end") updateLast((m) => ({ ...m, activeTool: null, toolFailed: !event.ok }));
+        else if (event.type === "emotion") updateLast((m) => ({ ...m, emotionId: resolveEmotion(event.emotionId) }));
         else if (event.type === "cards") updateLast((m) => ({ ...m, cards: [...(m.cards ?? []), ...event.cards] }));
-        else if (event.type === "error") updateLast((m) => ({ ...m, error: event.message }));
+        else if (event.type === "error") { failed = true; updateLast((m) => ({ ...m, error: event.message })); }
       });
     } catch (error) {
+      failed = true;
       updateLast((m) => ({ ...m, error: error instanceof Error ? error.message : t("发送失败") }));
     } finally {
       streaming.current = false;
       setBusy(false);
+      updateLast((m) => ({ ...m, pending: false, activeTool: null }));
       // 用服务端的版本替换本地拼出来的消息（卡片里的操作状态等以服务端为准）
-      await load();
+      if (!failed) await load();
       onTurnFinished();
     }
   };
@@ -116,7 +130,7 @@ export default function Thread({
         <div className="thread-inner">
           {empty && (
             <div className="welcome">
-              <RelayMark size={32} />
+              <RelayMark size={64} animated emotionId="idle" />
               <h1>
                 {t("greetUser", { greeting: greeting(), name: userName })}
               </h1>
@@ -152,7 +166,7 @@ export default function Thread({
                 )}
               </div>
             ) : (
-              <Message key={message.id} message={message} onChanged={load} />
+              <Message key={message.id} message={message} onChanged={load} active={message === lastAssistant} />
             ),
           )}
           <div ref={bottom} />

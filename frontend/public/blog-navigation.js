@@ -68,7 +68,14 @@
         <header>
           <div class="inner">
             <a class="brand" href="/">
-              <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c.6 4.8 2.6 8.8 10 10-7.4 1.2-9.4 5.2-10 10-.6-4.8-2.6-8.8-10-10 7.4-1.2 9.4-5.2 10-10z" fill="currentColor"/></svg>
+              <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none" aria-hidden="true" focusable="false" data-relay-mascot="idle" data-shape="blob">
+    <style>svg[data-relay-mascot]{display:block;overflow:visible}svg[data-relay-mascot] [data-part=body]{transform-origin:48px 48px}svg[data-relay-mascot] [data-eye]{transform-origin:0 0}svg[data-relay-mascot] .shell{fill:var(--relay-shell,#c96442)}svg[data-relay-mascot] .face{fill:var(--relay-face,#fff3df)}svg[data-relay-mascot] .eye{fill:var(--relay-eye,#25231f)}svg[data-relay-mascot] .blush{fill:var(--relay-blush,#e7b5a0);opacity:.7}svg[data-relay-mascot] [data-part=badge]{color:var(--relay-badge-ink,#25231f);fill:currentColor}svg[data-relay-mascot] .badge-bg{fill:var(--relay-badge,#faf9f5);stroke:var(--relay-shell,#c96442);stroke-width:1.5}@media(prefers-color-scheme:dark){svg[data-relay-mascot] .shell{fill:var(--relay-shell,#df896b)}svg[data-relay-mascot] .face{fill:var(--relay-face,#f2dfc6)}svg[data-relay-mascot] .blush{fill:var(--relay-blush,#d79c89)}svg[data-relay-mascot] .badge-bg{fill:var(--relay-badge,#35312c)}svg[data-relay-mascot] [data-part=badge]{color:var(--relay-badge-ink,#f5f4ef)}}</style>
+    <g data-part="body"><path data-part="shell" d="M47 8C71 6 87 22 88 44C90 59 83 71 76 77L80 86Q82 92 76 89L63 83C40 91 13 81 7 59C0 34 16 11 47 8Z" class="shell"/>
+      <path data-part="face" class="face" d="M46 25C64 21 77 31 79 46C82 63 68 74 47 74C27 74 15 64 16 48C16 33 29 26 46 25Z"/><g data-part="cheeks" class="blush"><ellipse cx="25" cy="59" rx="5.5" ry="3"/><ellipse cx="71" cy="59" rx="5.5" ry="3"/></g>
+      <g data-part="gaze"><g transform="translate(35 47)"><g data-eye="left" style="transform:rotate(0deg) scale(1, 1)"><rect class="eye" x="-4" y="-9" width="8" height="18" rx="4" /></g></g>
+      <g transform="translate(61 47)"><g data-eye="right" style="transform:rotate(0deg) scale(1, 1)"><rect class="eye" x="-4" y="-9" width="8" height="18" rx="4" /></g></g></g>
+    </g><g data-part="badge" display="none"><circle class="badge-bg" cx="79" cy="19" r="11"/></g>
+  </svg>
               <span>Relay</span>
             </a>
             <nav>
