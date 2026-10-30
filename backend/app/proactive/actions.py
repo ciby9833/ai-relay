@@ -324,6 +324,25 @@ async def prepare_event_change(
     return action
 
 
+async def _collab(session: AsyncSession, user: User, p: dict) -> str:
+    """协作：用户本人确认后才发出请求 / 接受 / 提交……（见 app/collab.py）。准备时看到的版本已经过时就不执行。"""
+    from app import collab
+
+    try:
+        if p.get("op") == "create":
+            assignee = await session.get(User, collab.member_id(p["assignee_id"]))
+            if assignee is None:
+                raise collab.CollabError("成员不存在")
+            d = await collab.create(session, user, assignee, title=p["title"], brief=p["brief"], deliverable=p["deliverable"],
+                                    acceptance=p.get("acceptance"), due_at=p.get("due_at"), materials=p.get("materials"))
+            return f"已把《{d.title}》发给 {assignee.name}（协作 #{d.id}），等对方接受"
+        d = await collab.act(session, user, int(p["delegation_id"]), p["action"], p.get("version"), note=p.get("note"),
+                             changes=p.get("changes"), materials=p.get("materials"))
+        return f"协作《{d.title}》：已{collab.ACTION_TEXT.get(p['action'], p['action'])}，现在是「{collab.STATUS_TEXT[d.status]}」"
+    except collab.CollabError as exc:
+        raise ActionError(str(exc)) from exc
+
+
 async def execute(session: AsyncSession, feishu: FeishuClient, user: User, action: PendingAction) -> str:
     if action.user_id != user.id:
         raise ActionError("不能执行他人的操作")
@@ -437,6 +456,8 @@ async def execute(session: AsyncSession, feishu: FeishuClient, user: User, actio
                        Signal.payload["event_id"].astext == p["event_id"])
                 .values(payload=Signal.payload.op("||")(cast({"rsvp": p["status"]}, JSONB)))
             )
+        elif action.kind == "collab":
+            result = await _collab(session, user, action.payload)
         else:
             raise ActionError(f"未知操作 {action.kind}")
     except httpx.TransportError:

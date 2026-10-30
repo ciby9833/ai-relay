@@ -33,6 +33,13 @@ export default function App() {
     setInspectorOpen(true);
   }, []);
   const [panel, setPanel] = useState<PanelKind | null>(null);
+  const [collabId, setCollabId] = useState<number | null>(null);
+  // “待处理”里的协作事项点“打开协作”：打开协作面板并直接显示那一份
+  useEffect(() => {
+    const open = (event: Event) => { setCollabId((event as CustomEvent<number>).detail); setPanel("collab"); };
+    window.addEventListener("relay:open-collab", open);
+    return () => window.removeEventListener("relay:open-collab", open);
+  }, []);
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [loadError, setLoadError] = useState(false);
@@ -160,7 +167,8 @@ export default function App() {
           </div>
         )}
       </div>
-      {panel && <Drawer kind={panel} onClose={() => setPanel(null)} me={user} onUserChanged={loadUser} />}
+      {panel && <Drawer kind={panel} onClose={() => { setPanel(null); setCollabId(null); }} me={user} onUserChanged={loadUser}
+        collabId={collabId} onCollabChanged={work.refresh} />}
     </div>
   );
 }

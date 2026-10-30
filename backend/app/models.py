@@ -703,3 +703,46 @@ class GeneratedFile(Base):
     attempts: Mapped[int] = mapped_column(Integer, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Delegation(Base):
+    """同一工作区里两个人之间的一份委托：请求 → 接受 / 拒绝 / 提修改 → 执行 → 提交 → 验收通过 / 退回；可以取消。
+
+    这是协作状态唯一的权威：双方“待处理”里的事项（key = collab:<id>）只引用它、跟着它变。
+    双方各自的对话、记忆、账号权限不共享；对方能看到的只有这里明确写下的内容和共享材料。"""
+
+    __tablename__ = "delegations"
+    __table_args__ = (Index("ix_delegations_tenant_status", "tenant_id", "status"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"))
+    requester_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    assignee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    brief: Mapped[str] = mapped_column(Text)  # 要做什么、为什么
+    deliverable: Mapped[str] = mapped_column(Text)  # 交付什么
+    acceptance: Mapped[str | None] = mapped_column(Text)  # 怎样算完成
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 没约定就是空，不替人编日期
+    materials: Mapped[list] = mapped_column(JSONB, server_default="[]")  # 请求方明确共享的材料 [{title, url?, text?}]
+    # requested | countered | accepted | submitted | returned | completed | declined | cancelled
+    status: Mapped[str] = mapped_column(String(16), server_default="requested")
+    proposal: Mapped[dict | None] = mapped_column(JSONB)  # 承接方提出的修改 {deliverable?, acceptance?, due_at?, note}
+    submission: Mapped[dict | None] = mapped_column(JSONB)  # 最近一次提交 {note, materials}
+    version: Mapped[int] = mapped_column(Integer, server_default="1")  # 每次变化 +1：防止重复点击、基于旧状态的操作
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DelegationEvent(Base):
+    """委托的变更记录：谁在什么时候做了什么（请求、接受、修改、提交、验收……）。"""
+
+    __tablename__ = "delegation_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    delegation_id: Mapped[int] = mapped_column(ForeignKey("delegations.id", ondelete="CASCADE"), index=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(16))
+    note: Mapped[str | None] = mapped_column(Text)
+    data: Mapped[dict] = mapped_column(JSONB, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

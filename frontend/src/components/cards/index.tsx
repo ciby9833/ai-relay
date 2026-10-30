@@ -333,6 +333,7 @@ const ITEM_KIND: Record<FollowUp["kind"], [string, string]> = {
   biz: ["external", "业务系统"],
   waiting: ["clock", "等对方回复"],
   task: ["check", "飞书任务"],
+  collab: ["memory", "和同事的协作"],
 };
 
 const RSVP_LABEL: Record<string, string> = { accept: "接受", tentative: "待定", decline: "拒绝" };
@@ -468,8 +469,13 @@ export function ItemCard({ item, onChanged, compact, onClosed }: {
               <Icon name="external" /> {t("在飞书查看")}
             </a>
           )}
+          {item.collab && (
+            <button className="btn primary" onClick={() => window.dispatchEvent(new CustomEvent("relay:open-collab", { detail: item.collab!.delegation_id }))}>
+              {t("打开协作")}
+            </button>
+          )}
           <span className="spacer" />
-          {reasons === "done" ? (
+          {item.collab && !["completed", "declined", "cancelled"].includes(item.collab.collab_status) ? null : reasons === "done" ? (
             <span className="item-reasons" role="group" aria-label={t("什么时候处理的？")}>
               <span className="muted small">{t("什么时候处理的？")}</span>
               <button className="btn secondary small" disabled={busy} onClick={() => give("handled")}>{t("提醒后处理完了")}</button>

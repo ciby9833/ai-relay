@@ -2357,3 +2357,22 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .ws-urls { display: flex; flex-direction: column; gap: 8px; }
 .ws-copy { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
 .ws-me { margin-left: 6px; }
+
+/* 和同事协作 */
+.collab-detail { display: flex; flex-direction: column; gap: 10px; }
+.collab-detail > .link, .collab-form > .link { align-self: flex-start; }
+.collab-detail .detail-title { font-size: 18px; font-weight: 600; color: var(--text); margin: 0; }
+.collab-detail h4 { margin: 4px 0 0; font-size: 13px; color: var(--text-2); }
+.collab-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 0; font-size: 14px; }
+.collab-fields dt { color: var(--text-2); }
+.collab-fields dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.collab-detail .pre, .collab-box .pre { white-space: pre-wrap; }
+.collab-materials { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.collab-materials a { overflow-wrap: anywhere; }
+.collab-box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.collab-box p { margin: 0; }
+.collab-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.collab-form textarea { font: inherit; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); resize: vertical; }
+.collab-form select { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+.collab-log ol { padding-left: 18px; margin: 6px 0 0; font-size: 13px; }
+@media (max-width: 520px) { .collab-fields { grid-template-columns: 1fr; } .collab-fields dd { margin-bottom: 6px; } }

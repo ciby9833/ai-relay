@@ -54,6 +54,11 @@ async def give(session: AsyncSession, user: User, item: FollowUp, outcome: str, 
     """记下反馈并结束这件事，返回给用户看的一句话。不提交，由调用方提交。"""
     if outcome not in OUTCOMES:
         raise ValueError("不认识的反馈")
+    from app import collab
+
+    if item.kind == "collab" and not collab.closable_from_board(item):
+        # 协作还没结束：“完成”要靠对方验收、“不跟了”要靠拒绝或取消，不能在这里一点了之
+        return "这是和同事的协作，请在协作里接受、提交、验收或取消，这里点“完成”不算数。"
     if outcome in ("handled", "handled_after"):
         outcome = "handled_after" if item.pushed_at else "handled"
     message = RESOLUTION[outcome]

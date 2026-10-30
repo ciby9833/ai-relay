@@ -6,6 +6,7 @@ import Icon from "../Icon";
 import type { PanelKind } from "../Sidebar";
 import type { User } from "../../api";
 import Workspace from "./Workspace";
+import Collab from "./Collab";
 import LanguageSelect from "../LanguageSelect";
 import Automations from "./Automations";
 import Integrations from "./Integrations";
@@ -353,11 +354,14 @@ function SettingsForm() {
   );
 }
 
-export default function Drawer({ kind, onClose, me, onUserChanged }: {
+export default function Drawer({ kind, onClose, me, onUserChanged, collabId, onCollabChanged }: {
   kind: PanelKind; onClose: () => void; me?: User; onUserChanged?: () => void;
+  /** 从“待处理”里的协作事项打开时，直接显示这一份 */
+  collabId?: number | null; onCollabChanged?: () => void;
 }) {
   const titles: Record<PanelKind, string> = {
     workspace: me?.is_admin ? t("工作区设置") : t("账号与工作区"),
+    collab: t("和同事协作"),
     memories: t("Relay 记住的事"),
     tasks: t("定时任务"),
     automations: t("自动办的事"),
@@ -371,6 +375,7 @@ export default function Drawer({ kind, onClose, me, onUserChanged }: {
       {kind === "automations" && <Automations />}
       {kind === "settings" && <SettingsForm />}
       {kind === "integrations" && <Integrations />}
+      {kind === "collab" && <Collab openId={collabId} onChanged={onCollabChanged} />}
       {kind === "workspace" && me && <Workspace me={me} onChanged={() => onUserChanged?.()} />}
     </Shell>
   );

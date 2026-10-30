@@ -2504,6 +2504,258 @@ export const messages: Record<string, readonly [string, string]> = {
     "This Feishu app is already connected to another workspace. Each workspace needs its own Feishu app.",
     "Aplikasi Feishu ini sudah terhubung ke workspace lain. Setiap workspace perlu aplikasi Feishu sendiri."
   ],
+  "未约定": [
+    "Not agreed",
+    "Belum disepakati"
+  ],
+  "取消这个请求？对方会收到通知。": [
+    "Cancel this request? The other person will be notified.",
+    "Batalkan permintaan ini? Pihak lain akan diberi tahu."
+  ],
+  "你请 {name}": [
+    "You asked {name}",
+    "Anda meminta {name}"
+  ],
+  "{name} 请你": [
+    "{name} asked you",
+    "{name} meminta Anda"
+  ],
+  "要做什么": [
+    "What's needed",
+    "Yang perlu dikerjakan"
+  ],
+  "交付": [
+    "Deliverable",
+    "Hasil yang diserahkan"
+  ],
+  "怎样算完成": [
+    "Done when",
+    "Dianggap selesai jika"
+  ],
+  "没写": [
+    "Not specified",
+    "Tidak ditulis"
+  ],
+  "期限": [
+    "Deadline",
+    "Tenggat"
+  ],
+  "共享的材料": [
+    "Shared materials",
+    "Materi yang dibagikan"
+  ],
+  "{name} 提出修改": [
+    "{name} proposed changes",
+    "{name} mengusulkan perubahan"
+  ],
+  "{name} 提交的结果": [
+    "Submitted by {name}",
+    "Hasil yang diserahkan {name}"
+  ],
+  "期限（可不填）": [
+    "Deadline (optional)",
+    "Tenggat (opsional)"
+  ],
+  "材料（每行一份：标题 + https 链接，或直接贴内容）": [
+    "Materials (one per line: title + https link, or paste the content)",
+    "Materi (satu per baris: judul + tautan https, atau tempel isinya)"
+  ],
+  "确定": [
+    "Confirm",
+    "Konfirmasi"
+  ],
+  "这份协作已经结束。": [
+    "This collaboration has ended.",
+    "Kolaborasi ini sudah selesai."
+  ],
+  "等 {name} 处理。": [
+    "Waiting for {name}.",
+    "Menunggu {name}."
+  ],
+  "变更记录（{count}）": [
+    "History ({count})",
+    "Riwayat ({count})"
+  ],
+  "对方只能看到这里写明的内容和共享的材料，看不到你的对话和记忆。": [
+    "The other person only sees what's written here and the shared materials — not your conversations or memory.",
+    "Pihak lain hanya melihat isi yang ditulis di sini dan materi yang dibagikan — bukan percakapan atau memori Anda."
+  ],
+  "这个工作区里还没有别的成员。可以请管理员在“工作区设置”里邀请同事。": [
+    "There are no other members in this workspace yet. Ask an admin to invite colleagues in Workspace settings.",
+    "Belum ada anggota lain di workspace ini. Minta admin mengundang rekan di Pengaturan workspace."
+  ],
+  "请谁": [
+    "Ask whom",
+    "Minta kepada siapa"
+  ],
+  "选择同事": [
+    "Choose a colleague",
+    "Pilih rekan"
+  ],
+  "标题": [
+    "Title",
+    "Judul"
+  ],
+  "要做什么（背景、为什么）": [
+    "What's needed (background, why)",
+    "Yang perlu dikerjakan (latar belakang, alasan)"
+  ],
+  "交付什么": [
+    "What to deliver",
+    "Apa yang diserahkan"
+  ],
+  "怎样算完成（可不填）": [
+    "Done when (optional)",
+    "Dianggap selesai jika (opsional)"
+  ],
+  "期限（可不填，没约定就不填）": [
+    "Deadline (optional — leave blank if none was agreed)",
+    "Tenggat (opsional — kosongkan jika belum disepakati)"
+  ],
+  "共享给对方的材料（每行一份：标题 + https 链接，或直接贴内容）": [
+    "Materials to share (one per line: title + https link, or paste the content)",
+    "Materi untuk dibagikan (satu per baris: judul + tautan https, atau tempel isinya)"
+  ],
+  "对方会在“待处理”里收到，由本人决定接受、拒绝或提出修改。只有这里写的内容会给对方看。": [
+    "They'll get it in their To-do list and decide themselves whether to accept, decline or propose changes. Only what you write here is shared.",
+    "Mereka akan menerimanya di daftar Perlu ditangani dan memutuskan sendiri untuk menerima, menolak, atau mengusulkan perubahan. Hanya isi di sini yang dibagikan."
+  ],
+  "发出请求": [
+    "Send request",
+    "Kirim permintaan"
+  ],
+  "请同一个工作区的同事做事，对方接受后完成并提交，你来验收。也可以在对话里说“请 Budi 周五前把报价单整理好”。": [
+    "Ask a colleague in this workspace to do something. They accept, do it and submit; you review. You can also say in chat: \"Ask Budi to prepare the quotation by Friday.\"",
+    "Minta rekan di workspace ini mengerjakan sesuatu. Mereka menerima, mengerjakan, lalu menyerahkan; Anda memeriksa. Bisa juga lewat obrolan: \"Minta Budi menyiapkan penawaran sebelum Jumat.\""
+  ],
+  "请同事帮忙": [
+    "Ask a colleague",
+    "Minta bantuan rekan"
+  ],
+  "轮到你（{count}）": [
+    "Your turn ({count})",
+    "Giliran Anda ({count})"
+  ],
+  "没有要你处理的协作。": [
+    "Nothing needs you right now.",
+    "Tidak ada yang perlu Anda tangani."
+  ],
+  "在等对方（{count}）": [
+    "Waiting on others ({count})",
+    "Menunggu pihak lain ({count})"
+  ],
+  "没有在等对方的协作。": [
+    "Not waiting on anyone.",
+    "Tidak sedang menunggu siapa pun."
+  ],
+  "看已结束的": [
+    "Show ended",
+    "Lihat yang sudah selesai"
+  ],
+  "提出修改": [
+    "Propose changes",
+    "Usulkan perubahan"
+  ],
+  "提交结果": [
+    "Submit result",
+    "Serahkan hasil"
+  ],
+  "同意修改": [
+    "Agree to changes",
+    "Setujui perubahan"
+  ],
+  "修改要求": [
+    "Change the request",
+    "Ubah permintaan"
+  ],
+  "验收通过": [
+    "Approve",
+    "Terima hasil"
+  ],
+  "退回修改": [
+    "Send back",
+    "Kembalikan untuk diperbaiki"
+  ],
+  "取消请求": [
+    "Cancel request",
+    "Batalkan permintaan"
+  ],
+  "拒绝的理由": [
+    "Reason for declining",
+    "Alasan menolak"
+  ],
+  "为什么要改、想怎么改": [
+    "Why and how you'd change it",
+    "Mengapa dan bagaimana ingin diubah"
+  ],
+  "交付了什么": [
+    "What you're delivering",
+    "Apa yang Anda serahkan"
+  ],
+  "哪里需要改": [
+    "What needs to change",
+    "Apa yang perlu diubah"
+  ],
+  "打开协作": [
+    "Open collaboration",
+    "Buka kolaborasi"
+  ],
+  "和同事协作": [
+    "Work with colleagues",
+    "Kolaborasi dengan rekan"
+  ],
+  "和同事的协作": [
+    "Collaboration",
+    "Kolaborasi"
+  ],
+  "等对方回应": [
+    "Waiting for response",
+    "Menunggu tanggapan"
+  ],
+  "对方提出了修改": [
+    "Changes proposed",
+    "Ada usulan perubahan"
+  ],
+  "进行中": [
+    "In progress",
+    "Sedang dikerjakan"
+  ],
+  "已提交，等验收": [
+    "Submitted, awaiting review",
+    "Sudah diserahkan, menunggu diperiksa"
+  ],
+  "已退回修改": [
+    "Sent back for changes",
+    "Dikembalikan untuk diperbaiki"
+  ],
+  "等对方接受": [
+    "Waiting for them to accept",
+    "Menunggu diterima"
+  ],
+  "等你回应": [
+    "Waiting for your response",
+    "Menunggu tanggapan Anda"
+  ],
+  "等对方回应你的修改": [
+    "Waiting for them to respond to your changes",
+    "Menunggu tanggapan atas usulan Anda"
+  ],
+  "已提交，等你验收": [
+    "Submitted — your review",
+    "Sudah diserahkan — perlu Anda periksa"
+  ],
+  "已提交，等对方验收": [
+    "Submitted — awaiting their review",
+    "Sudah diserahkan — menunggu diperiksa"
+  ],
+  "已退回，等对方修改": [
+    "Sent back — waiting for changes",
+    "Dikembalikan — menunggu perbaikan"
+  ],
+  "被退回，需要修改": [
+    "Sent back — needs changes",
+    "Dikembalikan — perlu diperbaiki"
+  ],
   "已填写（留空表示不改）": [
     "Set (leave blank to keep)",
     "Sudah diisi (kosongkan untuk tetap)"

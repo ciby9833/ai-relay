@@ -5,7 +5,7 @@ import { relative } from "../format";
 import Icon, { RelayMark } from "./Icon";
 
 export type View = { type: "admin" } | { type: "eval" } | { type: "home" } | { type: "chat"; id: string | null } | { type: "missions"; id: number | null };
-export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations" | "workspace";
+export type PanelKind = "memories" | "tasks" | "automations" | "settings" | "integrations" | "workspace" | "collab";
 
 const CHANNEL: Record<string, string | null> = { web: null, feishu: "飞书群", task: "定时", home: null };
 
@@ -132,6 +132,9 @@ export default function Sidebar({
         </button>
         <button className="nav-item" onClick={(event) => showPanel("workspace", event)}>
           <Icon name="home" /> {user.is_admin ? t("工作区设置") : t("账号与工作区")}
+        </button>
+        <button className="nav-item" onClick={(event) => showPanel("collab", event)}>
+          <Icon name="memory" /> {t("和同事协作")}
         </button>
 
         {user.is_admin && (

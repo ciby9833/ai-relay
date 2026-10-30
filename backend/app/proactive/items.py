@@ -1122,6 +1122,9 @@ async def item_json(session: AsyncSession, item: FollowUp) -> dict:
         "mail_id": last.id if last and last.kind == "mail" else None,
         "is_mail": item.key.startswith(("mail-thread:", "batch:")),
         "evidence": (item.facets or {}).get("evidence") or [],
+        # 和同事的协作：在协作里接受、提交、验收（“完成”按钮不能代替）
+        "collab": {k: (item.facets or {}).get(k) for k in ("delegation_id", "role", "collab_status", "counterpart")}
+        if item.kind == "collab" else None,
     }
 
 

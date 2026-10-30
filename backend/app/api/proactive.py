@@ -221,6 +221,10 @@ async def _close_item(item_id: int, decision: Literal["done", "dismiss"], sessio
     item = await session.get(FollowUp, item_id)
     if item is None or item.user_id != user.id:
         raise HTTPException(status_code=404, detail="事项不存在")
+    from app import collab
+
+    if item.kind == "collab" and not collab.closable_from_board(item):
+        raise HTTPException(status_code=400, detail="这是和同事的协作，请在协作里拒绝或取消")
     items.close(item, "dismissed", "你说不用再跟了")
     await insights.record(session, user, decision, item=item)
     if item.action_id:

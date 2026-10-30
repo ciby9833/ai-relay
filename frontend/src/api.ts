@@ -27,6 +27,24 @@ export interface FeishuConnection {
   verified_at?: string | null; redirect_uri?: string; managed?: boolean; events_url?: string; login_url?: string;
 }
 
+export type CollabAction = "accept" | "decline" | "counter" | "submit" | "agree" | "revise" | "approve" | "return" | "cancel";
+export interface CollabMaterial { title: string; url?: string; text?: string }
+export interface Delegation {
+  id: number; title: string; brief: string; deliverable: string; acceptance: string | null; due_at: string | null;
+  materials: CollabMaterial[];
+  status: "requested" | "countered" | "accepted" | "submitted" | "returned" | "completed" | "declined" | "cancelled";
+  status_text: string; version: number; role: "requester" | "assignee";
+  proposal: { deliverable?: string; acceptance?: string; due_at?: string; note?: string } | null;
+  submission: { note: string; materials: CollabMaterial[]; at: string } | null;
+  requester: { id: string; name: string }; assignee: { id: string; name: string };
+  actions: CollabAction[]; created_at: string | null; updated_at: string | null;
+  log?: { kind: string; who: string; note: string | null; at: string | null }[];
+}
+export interface NewDelegation {
+  assignee_id: string; title: string; brief: string; deliverable: string; acceptance?: string | null; due_at?: string | null;
+  materials: CollabMaterial[];
+}
+
 export interface Conversation {
   id: string;
   title: string | null;
@@ -171,7 +189,7 @@ export type Card =
 
 export interface FollowUp {
   id: number;
-  kind: "reply" | "review" | "invitation" | "approval" | "attendance" | "mention" | "request" | "waiting" | "biz" | "task";
+  kind: "reply" | "review" | "invitation" | "approval" | "attendance" | "mention" | "request" | "waiting" | "biz" | "task" | "collab";
   owner: "me" | "others";
   title: string;
   summary: string | null;
@@ -202,6 +220,7 @@ export interface FollowUp {
   is_mail?: boolean;
   /** 这件事每一次进展的依据（邮件、聊天、会议纪要……各自保留） */
   evidence?: { channel: string; at: string; text: string }[];
+  collab?: { delegation_id: number; role: "requester" | "assignee"; collab_status: string; counterpart: string } | null;
 }
 
 export interface CaseRef {
@@ -526,6 +545,12 @@ export const api = {
   feishuConnection: () => request<FeishuConnection>("/tenant/connections/feishu"),
   saveFeishu: (values: Record<string, string>) => request<FeishuConnection>("/tenant/connections/feishu", json("PUT", values)),
   testFeishu: () => request<FeishuConnection>("/tenant/connections/feishu/test", { method: "POST" }),
+  colleagues: () => request<{ id: string; name: string; email: string | null }[]>("/collab/members"),
+  delegations: (closed = false) => request<Delegation[]>(`/collab${closed ? "?closed=true" : ""}`),
+  delegation: (id: number) => request<Delegation>(`/collab/${id}`),
+  createDelegation: (body: NewDelegation) => request<Delegation>("/collab", json("POST", body)),
+  actDelegation: (id: number, body: { action: CollabAction; version: number; note?: string; changes?: Record<string, string | null>; materials?: CollabMaterial[] }) =>
+    request<Delegation>(`/collab/${id}/act`, json("POST", body)),
   me: () => request<User>("/auth/me"),
   devLogin: () => request<User>("/auth/dev-login", { method: "POST" }),
   logout: () => request("/auth/logout", { method: "POST" }),
