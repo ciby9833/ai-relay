@@ -3108,6 +3108,38 @@ export const messages: Record<string, readonly [string, string]> = {
     "{field}: not set",
     "{field}: belum diatur"
   ],
+  "按提示词版本对比对话": [
+    "Conversations by prompt version",
+    "Percakapan per versi prompt"
+  ],
+  "改了系统提示词后，看没回答、勉强作答、工具出错有没有变多（统计期内）。": [
+    "After a system prompt change, check whether unanswered turns, forced answers or tool errors went up (within this period).",
+    "Setelah prompt sistem diubah, periksa apakah jawaban kosong, jawaban terpaksa, atau error alat meningkat (dalam periode ini)."
+  ],
+  "版本": [
+    "Version",
+    "Versi"
+  ],
+  "对话轮数": [
+    "Turns",
+    "Giliran"
+  ],
+  "没回答": [
+    "No answer",
+    "Tak terjawab"
+  ],
+  "勉强作答": [
+    "Forced answer",
+    "Jawaban terpaksa"
+  ],
+  "工具出错": [
+    "Tool errors",
+    "Error alat"
+  ],
+  "每轮工具中位数": [
+    "Median tools per turn",
+    "Median alat per giliran"
+  ],
   "已填写（留空表示不改）": [
     "Set (leave blank to keep)",
     "Sudah diisi (kosongkan untuk tetap)"

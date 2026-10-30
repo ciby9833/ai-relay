@@ -63,6 +63,7 @@ async def quality(session: SessionDep, user: UserDep, days: int = 7, offset: int
         "turn_median_tools": tool_counts[len(tool_counts) // 2] if tool_counts else None,
         "turn_errors": [{"at": e.created_at.isoformat(), "errors": e.detail.get("errors")} for e in turns
                         if e.detail.get("outcome") == "error"][-20:],
+        "turns_by_prompt": by_prompt(turns),
         "false_closure": rate(sum(r["verdict"] == "false_close" for r in assessed), len(assessed)),
         "review_coverage": rate(len(assessed), len(closed)),
         "completion_failure": rate(sum(e.detail.get("passed") is not True for e in checks), len(checks)),
@@ -74,6 +75,29 @@ async def quality(session: SessionDep, user: UserDep, days: int = 7, offset: int
                       "result": m.result, "criteria": m.criteria, "closed_at": at.isoformat(), "review": reviews.get(m.id)}
                      for m, name, at in closed[:100]],
     }
+
+
+def by_prompt(turns) -> list[dict]:
+    """按系统提示词版本对比对话质量：改提示词后看没回答、勉强作答、工具出错、查找超限有没有变多。"""
+    from collections import Counter
+
+    groups: dict[str, list] = {}
+    for e in turns:
+        groups.setdefault(e.detail.get("prompt") or "旧版（未记录）", []).append(e)
+    out = []
+    for version, rows in groups.items():
+        tools = sum(len(e.detail.get("tools") or []) for e in rows)
+        codes = Counter(code for e in rows for code in e.detail.get("tool_errors") or [])
+        counts = sorted(e.detail.get("tool_calls", 0) for e in rows)
+        out.append({
+            "version": version, "turns": len(rows), "first_at": min(e.created_at for e in rows).isoformat(),
+            "no_answer": rate(sum(e.detail.get("outcome") in ("error", "no_answer") for e in rows), len(rows)),
+            "forced_final": rate(sum(e.detail.get("outcome") == "forced_final" for e in rows), len(rows)),
+            "median_tools": counts[len(counts) // 2] if counts else None,
+            "tool_error": rate(sum(codes.values()), tools) if tools else rate(0, 0),
+            "error_codes": dict(codes.most_common(6)),
+        })
+    return sorted(out, key=lambda g: g["first_at"])
 
 
 class ReviewBody(BaseModel):

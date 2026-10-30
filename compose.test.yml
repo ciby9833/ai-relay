@@ -22,6 +22,9 @@ services:
       SECRET_KEY: test-only-session-signing-key
       DATABASE_URL: postgresql+asyncpg://relay:test-only-password@db:5432/relay_test
       RUN_DB_TESTS: "1"
+      RELAY_DOCS: /docs
+    volumes:
+      - ./docs:/docs:ro  # 只读：测试核对 docs/CONNECTORS.md 和连接器清单一致
     depends_on:
       db:
         condition: service_healthy

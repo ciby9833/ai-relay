@@ -11,6 +11,22 @@ from app.agent.tools.base import ToolContext, ToolError, tool
 from app.models import GeneratedFile
 
 
+def _code(exc: devices.DeviceError) -> str:
+    """设备相关的失败归到统一错误码。"""
+    text = str(exc)
+    if "还没有安装" in text:
+        return "not_connected"
+    if "不在线" in text or "没有及时响应" in text:
+        return "offline"
+    if "没有授权" in text:
+        return "no_access"
+    if "找不到" in text or "不存在" in text:
+        return "not_found"
+    if "结果未知" in text:
+        return "conflict"
+    return "precondition"
+
+
 def _size(n: int | None) -> str:
     if not n:
         return ""
@@ -50,7 +66,7 @@ async def list_local_files(ctx: ToolContext, args: dict) -> str:
         result = await devices.request(ctx.session, ctx.user, "list", {"folder": args["folder"], "path": args.get("path") or "",
                                                                        "query": args.get("query") or "", "limit": 200})
     except devices.DeviceError as exc:
-        raise ToolError(str(exc)) from exc
+        raise ToolError(str(exc), _code(exc)) from exc
     entries = result.get("entries") or []
     if not entries:
         return "没有找到文件。"
@@ -70,7 +86,7 @@ async def read_local_file(ctx: ToolContext, args: dict) -> str:
     try:
         result = await devices.request(ctx.session, ctx.user, "read", {"folder": args["folder"], "path": args["path"]}, timeout=60)
     except devices.DeviceError as exc:
-        raise ToolError(str(exc)) from exc
+        raise ToolError(str(exc), _code(exc)) from exc
     version = f"（{_size(result.get('size'))}，修改于 {(result.get('modified') or '')[:16]}，sha256 {(result.get('sha256') or '')[:12]}）"
     note = "\n\n（内容较长，只读到前一部分）" if result.get("truncated") else ""
     return f"《{args['folder']}/{args['path']}》{version}\n\n{result.get('text', '')}{note}"
@@ -100,7 +116,7 @@ async def save_file_to_mac(ctx: ToolContext, args: dict) -> str:
             "folder": args["folder"], "path": path, "file_id": str(record.id),
             "sha256": hashlib.sha256(record.content).hexdigest(), "size": len(record.content)}, timeout=90)
     except devices.DeviceError as exc:
-        raise ToolError(str(exc)) from exc
+        raise ToolError(str(exc), _code(exc)) from exc
     renamed = "（同名文件已存在，换了个名字，没有覆盖）" if result.get("path") != path else ""
     checked = "存完读回核对一致" if result.get("verified") else "⚠️ 读回核对不一致，请打开看一下"
     return f"已存到 Mac：{args['folder']}/{result.get('path')}{renamed}，{checked}。"

@@ -19,7 +19,9 @@ async def query_my_approvals(ctx: ToolContext, args: dict) -> str:
     return json.dumps({"total": len(rows), "next_offset": offset + 30 if offset + 30 < len(rows) else None,
         "items": [{"instance_code": r.get("process_code"), "title": r.get("title"),
             "result": approval.PROCESS_LABELS.get(str(r.get("process_status")), str(r.get("process_status"))),
-            "initiators": r.get("initiator_names"), "url": (r.get("urls") or {}).get("pc")}
+            "initiators": r.get("initiator_names"), "url": (r.get("urls") or {}).get("pc"),
+            # 这里的都不是“待我审批”：不能在 Relay 里批准 / 驳回（待我审批的用 list_pending_approvals 和 decide_approval）
+            "relation": {"done": "我已审批", "initiated": "我发起", "cc": "抄送我"}[args["category"]], "can_decide": False}
             for r in rows[offset:offset + 30]]}, ensure_ascii=False)
 
 

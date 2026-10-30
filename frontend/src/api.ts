@@ -461,7 +461,7 @@ export type StreamEvent =
   | { type: "emotion"; emotionId: string }
   | { type: "text"; delta: string }
   | { type: "tool_start"; name: string }
-  | { type: "tool_end"; name: string; ok: boolean }
+  | { type: "tool_end"; name: string; ok: boolean; code?: string }
   | { type: "cards"; cards: Card[] }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -527,6 +527,11 @@ export interface QualityStats {
   closed_total: number; closures: ClosureReview[];
   turn_no_answer: QualityRate; turn_forced_final: QualityRate; turn_heavy_search: QualityRate; turn_median_tools: number | null;
   turn_errors: { at: string; errors: string[] }[];
+  turns_by_prompt?: PromptVersionStats[];
+}
+export interface PromptVersionStats {
+  version: string; turns: number; first_at: string; no_answer: QualityRate; forced_final: QualityRate;
+  median_tools: number | null; tool_error: QualityRate; error_codes: Record<string, number>;
 }
 
 export interface PerformanceSeries { labels: Record<string, string>; points: [number, number | null][] }

@@ -129,6 +129,20 @@ function Quality() {
               <p className="muted small">{t("adminCollectionStart")}: {data.quality.coverage_start ? new Date(data.quality.coverage_start).toLocaleString(intlLocale()) : t("adminNoSample")}</p>
             </details></div>
         </section>
+        {(data.quality.turns_by_prompt?.length ?? 0) > 0 && (
+          <section aria-labelledby="admin-prompt-title">
+            <div className="admin-section-head"><div><h2 id="admin-prompt-title">{t("按提示词版本对比对话")}</h2>
+              <p className="muted small">{t("改了系统提示词后，看没回答、勉强作答、工具出错有没有变多（统计期内）。")}</p></div></div>
+            <table className="team-summary">
+              <thead><tr><th>{t("版本")}</th><th>{t("开始")}</th><th>{t("对话轮数")}</th><th>{t("没回答")}</th><th>{t("勉强作答")}</th>
+                <th>{t("工具出错")}</th><th>{t("每轮工具中位数")}</th></tr></thead>
+              <tbody>{data.quality.turns_by_prompt!.map(g => <tr key={g.version}>
+                <td title={Object.entries(g.error_codes).map(([k, v]) => `${k}: ${v}`).join("\n")}><code>{g.version}</code></td>
+                <td>{date(g.first_at)}</td><td>{g.turns}</td><td>{percent(g.no_answer)}</td><td>{percent(g.forced_final)}</td>
+                <td>{percent(g.tool_error)}</td><td>{g.median_tools ?? "—"}</td></tr>)}</tbody>
+            </table>
+          </section>
+        )}
         <Reminders days={days} />
         <section aria-labelledby="admin-notifications-title"><div className="admin-section-head"><div><h2 id="admin-notifications-title">{t("adminNotifications")}</h2><p className="muted small">{t("adminNotificationWindow")}</p></div>
           <input className="admin-search" type="search" aria-label={t("adminFindUser")} placeholder={t("adminFindUser")} value={search} onChange={e => setSearch(e.target.value)} /></div>

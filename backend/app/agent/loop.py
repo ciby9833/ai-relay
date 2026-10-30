@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import i18n, insights, telemetry
 from app.proactive.settings import get_settings_row, language_of
-from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 from app.agent.tools import ToolContext, execute, tool_specs
 from app.feishu.client import FeishuClient
 from app.llm import registry
@@ -328,7 +328,11 @@ async def _run_turn(
             yield {"type": "tool_start", "name": call["name"]}
             with telemetry.work("tool"):
                 content, is_error = await execute(ctx, call["name"], call["input"], user_initiated)
-            yield {"type": "tool_end", "name": call["name"], "ok": not is_error}
+            yield {"type": "tool_end", "name": call["name"], "ok": not is_error, **({"code": ctx.last_error} if is_error else {})}
+            stats = _turn_stats.get({})
+            stats.setdefault("tools", []).append(call["name"])
+            if is_error:
+                stats.setdefault("tool_errors", []).append(ctx.last_error or "internal")
             results.append(
                 {
                     "type": "tool_result",
@@ -375,7 +379,7 @@ async def run_turn(session: AsyncSession, *, user: User, conversation: Conversat
         no_answer      结束了但没有任何回答文字
         error          出错（模型超时、接口报错……），错误只在界面上闪过，这里留下记录
     """
-    stats = {"tool_calls": 0, "forced_final": False}
+    stats = {"tool_calls": 0, "forced_final": False, "tools": [], "tool_errors": []}
     token = _turn_stats.set(stats)
     started, text_len, errors, outcome = time.monotonic(), 0, [], None
     try:
@@ -397,6 +401,8 @@ async def run_turn(session: AsyncSession, *, user: User, conversation: Conversat
             await _record_turn(user, getattr(kwargs.get("mission"), "id", None), {
                 "outcome": outcome or "error", "channel": conversation.channel, "tool_calls": stats["tool_calls"],
                 "seconds": round(time.monotonic() - started, 1), "errors": errors[:3],
+                # 用哪一版系统提示词、调用了哪些工具、出错的错误码：改提示词后按版本对比对话质量
+                "prompt": PROMPT_VERSION, "tools": stats["tools"][:30], "tool_errors": stats["tool_errors"][:30],
             })
 
 

@@ -1,5 +1,15 @@
+import re
+
 from app.agent.tools.base import ToolContext, ToolError, tool
 from app.memory import service
+
+# 密码、密钥、令牌、证件号码这类敏感信息不进长期记忆（规则在代码里，不靠提示词）
+SECRET = re.compile(
+    r"(密码|口令|password|passwd|api[ _-]?key|secret|token|私钥|验证码)\s*(是|为|:|：|=)"
+    r"|\b(sk|pk|ghp|xox[bp])-[A-Za-z0-9_-]{12,}"
+    r"|\b\d{16}\b|\b\d{17}[\dXx]\b",  # 印尼 NIK（16 位）、中国身份证（18 位）
+    re.IGNORECASE,
+)
 
 
 @tool(
@@ -16,7 +26,9 @@ from app.memory import service
 )
 async def remember(ctx: ToolContext, args: dict) -> str:
     if not args["content"].strip():
-        raise ToolError("content 不能为空")
+        raise ToolError("content 不能为空", "invalid_input")
+    if SECRET.search(args["content"]):
+        raise ToolError("这条内容里有密码、密钥或证件号码，不记进长期记忆", "invalid_input")
     memory = await service.add_memory(
         ctx.session, ctx.user.id, args["kind"], args["content"], ctx.conversation.id
     )
