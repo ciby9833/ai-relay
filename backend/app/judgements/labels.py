@@ -11,6 +11,7 @@
 每个样本的结论：right / partly / wrong，以及模型“该给出”的关键判断（truth），回放时拿来比。
 """
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -21,7 +22,7 @@ from app.models import AttentionRule, FollowUp, ItemFeedback, JudgementRun, Miss
 
 RIGHT_FEEDBACK = ("handled", "handled_after", "handled_before")
 WRONG_FEEDBACK = ("not_mine", "not_worth", "duplicate")
-LABELED = ("mail_triage", "reply_draft", "mission_completion_check", "rule_proposal")
+# 全部 16 处判断都有自动的对错来源（见 DERIVE）
 
 
 @dataclass
@@ -135,8 +136,169 @@ async def _rule_proposal(session: AsyncSession, run: JudgementRun) -> list[Sampl
     return out
 
 
+# ---------- 由判断产生的事项：看他在卡片上的反馈（聊天提取、会议行动项） ----------
+
+ITEM_WINDOW = timedelta(minutes=3)
+
+
+async def _item_feedback(session: AsyncSession, run: JudgementRun, *conditions) -> list[Sample]:
+    """这次判断之后马上建出来的事项（同一会话 / 同一份纪要），每件一个样本：处理了 = 对；不归我 / 不值得 / 重复 = 错。"""
+    found = (await session.execute(select(FollowUp).where(
+        FollowUp.created_at >= run.created_at - timedelta(seconds=5), FollowUp.created_at <= run.created_at + ITEM_WINDOW,
+        *conditions))).scalars().all()
+    out = []
+    for item in found:
+        outcome = (await session.execute(select(ItemFeedback.outcome).where(ItemFeedback.item_id == item.id)
+                                         .order_by(ItemFeedback.id.desc()).limit(1))).scalar()
+        if outcome in RIGHT_FEEDBACK:
+            out.append(Sample(run.id, "right", {"real": True}, f"feedback:{outcome}"))
+        elif outcome in WRONG_FEEDBACK:
+            out.append(Sample(run.id, "wrong", {"real": False}, f"feedback:{outcome}"))
+    return out
+
+
+async def _chat_extract(session: AsyncSession, run: JudgementRun) -> list[Sample]:
+    if not run.subject or not run.subject.startswith("chat:"):
+        return []
+    from app.proactive.chats import chat_link
+
+    link = chat_link(run.subject.split(":", 1)[1])
+    conditions = [FollowUp.url == link, FollowUp.key.like("chat:%")]
+    if run.user_id is not None:  # 私聊只归读取它的那位
+        conditions.append(FollowUp.user_id == run.user_id)
+    return await _item_feedback(session, run, *conditions)
+
+
+async def _meeting_actions(session: AsyncSession, run: JudgementRun) -> list[Sample]:
+    if run.user_id is None:
+        return []
+    return await _item_feedback(session, run, FollowUp.user_id == run.user_id, FollowUp.key.like("meeting:%"))
+
+
+# ---------- 邮件往来之后有没有继续：回复后的状态、来信是否回应了在等的事 ----------
+
+FOLLOW_WINDOW = timedelta(days=7)
+AGAIN_WINDOW = timedelta(days=3)
+
+
+async def _thread_after(session: AsyncSession, user_id, thread: str | None, since):
+    """同一线程在 since 之后：他又发了几封、对方又来了几封。"""
+    from app.models import Signal
+
+    if not thread:
+        return None, None
+    rows = (await session.execute(select(Signal.kind, Signal.occurred_at).where(
+        Signal.user_id == user_id, Signal.kind.in_(("mail", "mail_sent")), Signal.payload["thread_id"].astext == thread,
+        Signal.occurred_at > since, Signal.occurred_at <= since + FOLLOW_WINDOW))).all()
+    mine = [at for kind, at in rows if kind == "mail_sent"]
+    theirs = [at for kind, at in rows if kind == "mail"]
+    return mine, theirs
+
+
+async def _reply_state(session: AsyncSession, run: JudgementRun) -> list[Sample]:
+    """“办完了”之后 3 天内他又在这个线程里写信 = 错（事还在继续）；7 天都没有动静 = 对。
+    “还要他做”之后 7 天内他又回了信 = 对。“在等对方”之后对方 7 天内回信了 = 对。其余不计。"""
+    from app.models import Signal
+
+    signal_id, state = _ref(run, "signal"), (run.output or {}).get("state")
+    signal = await session.get(Signal, signal_id) if signal_id else None
+    if signal is None or state not in ("done", "mine", "waiting"):
+        return []
+    mine, theirs = await _thread_after(session, signal.user_id, (signal.payload or {}).get("thread_id"), run.created_at)
+    if mine is None:
+        return []
+    elapsed = datetime.now(UTC) - run.created_at
+    if state == "done":
+        if any(at <= run.created_at + AGAIN_WINDOW for at in mine):
+            return [Sample(run.id, "wrong", {"state": "mine"}, "thread:wrote_again")]
+        if elapsed >= FOLLOW_WINDOW and not mine and not theirs:
+            return [Sample(run.id, "right", {"state": "done"}, "thread:quiet")]
+    elif state == "mine" and mine:
+        return [Sample(run.id, "right", {"state": "mine"}, "thread:he_followed_up")]
+    elif state == "waiting" and theirs:
+        return [Sample(run.id, "right", {"state": "waiting"}, "thread:they_replied")]
+    return []
+
+
+async def _mail_progress(session: AsyncSession, run: JudgementRun) -> list[Sample]:
+    """说“办完了”的：之后 3 天内他又在这个线程里写信 = 错；7 天没有动静 = 对。其余结论现在没有可靠的信号，不计。"""
+    item_id = _ref(run, "item")
+    item = await session.get(FollowUp, item_id) if item_id else None
+    if item is None or (run.output or {}).get("verdict") != "done":
+        return []
+    thread = item.key.removeprefix("mail-thread:") if item.key.startswith("mail-thread:") else None
+    mine, theirs = await _thread_after(session, item.user_id, thread, run.created_at)
+    if mine is None:
+        return []
+    if any(at <= run.created_at + AGAIN_WINDOW for at in mine):
+        return [Sample(run.id, "wrong", {"verdict": "not_done"}, "thread:wrote_again")]
+    if datetime.now(UTC) - run.created_at >= FOLLOW_WINDOW and not mine and not theirs:
+        return [Sample(run.id, "right", {"verdict": "done"}, "thread:quiet")]
+    return []
+
+
+# ---------- 跟进邮件草稿：和回复草稿一样，看后来原样发出 / 改过 / 取消 ----------
+
+async def _followup_draft(session: AsyncSession, run: JudgementRun) -> list[Sample]:
+    body = (run.output or {}).get("text")
+    if not body or run.user_id is None:
+        return []
+    action = (await session.execute(select(PendingAction).where(
+        PendingAction.user_id == run.user_id, PendingAction.kind == "send_mail", PendingAction.summary.like("跟进%"),
+        PendingAction.created_at >= run.created_at - timedelta(seconds=5), PendingAction.created_at <= run.created_at + timedelta(minutes=2),
+    ).order_by(PendingAction.id).limit(1))).scalars().first()
+    if action is None or action.status == "pending":
+        return []
+    if action.status == "cancelled":
+        return [Sample(run.id, "wrong", {"used": False}, "draft:cancelled")]
+    if action.status == "done":
+        same = (action.payload or {}).get("body", "").strip() == body.strip()
+        return [Sample(run.id, "right" if same else "partly", {"used": True}, "draft:sent" + ("" if same else "_edited"))]
+    return []
+
+
+# ---------- 写给人看的文字：数字和时间必须出自输入（自动核对，不用人看） ----------
+
+NUMBER = re.compile(r"\d+(?:[.:：/-]\d+)*")
+LIST_MARK = re.compile(r"^\s*(?:\d{1,2}[.、)]|[-*•])\s*", re.M)
+CITATION = re.compile(r"[【\[](\d{1,2})[】\]]")
+
+
+def grounded(text: str, source: str) -> str | None:
+    """返回第一个“输入里找不到”的数字 / 时间；都找得到返回 None。列表序号（1. 2.）和个位数不算。"""
+    body = LIST_MARK.sub("", text or "")
+    for token in NUMBER.findall(body):
+        if len(token.replace(".", "").replace(":", "").replace("：", "").replace("/", "").replace("-", "")) < 2:
+            continue
+        if token not in source:
+            parts = re.split(r"[.:：/-]", token)
+            if not all(p in source for p in parts if len(p) >= 2):
+                return token
+    return None
+
+
+async def _written(session: AsyncSession, run: JudgementRun) -> list[Sample]:
+    text = (run.output or {}).get("text")
+    if not text:
+        return []
+    missing = grounded(text, run.input)
+    if run.name == "meeting_prep":
+        materials = len(re.findall(r"^\[\d+\]", run.input, re.M))
+        bad = [n for n in CITATION.findall(text) if not 1 <= int(n) <= max(materials, 0)]
+        if bad and materials:
+            return [Sample(run.id, "wrong", {"grounded": False}, "citation:missing")]
+    if missing:
+        return [Sample(run.id, "wrong", {"grounded": False}, "number:not_in_input")]
+    return [Sample(run.id, "right", {"grounded": True}, "grounded")]
+
+
+WRITTEN = ("meeting_prep", "attachment_digest", "morning_brief", "team_digest", "approval_summary", "notice_text")
+
 DERIVE = {"mail_triage": _mail_triage, "reply_draft": _reply_draft,
-          "mission_completion_check": _completion_check, "rule_proposal": _rule_proposal}
+          "mission_completion_check": _completion_check, "rule_proposal": _rule_proposal,
+          "chat_extract": _chat_extract, "chat_extract_retry": _chat_extract, "meeting_actions": _meeting_actions,
+          "reply_state": _reply_state, "mail_progress": _mail_progress, "followup_draft": _followup_draft,
+          **{name: _written for name in WRITTEN}}
 
 
 async def samples(session: AsyncSession, runs: list[JudgementRun]) -> list[Sample]:

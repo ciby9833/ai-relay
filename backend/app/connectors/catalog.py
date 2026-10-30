@@ -172,6 +172,11 @@ TOOLS = [
     _T("list_local_files", "mac", "local_files", "read", ("offline", "not_connected", "no_access")),
     _T("read_local_file", "mac", "local_files", "read", ("offline", "not_connected", "no_access", "not_found", "unsupported")),
     _T("save_file_to_mac", "mac", "local_files", "create", ("offline", "not_connected", "no_access", "not_found")),
+    _T("open_local_project", "mac", "local_files", "read", ("offline", "not_connected", "no_access")),
+    _T("compare_local_tables", "mac", "local_skills", "create", ("offline", "not_connected", "no_access", "not_found", "unsupported"),
+       "两张表都要先确认关键列（例如先 read_local_file 看表头）；结果只给数量和示例，完整差异在生成的文件里。"),
+    _T("summarize_local_table", "mac", "local_skills", "create", ("offline", "not_connected", "no_access", "not_found", "unsupported"),
+       "先 read_local_file 看表头确认列名。"),
 ]
 
 CONTRACTS = {t.name: t for t in TOOLS}

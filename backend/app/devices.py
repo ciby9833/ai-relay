@@ -21,7 +21,7 @@ from app.models import Device, DeviceJob, User
 
 ONLINE = timedelta(seconds=75)  # 客户端每 25 秒左右来领一次活；超过这个时间没来算离线
 QUEUE_TTL = timedelta(minutes=2)  # 没被领走的步骤过期，不在设备上线后补做（那时他可能已经不需要了）
-KINDS = ("list", "read", "write")
+KINDS = ("list", "read", "write", "skill")
 
 
 class DeviceError(Exception):
@@ -99,12 +99,34 @@ async def request(session: AsyncSession, user: User, kind: str, args: dict, time
     device = await current(session, user)
     need = "write" if kind == "write" else "read"
     entry = folder(device, args.get("folder") or "", need)
+    return await _submit(user, device, kind, {**args, "folder": entry["id"], "path": _safe_path(args.get("path"))}, timeout)
+
+
+async def request_skill(session: AsyncSession, user: User, name: str, inputs: dict, timeout: float = 120) -> dict:
+    """在他的 Mac 上跑一个本机技能（定义见 app/skills.py）。每个输入文件夹要有读权限，输出文件夹要有写权限；客户端版本要够。"""
+    from app.skills import SKILLS, supported
+
+    skill = SKILLS.get(name)
+    if skill is None:
+        raise DeviceError(f"没有技能「{name}」")
+    device = await current(session, user)
+    if not supported(skill, device.app_version):
+        raise DeviceError(f"你的 Mac 客户端版本太旧（{device.app_version or '未知'}），这个功能需要 {skill.min_client} 以上，请更新客户端")
+    mapped = dict(inputs)
+    for key in skill.reads:
+        ref = inputs.get(key) or {}
+        mapped[key] = {**ref, "folder": folder(device, ref.get("folder") or "", "read")["id"], "path": _safe_path(ref.get("path"))}
+    out = inputs.get(skill.writes) or {}
+    mapped[skill.writes] = {"folder": folder(device, out.get("folder") or "", "write")["id"], "path": _safe_path(out.get("path"))}
+    return await _submit(user, device, "skill", {"skill": name, "input": mapped}, timeout)
+
+
+async def _submit(user: User, device: Device, kind: str, args: dict, timeout: float) -> dict:
     from app.db import SessionLocal
 
     # 用单独的数据库会话排队和等待：不提交调用方（对话这一轮）手上还没提交的改动
     async with SessionLocal() as own:
-        job = DeviceJob(device_id=device.id, user_id=user.id, kind=kind,
-                        args={**args, "folder": entry["id"], "path": _safe_path(args.get("path"))})
+        job = DeviceJob(device_id=device.id, user_id=user.id, kind=kind, args=args)
         own.add(job)
         await own.commit()
         job_id = job.id

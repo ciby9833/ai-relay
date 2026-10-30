@@ -165,3 +165,73 @@ def test_string_booleans_and_numbers_from_the_model_are_coerced_by_schema():
     fixed = coerce(raw, TRIAGE_TOOL["input_schema"])
     assert fixed["notify_now"] is True and fixed["needs_reply"] is False and fixed["summary"] == "s"
     assert coerce({"n": "3", "flag": "maybe"}, {"type": "object", "properties": {"n": {"type": "integer"}, "flag": {"type": "boolean"}}}) == {"n": 3, "flag": "maybe"}
+
+
+def test_every_judgement_has_an_automatic_truth():
+    from app.judgements import labels
+
+    assert set(labels.DERIVE) == set(catalog.JUDGEMENTS)
+    assert not any("待接" in j.truth for j in catalog.JUDGEMENTS.values())
+
+
+def test_written_text_must_only_use_numbers_from_its_input():
+    from app.judgements.labels import grounded
+
+    source = "要你拍板 3 件；今天 10:30 Medan 周会；在等别人 12 件；PT Maju 报价 4500"
+    assert grounded("1. 今天 10:30 有 Medan 周会\n2. 在等别人 12 件，报价 4500", source) is None  # 列表序号、个位数不算
+    assert grounded("在等别人 15 件", source) == "15"  # 输入里没有的数字
+    assert grounded("下午 14:00 开会", source) == "14:00"
+
+
+@DB
+async def test_chat_items_and_reply_threads_label_automatically():
+    from datetime import timedelta
+
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal, engine
+    from app.judgements import labels
+    from app.models import FollowUp, ItemFeedback, JudgementRun, Signal, User
+    from app.proactive.chats import chat_link
+
+    tag = uuid.uuid4().hex[:8]
+    async with SessionLocal() as session:
+        user = User(feishu_open_id=f"ou_{tag}", name="Label", timezone="Asia/Jakarta")
+        session.add(user)
+        await session.flush()
+        now = datetime.now(UTC)
+        # 聊天提取：建出两件事，一件他处理了（对），一件“不归我”（错）
+        extract = JudgementRun(name="chat_extract", user_id=user.id, subject=f"chat:oc_{tag}", prompt_version="v", input="p", output={})
+        session.add(extract)
+        await session.flush()
+        made = [FollowUp(user_id=user.id, key=f"chat:om_{tag}_{n}:{user.id}", kind="request", owner="me", title=f"t{n}",
+                         url=chat_link(f"oc_{tag}"), signal_ids=[]) for n in range(2)]
+        session.add_all(made)
+        await session.flush()
+        session.add_all([ItemFeedback(user_id=user.id, item_id=made[0].id, kind="request", source="group", outcome="handled_after", via="web"),
+                         ItemFeedback(user_id=user.id, item_id=made[1].id, kind="request", source="group", outcome="not_mine", via="web")])
+        # 回复后的状态：说“办完了”，但 1 天后他又在线程里写信（错）；说“在等对方”，对方 2 天后回信（对）
+        theirs = [Signal(user_id=user.id, source="mail", kind="mail", external_id=f"t{n}-{tag}", title="x",
+                         payload={"thread_id": f"th{n}-{tag}"}) for n in range(2)]
+        session.add_all(theirs)
+        await session.flush()
+        done_run = JudgementRun(name="reply_state", user_id=user.id, subject=f"signal:{theirs[0].id}", prompt_version="v", input="p",
+                                output={"state": "done"}, created_at=now - timedelta(days=2))
+        wait_run = JudgementRun(name="reply_state", user_id=user.id, subject=f"signal:{theirs[1].id}", prompt_version="v", input="p",
+                                output={"state": "waiting"}, created_at=now - timedelta(days=4))
+        session.add_all([done_run, wait_run])
+        session.add_all([
+            Signal(user_id=user.id, source="mail_sent", kind="mail_sent", external_id=f"s0-{tag}", title="x",
+                   payload={"thread_id": f"th0-{tag}"}, occurred_at=now - timedelta(days=1)),
+            Signal(user_id=user.id, source="mail", kind="mail", external_id=f"r1-{tag}", title="x",
+                   payload={"thread_id": f"th1-{tag}"}, occurred_at=now - timedelta(days=2))])
+        await session.commit()
+        try:
+            got = sorted((s.verdict, s.why) for s in await labels.samples(session, [extract, done_run, wait_run]))
+            assert got == sorted([("right", "feedback:handled_after"), ("wrong", "feedback:not_mine"),
+                                  ("wrong", "thread:wrote_again"), ("right", "thread:they_replied")])
+        finally:
+            await session.execute(delete(JudgementRun).where(JudgementRun.user_id == user.id))
+            await session.execute(delete(User).where(User.id == user.id))
+            await session.commit()
+            await engine.dispose()

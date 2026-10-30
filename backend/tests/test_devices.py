@@ -120,3 +120,66 @@ async def test_mac_reads_and_saves_files_only_in_authorised_folders():
             await session.execute(delete(Account).where(Account.email.like(f"%{tag}%")))
             await session.commit()
         await engine.dispose()
+
+
+async def test_local_skills_need_a_new_enough_client_and_the_right_folder_permissions():
+    from sqlalchemy import delete
+
+    from app import tenancy
+    from app.agent.tools import local
+    from app.agent.tools.base import ToolContext, ToolError
+    from app.db import SessionLocal, engine
+    from app.main import app
+    from app.models import Account, Device, Tenant, User
+
+    tag = uuid.uuid4().hex[:8]
+    async with SessionLocal() as session:
+        account = Account(email=f"skill-{tag}@co.test", name="Skill", password_hash=tenancy.hash_password("skill-pass-1"))
+        session.add(account)
+        await session.flush()
+        user = await tenancy.create_workspace(session, account, f"Skill {tag}")
+        await session.commit()
+        user_id, tenant_id = user.id, user.tenant_id
+    web = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://relay")
+    await web.post("/api/auth/login", json={"email": f"skill-{tag}@co.test", "password": "skill-pass-1"})
+    try:
+        token = (await web.post("/api/devices", json={"name": "Mac", "platform": "darwin", "app_version": "0.1.0"})).json()["token"]
+        mac = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://relay", headers={"Authorization": f"Device {token}"})
+        folders = [{"id": "f1", "label": "数据", "read": True, "write": False}, {"id": "f2", "label": "成果", "read": True, "write": True}]
+        await mac.put("/api/device/folders", json={"folders": folders})
+        args = {"left": {"folder": "数据", "path": "9月.xlsx"}, "right": {"folder": "数据", "path": "10月.xlsx"}, "key": "单号",
+                "output": {"folder": "成果", "path": "对比.xlsx"}}
+        async with SessionLocal() as session:
+            ctx = ToolContext(session=session, user=await session.get(User, user_id), conversation=None, feishu=None)
+            with pytest.raises(ToolError, match="版本太旧") as old:
+                await local.compare_local_tables(ctx, args)
+            assert old.value.code == "unsupported"  # 旧客户端：告诉他更新，不发给 Mac
+        await mac.put("/api/device/folders", json={"folders": folders, "app_version": "0.2.0"})
+        seen = {}
+
+        async def fake_mac():
+            for _ in range(3):
+                for job in (await mac.get("/api/device/jobs", params={"wait": 2})).json():
+                    seen.update(job)
+                    await mac.post(f"/api/device/jobs/{job['id']}/result", json={"ok": True, "data": {
+                        "counts": {"added": 1, "removed": 1, "changed_cells": 1}, "output": {"path": "对比.xlsx", "verified": True}}})
+                    return
+
+        async with SessionLocal() as session:
+            ctx = ToolContext(session=session, user=await session.get(User, user_id), conversation=None, feishu=None)
+            result, _ = await asyncio.gather(local.compare_local_tables(ctx, args), fake_mac())
+            assert '"added": 1' in result and seen["kind"] == "skill" and seen["args"]["skill"] == "compare_tables"
+            # 发给 Mac 的是文件夹编号，不是名字；输出必须是可写的文件夹
+            assert seen["args"]["input"]["left"] == {"folder": "f1", "path": "9月.xlsx"} and seen["args"]["input"]["output"]["folder"] == "f2"
+            with pytest.raises(ToolError, match="没有授权写入"):
+                await local.compare_local_tables(ctx, {**args, "output": {"folder": "数据", "path": "x.xlsx"}})
+        await mac.aclose()
+    finally:
+        await web.aclose()
+        async with SessionLocal() as session:
+            await session.execute(delete(Device).where(Device.user_id == user_id))
+            await session.execute(delete(User).where(User.tenant_id == tenant_id))
+            await session.execute(delete(Tenant).where(Tenant.id == tenant_id))
+            await session.execute(delete(Account).where(Account.email.like(f"%{tag}%")))
+            await session.commit()
+        await engine.dispose()

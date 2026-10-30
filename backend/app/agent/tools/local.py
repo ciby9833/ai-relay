@@ -4,6 +4,7 @@
 """
 
 import hashlib
+import json
 import uuid
 
 from app import devices
@@ -87,7 +88,8 @@ async def read_local_file(ctx: ToolContext, args: dict) -> str:
         result = await devices.request(ctx.session, ctx.user, "read", {"folder": args["folder"], "path": args["path"]}, timeout=60)
     except devices.DeviceError as exc:
         raise ToolError(str(exc), _code(exc)) from exc
-    version = f"（{_size(result.get('size'))}，修改于 {(result.get('modified') or '')[:16]}，sha256 {(result.get('sha256') or '')[:12]}）"
+    where = "，在他的 Mac 上解析" if result.get("parsed_on") == "device" else ""
+    version = f"（{_size(result.get('size'))}，修改于 {(result.get('modified') or '')[:16]}，sha256 {(result.get('sha256') or '')[:12]}{where}）"
     note = "\n\n（内容较长，只读到前一部分）" if result.get("truncated") else ""
     return f"《{args['folder']}/{args['path']}》{version}\n\n{result.get('text', '')}{note}"
 
@@ -120,3 +122,69 @@ async def save_file_to_mac(ctx: ToolContext, args: dict) -> str:
     renamed = "（同名文件已存在，换了个名字，没有覆盖）" if result.get("path") != path else ""
     checked = "存完读回核对一致" if result.get("verified") else "⚠️ 读回核对不一致，请打开看一下"
     return f"已存到 Mac：{args['folder']}/{result.get('path')}{renamed}，{checked}。"
+
+
+# ---------- 本机项目和本机技能 ----------
+
+PROJECT_FILE = "RELAY.md"
+FILE_REF = {"type": "object", "properties": {"folder": {"type": "string", "description": "授权文件夹的名字"},
+                                             "path": {"type": "string", "description": "文件夹里的相对路径"},
+                                             "sheet": {"type": "string", "description": "工作表名，默认第一张"}},
+            "required": ["folder", "path"], "additionalProperties": False}
+OUTPUT_REF = {"type": "object", "properties": {"folder": {"type": "string", "description": "授权写入的文件夹名字"},
+                                               "path": {"type": "string", "description": "新文件的相对路径（.xlsx）"}},
+              "required": ["folder", "path"], "additionalProperties": False}
+
+
+@tool(
+    "open_local_project",
+    "打开他 Mac 上的一个授权文件夹（一个项目）：读项目说明 RELAY.md（他写的：这个项目是什么、数据在哪些文件、产出放哪），"
+    "列出最上层的文件。处理这个文件夹里的事之前先看这个。",
+    {"folder": {"type": "string", "description": "授权文件夹的名字"}},
+    ["folder"],
+)
+async def open_local_project(ctx: ToolContext, args: dict) -> str:
+    try:
+        listing = await devices.request(ctx.session, ctx.user, "list", {"folder": args["folder"], "path": "", "query": "", "limit": 100})
+    except devices.DeviceError as exc:
+        raise ToolError(str(exc), _code(exc)) from exc
+    entries = listing.get("entries") or []
+    notes = "这个文件夹里没有 RELAY.md（项目说明）。"
+    if any(e.get("path") == PROJECT_FILE for e in entries):
+        try:
+            read = await devices.request(ctx.session, ctx.user, "read", {"folder": args["folder"], "path": PROJECT_FILE}, timeout=60)
+            notes = f"项目说明（{PROJECT_FILE}，他本人写的）：\n{read.get('text', '')}"
+        except devices.DeviceError as exc:
+            notes = f"读 {PROJECT_FILE} 失败：{exc}"
+    files = "\n".join(f"- {'📁 ' if e.get('dir') else ''}{e['path']}" for e in entries) or "（空）"
+    return f"{notes}\n\n最上层的文件：\n{files}"
+
+
+@tool(
+    "compare_local_tables",
+    "在他的 Mac 上对比两张表（Excel / CSV），按关键列找出新增、删除和变化的格子，结果写成一个新的 Excel 文件（不改原文件）。"
+    "整张表不离开他的电脑，回来的只有数量和最多 10 条示例。",
+    {"left": FILE_REF, "right": FILE_REF, "key": {"type": "string", "description": "关键列的列名（例如“单号”）"}, "output": OUTPUT_REF},
+    ["left", "right", "key", "output"],
+)
+async def compare_local_tables(ctx: ToolContext, args: dict) -> str:
+    try:
+        result = await devices.request_skill(ctx.session, ctx.user, "compare_tables", args)
+    except devices.DeviceError as exc:
+        raise ToolError(str(exc), "unsupported" if "版本太旧" in str(exc) else _code(exc)) from exc
+    return json.dumps(result, ensure_ascii=False)
+
+
+@tool(
+    "summarize_local_table",
+    "在他的 Mac 上汇总一张表（Excel / CSV）：按某几列分组，计行数，对数值列求和，结果写成一个新的 Excel 文件（不改原文件）。",
+    {"source": FILE_REF, "group_by": {"type": "array", "items": {"type": "string"}, "maxItems": 5, "description": "分组的列名"},
+     "sum": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "要求和的数值列名"}, "output": OUTPUT_REF},
+    ["source", "output"],
+)
+async def summarize_local_table(ctx: ToolContext, args: dict) -> str:
+    try:
+        result = await devices.request_skill(ctx.session, ctx.user, "summarize_table", args)
+    except devices.DeviceError as exc:
+        raise ToolError(str(exc), "unsupported" if "版本太旧" in str(exc) else _code(exc)) from exc
+    return json.dumps(result, ensure_ascii=False)

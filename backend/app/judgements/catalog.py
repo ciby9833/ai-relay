@@ -20,7 +20,7 @@ class Judgement:
     subject: str  # 判断的对象（记录里的 subject 前缀）
     input: str  # 输入是什么
     output: str  # 输出是什么
-    truth: str  # 对错从哪里来；“待接”表示还没有自动标注，只记录供回放
+    truth: str  # 对错从哪里来（全部自动：正常使用时的反馈、往来有没有继续、输出对照输入的核对；不需要人专门标注）
 
 
 JUDGEMENTS = {j.name: j for j in [
@@ -37,29 +37,29 @@ JUDGEMENTS = {j.name: j for j in [
               "他的长期记忆里关于提醒的说法", "候选提醒规则（条件 + 档位 + 依据原话）", "他在设置里启用 = 对；不用 = 错"),
     Judgement("chat_extract", "extract", "proactive/chats.py _process", "chat",
               "一段群聊 / 私聊的新消息 + 之前的上下文 + 这段会话里还没结的事", "新的待办（谁让谁做什么、时间）和未结事项的进展",
-              "待接：这段会话产生的事项上的反馈"),
+              "自动：这段会话建出的事项上，他在卡片上的反馈（处理了 = 对；不归我 / 不值得 / 重复 = 错）"),
     Judgement("chat_extract_retry", "extract", "proactive/chats.py _process（第二遍）", "chat",
-              "同上（第一遍结果不合格时重试）", "同上", "待接"),
+              "同上（第一遍结果不合格时重试）", "同上", "同上"),
     Judgement("mail_progress", "decide", "proactive/items.py judge_progress", "item",
-              "在等对方的一件事 + 对方的新来信", "这封信是不是对这件事的回应、事情办完了没有", "待接：他之后是否重新打开这件事"),
+              "在等对方的一件事 + 对方的新来信", "这封信是不是对这件事的回应、事情办完了没有", "自动：说“办完了”之后 3 天内他又在这个线程写信 = 错；7 天没有动静 = 对；其他结论不计"),
     Judgement("reply_state", "decide", "proactive/items.py judge_reply", "item",
-              "对方来信 + 他的回复", "办完 / 在等对方 / 还要他做", "待接：他之后是否重新打开这件事"),
+              "对方来信 + 他的回复", "办完 / 在等对方 / 还要他做", "自动：说“办完了”之后 3 天内他又写信 = 错、7 天没动静 = 对；“还要他做”之后他又回信 = 对；“在等对方”之后对方回信 = 对"),
     Judgement("meeting_actions", "extract", "proactive/meetings.py collect_minutes", "meeting",
-              "会议纪要正文", "行动项（谁、做什么、什么时候）", "待接：行动项变成的事项上的反馈"),
+              "会议纪要正文", "行动项（谁、做什么、什么时候）", "自动：纪要建出的行动项上，他在卡片上的反馈"),
     Judgement("meeting_prep", "write", "proactive/meetings.py prepare", "meeting",
-              "会议信息 + 和这个会确实相关的材料", "会前简报", "待接：他对会前简报的反馈"),
+              "会议信息 + 和这个会确实相关的材料", "会前简报", "自动核对：简报里的数字、时间都出自材料，引用的编号都存在"),
     Judgement("attachment_digest", "write", "proactive/meetings.py _attachments", "signal",
-              "会议相关邮件的一个长附件", "附件要点（轻量模型）", "待接"),
+              "会议相关邮件的一个长附件", "附件要点（轻量模型）", "自动核对：要点里的数字、时间都出自附件"),
     Judgement("morning_brief", "write", "proactive/engine.py morning_brief", "user",
-              "今天的事项、日程、风险、在等别人的事", "早上的简报", "待接"),
+              "今天的事项、日程、风险、在等别人的事", "早上的简报", "自动核对：简报里的数字、时间都出自当天的事项和日程"),
     Judgement("team_digest", "write", "proactive/engine.py _team_digest", "user",
-              "团队相关的邮件", "团队动态摘要", "待接"),
+              "团队相关的邮件", "团队动态摘要", "自动核对：摘要里的数字、时间都出自那些邮件"),
     Judgement("approval_summary", "write", "proactive/items.py summarize_approval", "signal",
-              "一张审批的表单内容", "一句话摘要", "待接"),
+              "一张审批的表单内容", "一句话摘要", "自动核对：摘要里的数字、时间都出自审批表单"),
     Judgement("followup_draft", "write", "proactive/items.py due_reminders", "item",
-              "对方太久没回的一件事 + 往来", "跟进邮件草稿", "待接：草稿后来原样发出 / 改过 / 取消"),
+              "对方太久没回的一件事 + 往来", "跟进邮件草稿", "自动：草稿后来原样发出 = 对；改过再发 = 部分对；取消 = 错"),
     Judgement("notice_text", "write", "proactive/items.py announce", "user",
-              "这次要告诉他的事实列表", "提醒的说法（只能用给出的事实）", "待接"),
+              "这次要告诉他的事实列表", "提醒的说法（只能用给出的事实）", "自动核对：提醒里的数字、时间都出自给它的事实"),
 ]}
 
 KINDS = ("decide", "extract", "write")

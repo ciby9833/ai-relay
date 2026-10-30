@@ -129,8 +129,11 @@
 |---|---|---|---|---|
 | `list_local_files` | local_files | read | offline, not_connected, no_access | 列出用户 Mac 上某个授权文件夹里的文件（可以进子文件夹，可以按文件名关键字找） |
 | `local_folders` | local_files | read | — | 看用户在 Mac 客户端里授权了哪些文件夹（读 / 写），以及 Mac 现在在不在线 |
+| `open_local_project` | local_files | read | offline, not_connected, no_access | 打开他 Mac 上的一个授权文件夹（一个项目）：读项目说明 RELAY.md（他写的：这个项目是什么、数据在哪些文件、产出放哪），列出最上层的文件 |
 | `read_local_file` | local_files | read | offline, not_connected, no_access, not_found, unsupported | 读取用户 Mac 上授权文件夹里的一个文件（xlsx、docx、pdf、csv、txt 等），返回文字内容和文件版本 |
 | `save_file_to_mac` | local_files | create | offline, not_connected, no_access, not_found | 把 Relay 生成的文件（Excel、Word、PPT）存进用户 Mac 上授权写入的文件夹 |
+| `compare_local_tables` | local_skills | create | offline, not_connected, no_access, not_found, unsupported | 在他的 Mac 上对比两张表（Excel / CSV），按关键列找出新增、删除和变化的格子，结果写成一个新的 Excel 文件（不改原文件）。约定：两张表都要先确认关键列（例如先 read_local_file 看表头）；结果只给数量和示例，完整差异在生成的文件里。 |
+| `summarize_local_table` | local_skills | create | offline, not_connected, no_access, not_found, unsupported | 在他的 Mac 上汇总一张表（Excel / CSV）：按某几列分组，计行数，对数值列求和，结果写成一个新的 Excel 文件（不改原文件）。约定：先 read_local_file 看表头确认列名。 |
 
 ## 错误码
 

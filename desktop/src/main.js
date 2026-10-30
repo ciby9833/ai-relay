@@ -219,7 +219,20 @@ function checkForUpdates() {
 
 // ---------- 启动 ----------
 
-if (!app.requestSingleInstanceLock()) {
+// 自检：在打包好的应用里解析一个文件（确认本机解析库在安装包里能用），打印结果后退出
+if (process.env.RELAY_SMOKE_PARSE) {
+  app.whenReady().then(async () => {
+    try {
+      const { toText } = require("./parse");
+      const file = process.env.RELAY_SMOKE_PARSE;
+      const result = await toText(path.basename(file), fs.readFileSync(file));
+      console.log(`[relay-smoke] parsed kind=${result.kind} chars=${result.text.length} head=${JSON.stringify(result.text.slice(0, 60))}`);
+    } catch (error) {
+      console.log(`[relay-smoke] parse failed: ${error.message}`);
+    }
+    app.exit(0);
+  });
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", show);
