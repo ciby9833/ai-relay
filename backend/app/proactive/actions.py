@@ -11,6 +11,7 @@ from sqlalchemy import cast, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.judgements.record import judged
 from app.feishu import cards
 from app.config import get_settings
 from app import i18n, insights
@@ -131,7 +132,7 @@ async def write_reply(
         + (f"<background>\n这件事的相关材料（只在确实相关时使用）：\n" + "\n\n".join(background) + "\n</background>\n\n" if background else "")
         + f"除发件人外，原邮件还有 {len(others)} 人。\n我的要求：{instructions or '按常理回复'}"
     )
-    result = await complete_structured(DRAFT_SYSTEM, prompt, DRAFT_TOOL)
+    result = await judged("reply_draft", user.id, f"signal:{signal.id}", complete_structured, DRAFT_SYSTEM, prompt, DRAFT_TOOL)
     return result.get("body") or "", references, bool(result.get("reply_all")) and bool(others), result.get("why") or ""
 
 

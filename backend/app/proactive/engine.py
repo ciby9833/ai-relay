@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.judgements.record import judged
 from app.config import get_settings
 from app.feishu.client import FeishuClient, FeishuError, needs_reauth
 from app.home import ConversationBusy, post
@@ -170,6 +171,19 @@ async def _profile(session: AsyncSession, user: User) -> str:
     return "\n".join(f"- {m.content}" for m in reversed(memories)) or "（暂无）"
 
 
+def triage_input(name: str, own: list[str], position: str, profile: str, earlier: list[str], mail: dict,
+                 title: str, body: str | None, lang: str) -> str:
+    """邮件分级（mail_triage）的输入：他是谁、在收件人还是抄送里、关于他的记忆、同一线程之前的往来、这封信。
+    线上和回放（app/judgements/replay.py 的固定样本）都用它，保证格式一致。"""
+    return (
+        f"用户：{name}（{'、'.join(own) or '邮箱未知'}）。这封信里他是：{position}。\n关于用户：\n{profile}\n\n"
+        + (f"<thread>\n同一线程里之前的往来（判断这件事是不是归他）：\n" + "\n".join(earlier) + "\n</thread>\n\n" if earlier else "")
+        + f"<mail>\n发件人：{mail.get('from')}\n收件人：{'、'.join(mail.get('to') or [])}\n"
+        f"抄送：{'、'.join(mail.get('cc') or [])}\n主题：{title}\n\n{(body or '')[:6000]}\n</mail>"
+        + "\n\nsummary " + i18n.instruction(lang)
+    )
+
+
 async def triage(session: AsyncSession, user: User) -> None:
     # 新邮件；以及第一次同步时进来、还没分过级的存量邮件（分级后只静默建档，不打扰）
     result = await session.execute(
@@ -193,14 +207,9 @@ async def triage(session: AsyncSession, user: User) -> None:
         from app.proactive import casefile
 
         earlier = await casefile.thread_history(session, user, signal, limit=3)
-        prompt = (
-            f"用户：{user.name}（{'、'.join(sorted(own)) or '邮箱未知'}）。这封信里他是：{position}。\n关于用户：\n{profile}\n\n"
-            + (f"<thread>\n同一线程里之前的往来（判断这件事是不是归他）：\n" + "\n".join(earlier) + "\n</thread>\n\n" if earlier else "")
-            + f"<mail>\n发件人：{mail.get('from')}\n收件人：{'、'.join(mail.get('to') or [])}\n"
-            f"抄送：{'、'.join(mail.get('cc') or [])}\n主题：{signal.title}\n\n{(signal.body or '')[:6000]}\n</mail>"
-        )
+        prompt = triage_input(user.name, sorted(own), position, profile, earlier, mail, signal.title, signal.body, lang)
         try:
-            decision = await complete_structured(TRIAGE_SYSTEM, prompt + "\n\nsummary " + i18n.instruction(lang), TRIAGE_TOOL)
+            decision = await judged("mail_triage", user.id, f"signal:{signal.id}", complete_structured, TRIAGE_SYSTEM, prompt, TRIAGE_TOOL)
         except Exception:
             logger.exception("邮件分级失败 #%s", signal.id)
             signal.status = "digest"
@@ -339,7 +348,7 @@ async def morning_brief(session: AsyncSession, feishu: FeishuClient, user: User,
         f"在等别人 {len(waiting)} 件\n团队动态：{team_digest or '无'}"
     )
     try:
-        text = await complete_text(BRIEF_SYSTEM, material + "\n\n" + i18n.instruction(user_language(settings)))
+        text = await judged("morning_brief", user.id, f"user:{user.id}", complete_text, BRIEF_SYSTEM, material + "\n\n" + i18n.instruction(user_language(settings)))
     except LLMError:
         text = f"要你拍板 {len(decide)} 件，要你处理 {len(handle)} 件，今天还有 {len(meetings)} 个会。"
 
@@ -382,7 +391,7 @@ async def _team_digest(session: AsyncSession, user: User) -> str | None:
         for n in notices
     )
     try:
-        return await complete_text(TEAM_DIGEST_SYSTEM, f"<mails>\n{material}\n</mails>\n\n" + i18n.instruction(await language_of(session, user)))
+        return await judged("team_digest", user.id, f"user:{user.id}", complete_text, TEAM_DIGEST_SYSTEM, f"<mails>\n{material}\n</mails>\n\n" + i18n.instruction(await language_of(session, user)))
     except LLMError:
         return None
 

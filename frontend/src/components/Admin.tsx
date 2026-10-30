@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ReminderQuality, type ClosureReview, type NotificationDay, type NotificationStats, type QualityRate, type QualityStats, type ReviewVerdict } from "../api";
+import { api, type JudgementStats, type ReminderQuality, type ClosureReview, type NotificationDay, type NotificationStats, type QualityRate, type QualityStats, type ReviewVerdict } from "../api";
 import { t, intlLocale } from "../i18n";
 import Icon from "./Icon";
 import CriterionEvidence from "./CriterionEvidence";
@@ -29,6 +29,35 @@ function Metric({ label, value = EMPTY, previous = EMPTY }: { label: string; val
       <span className="muted small">{value.denominator ? `${value.numerator} / ${value.denominator}` : t("adminNoSample")}</span></div>
     <p className="muted small">{t("adminPrevious")}: {percent(previous)}</p>
   </article>;
+}
+
+const JUDGEMENT_NAMES: Record<string, string> = {
+  mail_triage: "邮件分级", reply_draft: "回复草稿", mission_completion_check: "长期任务完成核对", rule_proposal: "整理提醒规则",
+  chat_extract: "群聊 / 私聊提取", chat_extract_retry: "聊天提取（第二遍）", mail_progress: "来信是否回应在等的事", reply_state: "回复后的状态",
+  meeting_actions: "会议行动项", meeting_prep: "会前简报", attachment_digest: "长附件要点", morning_brief: "早上简报",
+  team_digest: "团队动态", approval_summary: "审批摘要", followup_draft: "跟进邮件草稿", notice_text: "提醒的说法",
+};
+
+/** 后台判断的质量：调用次数、失败、能从真实反馈判断对错的样本里对了多少（按提示词版本分开）。只有数字。 */
+function Judgements({ days }: { days: number }) {
+  const [rows, setRows] = useState<JudgementStats[] | null>(null);
+  useEffect(() => { setRows(null); void api.judgementStats(days).then((d) => setRows(d?.judgements ?? [])).catch(() => setRows([])); }, [days]);
+  if (!rows) return null;
+  return <section aria-labelledby="admin-judgements-title">
+    <div className="admin-section-head"><div><h2 id="admin-judgements-title">{t("后台判断的准确率")}</h2>
+      <p className="muted small">{t("每次后台判断都会记下；对错来自真实反馈（卡片上的“处理了 / 不归我”、草稿发出还是取消、复盘、规则启用与否），拿不准的不计。")}</p></div></div>
+    {rows.length === 0 ? <p className="empty-note">{t("这段时间还没有记录。")}</p> : (
+      <table className="team-summary">
+        <thead><tr><th>{t("判断")}</th><th>{t("版本")}</th><th>{t("调用")}</th><th>{t("失败")}</th><th>{t("有对错的样本")}</th><th>{t("准确率")}</th><th>{t("耗时中位数")}</th></tr></thead>
+        <tbody>{rows.map((r) => <tr key={`${r.name}-${r.version}`}>
+          <td title={r.labels_from ?? ""}>{t(JUDGEMENT_NAMES[r.name] ?? r.name)}</td><td><code>{r.version}</code></td>
+          <td>{r.runs}</td><td className={r.failed ? "error-text" : ""}>{r.failed}</td>
+          <td>{r.labeled ? `${r.right} / ${r.partly} / ${r.wrong}` : "—"}</td><td>{percent(r.accuracy)}</td>
+          <td>{r.median_seconds === null ? "—" : `${r.median_seconds}s`}</td></tr>)}</tbody>
+      </table>
+    )}
+    <p className="muted small">{t("“有对错的样本”依次是：对 / 部分对 / 错。准确率里部分对算一半。")}</p>
+  </section>;
 }
 
 function Review({ closure, onSaved }: { closure: ClosureReview; onSaved: () => void }) {
@@ -143,6 +172,7 @@ function Quality() {
             </table>
           </section>
         )}
+        <Judgements days={days} />
         <Reminders days={days} />
         <section aria-labelledby="admin-notifications-title"><div className="admin-section-head"><div><h2 id="admin-notifications-title">{t("adminNotifications")}</h2><p className="muted small">{t("adminNotificationWindow")}</p></div>
           <input className="admin-search" type="search" aria-label={t("adminFindUser")} placeholder={t("adminFindUser")} value={search} onChange={e => setSearch(e.target.value)} /></div>

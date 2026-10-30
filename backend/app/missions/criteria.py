@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.judgements.record import judged
 from app.models import Mission, MissionLog, PendingAction, Signal
 from app.missions.outcomes import CriterionInput, evaluate
 
@@ -209,7 +210,7 @@ async def check(session: AsyncSession, mission: Mission, result: str, feishu=Non
         + f"\n\n准备给用户的结论：{result}\n</材料>"
     )
     try:
-        verdict = await complete_structured(CHECK_SYSTEM, prompt, CHECK_TOOL)
+        verdict = await judged("mission_completion_check", mission.user_id, f"mission:{mission.id}", complete_structured, CHECK_SYSTEM, prompt, CHECK_TOOL)
     except Exception as exc:  # noqa: BLE001
         logger.warning("任务 #%s 核对失败：%s", mission.id, exc)
         return {"passed": False, "problems": [f"核对没能完成（{exc}），请稍后再结束，或问用户"], "raw": None}

@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.judgements.record import judged
 from app.feishu.client import FeishuClient
 from app.models import AttentionRule, FollowUp, Signal, SourceState, User
 from app.proactive.settings import in_quiet_hours, is_workday
@@ -545,8 +546,8 @@ async def propose_from_memories(session: AsyncSession, user: User) -> int:
             rest.append(memory)
     if rest:
         try:
-            result = await complete_structured(
-                PROPOSE_SYSTEM, "<memories>\n" + "\n".join(f"[{m.id}] {m.content}" for m in rest) + "\n</memories>", PROPOSE_TOOL)
+            result = await judged(
+                "rule_proposal", user.id, f"user:{user.id}", complete_structured, PROPOSE_SYSTEM, "<memories>\n" + "\n".join(f"[{m.id}] {m.content}" for m in rest) + "\n</memories>", PROPOSE_TOOL)
         except Exception:  # noqa: BLE001 - 下一轮再试
             logger.exception("整理 %s 的提醒偏好失败", user.name)
             return created

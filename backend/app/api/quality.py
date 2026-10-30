@@ -125,3 +125,46 @@ async def review_closure(mission_id: int, body: ReviewBody, session: SessionDep,
                      {**body.model_dump(), "reviewer_id": str(user.id)}, mission.id)
     await session.commit()
     return {"ok": True}
+
+
+@router.get("/judgements")
+async def judgement_quality(session: SessionDep, user: UserDep, days: int = 14):
+    """后台判断的质量：每个判断、每个提示词版本调用了多少次、失败多少、耗时，以及能从真实反馈判断对错的样本里对了多少。
+
+    只有数字（本工作区），不含任何内容。
+    """
+    from collections import defaultdict
+
+    from app.judgements import labels
+    from app.judgements.catalog import JUDGEMENTS
+    from app.models import JudgementRun
+
+    require_admin(user)
+    days = max(1, min(days, 30))
+    since = datetime.now(UTC) - timedelta(days=days)
+    members = select(User.id).where(User.tenant_id == user.tenant_id)
+    runs = list((await session.execute(select(JudgementRun).where(
+        JudgementRun.created_at >= since, JudgementRun.user_id.in_(members)).order_by(JudgementRun.id))).scalars())
+    by_run = defaultdict(list)
+    for sample in await labels.samples(session, runs):
+        by_run[sample.run_id].append(sample)
+    groups: dict[tuple, dict] = {}
+    for run in runs:
+        g = groups.setdefault((run.name, run.prompt_version), {"name": run.name, "version": run.prompt_version, "runs": 0, "failed": 0,
+                                                              "seconds": [], "right": 0, "partly": 0, "wrong": 0, "first_at": run.created_at})
+        g["runs"] += 1
+        g["failed"] += run.error is not None
+        if run.seconds is not None:
+            g["seconds"].append(run.seconds)
+        for sample in by_run.get(run.id, []):
+            g[sample.verdict] += 1
+    out = []
+    for g in groups.values():
+        seconds = sorted(g.pop("seconds"))
+        labeled = g["right"] + g["partly"] + g["wrong"]
+        meta = JUDGEMENTS.get(g["name"])
+        out.append({**g, "first_at": g["first_at"].isoformat(), "kind": meta.kind if meta else None,
+                    "labels_from": meta.truth if meta else None, "labeled": labeled,
+                    "accuracy": rate(g["right"] + 0.5 * g["partly"], labeled),
+                    "median_seconds": seconds[len(seconds) // 2] if seconds else None})
+    return {"days": days, "judgements": sorted(out, key=lambda g: (g["name"], g["first_at"]))}

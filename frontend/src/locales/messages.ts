@@ -3140,6 +3140,98 @@ export const messages: Record<string, readonly [string, string]> = {
     "Median tools per turn",
     "Median alat per giliran"
   ],
+  "后台判断的准确率": [
+    "Background judgement accuracy",
+    "Akurasi penilaian di latar belakang"
+  ],
+  "每次后台判断都会记下；对错来自真实反馈（卡片上的“处理了 / 不归我”、草稿发出还是取消、复盘、规则启用与否），拿不准的不计。": [
+    "Every background judgement is recorded; right or wrong comes from real feedback (\"handled / not mine\" on cards, drafts sent or cancelled, reviews, rules switched on or not). Uncertain cases are not counted.",
+    "Setiap penilaian di latar belakang dicatat; benar atau salah berasal dari umpan balik nyata (\"sudah ditangani / bukan tugas saya\" di kartu, draf dikirim atau dibatalkan, tinjauan, aturan diaktifkan atau tidak). Kasus yang tidak pasti tidak dihitung."
+  ],
+  "这段时间还没有记录。": [
+    "No records in this period yet.",
+    "Belum ada catatan pada periode ini."
+  ],
+  "判断": [
+    "Judgement",
+    "Penilaian"
+  ],
+  "调用": [
+    "Calls",
+    "Panggilan"
+  ],
+  "有对错的样本": [
+    "Labelled (right / partly / wrong)",
+    "Berlabel (benar / sebagian / salah)"
+  ],
+  "准确率": [
+    "Accuracy",
+    "Akurasi"
+  ],
+  "耗时中位数": [
+    "Median time",
+    "Median waktu"
+  ],
+  "“有对错的样本”依次是：对 / 部分对 / 错。准确率里部分对算一半。": [
+    "Labelled samples are right / partly / wrong; partly counts as half in accuracy.",
+    "Sampel berlabel: benar / sebagian / salah; sebagian dihitung setengah dalam akurasi."
+  ],
+  "邮件分级": [
+    "Email triage",
+    "Pemilahan email"
+  ],
+  "长期任务完成核对": [
+    "Task completion check",
+    "Pemeriksaan penyelesaian tugas"
+  ],
+  "整理提醒规则": [
+    "Reminder rule proposals",
+    "Usulan aturan pengingat"
+  ],
+  "群聊 / 私聊提取": [
+    "Chat extraction",
+    "Ekstraksi obrolan"
+  ],
+  "聊天提取（第二遍）": [
+    "Chat extraction (second pass)",
+    "Ekstraksi obrolan (putaran kedua)"
+  ],
+  "来信是否回应在等的事": [
+    "Reply to a waiting item?",
+    "Balasan untuk hal yang ditunggu?"
+  ],
+  "回复后的状态": [
+    "State after reply",
+    "Status setelah balasan"
+  ],
+  "会议行动项": [
+    "Meeting action items",
+    "Tindak lanjut rapat"
+  ],
+  "长附件要点": [
+    "Long attachment summary",
+    "Ringkasan lampiran panjang"
+  ],
+  "早上简报": [
+    "Morning brief",
+    "Ringkasan pagi"
+  ],
+  "团队动态": [
+    "Team digest",
+    "Kabar tim"
+  ],
+  "审批摘要": [
+    "Approval summary",
+    "Ringkasan persetujuan"
+  ],
+  "跟进邮件草稿": [
+    "Follow-up drafts",
+    "Draf tindak lanjut"
+  ],
+  "提醒的说法": [
+    "Reminder wording",
+    "Kalimat pengingat"
+  ],
   "已填写（留空表示不改）": [
     "Set (leave blank to keep)",
     "Sudah diisi (kosongkan untuk tetap)"

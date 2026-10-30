@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.judgements.record import judged
 from app.feishu.client import FeishuClient
 from app.models import DEFAULT_TENANT_ID, ChatMessage, FollowUp, Signal, User
 from app.proactive import items
@@ -221,8 +222,8 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
     else:
         kind = "群聊"
     try:
-        result = await complete_structured(
-            CHAT_TASKS_SYSTEM,
+        result = await judged(
+            "chat_extract", owner.id if owner else None, f"chat:{chat_id}", complete_structured, CHAT_TASKS_SYSTEM,
             f"<now>{datetime.now(tz):%Y-%m-%d %H:%M %A}</now>\n<chat kind=\"{kind}\">\n" + "\n".join(lines) + "\n</chat>"
             + (f"\n\n<open>\n{pending}\n</open>" if pending else ""),
             TASKS_TOOL,
@@ -256,13 +257,13 @@ async def _process(session, chat_id, new, earlier, open_items, users, by_name, o
     # 一次回复常常同时回应了好几件内容相近的事，模型一起判断时容易只认其中一件，剩下的就一直挂着
     closed = [by_id[c["item_id"]] for c in changes if c.get("verdict") == "done" and c.get("item_id") in by_id
               and by_id[c["item_id"]].status != items.EXPIRED]
-    judged = {c.get("item_id") for c in changes}
-    siblings = [i for i in open_items if i.status == "open" and i.id not in judged
+    checked = {c.get("item_id") for c in changes}
+    siblings = [i for i in open_items if i.status == "open" and i.id not in checked
                 and any(_counterpart(i) == _counterpart(x) and i.user_id == x.user_id for x in closed)]
     if siblings:
         try:
-            again = await complete_structured(
-                CHAT_TASKS_SYSTEM,
+            again = await judged(
+                "chat_extract_retry", owner.id if owner else None, f"chat:{chat_id}", complete_structured, CHAT_TASKS_SYSTEM,
                 f"<now>{datetime.now(tz):%Y-%m-%d %H:%M %A}</now>\n<chat kind=\"{kind}\">\n" + "\n".join(lines) + "\n</chat>"
                 + "\n\n<open>\n" + "\n".join(f"[#{i.id}] {i.title}" + (f"（{i.summary}）" if i.summary else "") for i in siblings)
                 + "\n</open>\n\n这次只判断 <open> 里这几件事的进展，不用提取新的待办（tasks 给空列表）。",

@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.judgements.record import judged
 from app import i18n
 from app.feishu.client import FeishuClient, FeishuError
 from app.models import ChatMessage, FollowUp, Signal, User
@@ -204,7 +205,7 @@ async def _attachments(feishu, user: User, mail_signal: Signal, meeting_title: s
             continue
         if len(text) > ATTACHMENT_CHARS * 2:
             try:
-                text = await complete_text(DIGEST_SYSTEM, f"会议：{meeting_title}\n<file name=\"{name}\">\n{text[:20000]}\n</file>", light=True)
+                text = await judged("attachment_digest", user.id, f"signal:{mail_signal.id}", complete_text, DIGEST_SYSTEM, f"会议：{meeting_title}\n<file name=\"{name}\">\n{text[:20000]}\n</file>", light=True)
             except Exception:  # noqa: BLE001 - 提取要点失败就用开头一段
                 text = text[:ATTACHMENT_CHARS]
         found.append({**base, "access": "ok", "text": text[:ATTACHMENT_CHARS]})
@@ -223,7 +224,7 @@ async def prepare(session: AsyncSession, feishu: FeishuClient | None, user: User
     else:
         blob = "\n\n".join(f"[{n + 1}] {m['title']}（{m['why']}）\n{m['text']}" for n, m in enumerate(materials))
         try:
-            text = await complete_text(PREP_SYSTEM, f"会议：{meeting.title}\n\n<materials>\n{blob}\n</materials>\n\n{i18n.instruction(lang)}")
+            text = await judged("meeting_prep", user.id, f"meeting:{meeting.id}", complete_text, PREP_SYSTEM, f"会议：{meeting.title}\n\n<materials>\n{blob}\n</materials>\n\n{i18n.instruction(lang)}")
         except Exception:  # noqa: BLE001 - 模型出错时给原始材料清单，不编
             logger.exception("会前准备生成失败 %s", meeting.id)
             text = "\n".join(f"- {m['title']}（{m['why']}）" for m in materials)
@@ -265,7 +266,7 @@ async def collect_minutes(session: AsyncSession, feishu: FeishuClient, user: Use
             candidates = await items.related_open_items(session, user, text, limit=6)
             listing = "\n".join(f"[#{i.id}]（来自{items.channel_of(i)}）{i.title}" + (f"（{i.summary[:120]}）" if i.summary else "")
                                 for i in candidates)
-            result = await complete_structured(ACTIONS_SYSTEM, f"会议：{meeting.title}\n<minutes>\n{text}\n</minutes>"
+            result = await judged("meeting_actions", user.id, f"meeting:{meeting.id}", complete_structured, ACTIONS_SYSTEM, f"会议：{meeting.title}\n<minutes>\n{text}\n</minutes>"
                                                + (f"\n\n<open>\n{listing}\n</open>" if listing else ""), ACTIONS_TOOL)
         except Exception as exc:  # noqa: BLE001 - 读不到或判断失败：下一轮再试，连续失败几次就记下原因、不再重试
             logger.exception("读会议纪要失败 %s", meeting.id)

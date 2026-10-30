@@ -10,6 +10,7 @@ import random
 import jsonschema
 
 from app.config import get_settings
+from app.judgements import record
 from app.llm import registry
 from app.llm.base import Completion, LLMError, TextDelta
 
@@ -64,6 +65,7 @@ def _light():
 
 async def complete_text(system: str, prompt: str, light: bool = False) -> str:
     provider, model, _ = _light() if light else _model()
+    since = record.started()
 
     async def call() -> str:
         parts = []
@@ -75,12 +77,19 @@ async def complete_text(system: str, prompt: str, light: bool = False) -> str:
                 parts.append(event.text)
         return "".join(parts).strip()
 
-    return await _with_retry(call)
+    try:
+        text = await _with_retry(call)
+    except Exception as exc:
+        await record.save(system, prompt, model, None, f"{type(exc).__name__}: {exc}", since)
+        raise
+    await record.save(system, prompt, model, text, None, since)
+    return text
 
 
 async def complete_structured(system: str, prompt: str, tool: dict) -> dict:
     """让模型调用唯一的工具来给出结构化结果（不依赖各家不同的 JSON 模式）。"""
     provider, model, _ = _model()
+    since = record.started()
 
     async def call() -> Completion | None:
         completion: Completion | None = None
@@ -92,9 +101,14 @@ async def complete_structured(system: str, prompt: str, tool: dict) -> dict:
                 completion = event
         return completion
 
-    completion = await _with_retry(call)
-    for block in (completion.blocks if completion else []):
-        if block["type"] == "tool_use" and block["name"] == tool["name"]:
-            jsonschema.validate(block["input"], tool["input_schema"])
-            return block["input"]
-    raise LLMError("模型没有给出结构化结果")
+    try:
+        completion = await _with_retry(call)
+        for block in (completion.blocks if completion else []):
+            if block["type"] == "tool_use" and block["name"] == tool["name"]:
+                jsonschema.validate(block["input"], tool["input_schema"])
+                await record.save(system, prompt, model, block["input"], None, since)
+                return block["input"]
+        raise LLMError("模型没有给出结构化结果")
+    except Exception as exc:
+        await record.save(system, prompt, model, None, f"{type(exc).__name__}: {exc}", since)
+        raise

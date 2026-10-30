@@ -14,6 +14,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.judgements.record import judged
 from app.feishu.client import FeishuClient, FeishuError
 from app.home import ConversationBusy, post
 from app.llm.base import LLMError
@@ -270,8 +271,8 @@ async def judge_progress(session: AsyncSession, user: User, item: FollowUp, sign
     waiting_for = f"{item.title}" + (f"（{item.summary}）" if item.summary else "")
     sender = (signal.payload or {}).get("from_name") or (signal.payload or {}).get("from") or "对方"
     try:
-        return await complete_structured(
-            PROGRESS_SYSTEM,
+        return await judged(
+            "mail_progress", user.id, f"item:{item.id}", complete_structured, PROGRESS_SYSTEM,
             f"<now>{datetime.now(tz):%Y-%m-%d %H:%M %A}</now>\n在等的事：{waiting_for}\n\n"
             f"<message>\n{sender}：《{signal.title}》\n{(signal.body or signal.summary or '')[:3000]}\n</message>\n\n"
             + "evidence " + i18n.instruction(await language_of(session, user)),
@@ -519,8 +520,8 @@ async def summarize_approval(signal: Signal, lang: str = "zh") -> str | None:
         return None  # 请假、补卡这类字段很少的单子：卡片上的申请内容一眼就能看完，不再加一句复述
     fields = "\n".join(f"{f['name']}：{f['value']}" for f in detail["fields"])
     try:
-        return await complete_text(
-            APPROVAL_SUMMARY_SYSTEM,
+        return await judged(
+            "approval_summary", signal.user_id, f"signal:{signal.id}", complete_text, APPROVAL_SUMMARY_SYSTEM,
             f"<approval>\n审批类型：{detail.get('approval_name')}\n发起人：{'、'.join(signal.payload.get('initiator_names') or [])}\n{fields}\n</approval>\n\n"
             + i18n.instruction(lang),
         )
@@ -604,6 +605,11 @@ async def _my_reply(session: AsyncSession, user: User, thread: str | None, actio
     return sent.body if sent else None
 
 
+def reply_state_input(their_text: str, mine: str, lang: str) -> str:
+    """回复状态（reply_state）的输入：对方上一封 + 他的回复。线上和回放共用。"""
+    return f"<mail>\n对方上一封：{their_text}\n\n他的回复：\n{mine[:3000]}\n</mail>\n\nsummary " + i18n.instruction(lang)
+
+
 async def judge_reply(theirs: Signal | None, mine: str | None, lang: str = "zh") -> tuple[str, str | None]:
     """他回复之后这件事在谁手里：done 办完了 / waiting 等对方 / mine 他答应了但还没给（“晚点看”“还在处理”）。
     拿不到正文或模型出错时，保守地当作等对方（不关掉）。"""
@@ -613,10 +619,9 @@ async def judge_reply(theirs: Signal | None, mine: str | None, lang: str = "zh")
     try:
         from app.proactive.llm import complete_structured
 
-        result = await complete_structured(
-            REPLY_STATE_SYSTEM,
-            f"<mail>\n对方上一封：{their_text}\n\n他的回复：\n{mine[:3000]}\n</mail>\n\nsummary " + i18n.instruction(lang),
-            REPLY_STATE_TOOL,
+        result = await judged(
+            "reply_state", theirs.user_id if theirs else None, f"signal:{theirs.id}" if theirs else None, complete_structured, REPLY_STATE_SYSTEM,
+            reply_state_input(their_text, mine, lang), REPLY_STATE_TOOL,
         )
         return result.get("state") or "waiting", (result.get("summary") or None)
     except Exception:  # noqa: BLE001 - 判断失败不影响主流程
@@ -800,8 +805,8 @@ async def due_reminders(session: AsyncSession, feishu: FeishuClient, user: User)
             fact = f"{item.waiting_on or '对方'} 已经 {days} 天没回复《{last.title if last else item.title}》"
             if last:
                 try:
-                    body = await complete_text(
-                        FOLLOWUP_SYSTEM,
+                    body = await judged(
+                        "followup_draft", user.id, f"item:{item.id}", complete_text, FOLLOWUP_SYSTEM,
                         f"我是 {user.name}。<mail>\n原邮件：{last.title}\n{(last.body or '')[:3000]}\n</mail>\n"
                         f"我已经回复过，对方 {days} 天没回。写一封简短礼貌的跟进邮件正文。",
                     )
@@ -1022,7 +1027,7 @@ async def announce(
         text = ""  # 只有一件事：卡片已经说清楚了，不再加一句复述（顺带的不急的事在下面单独一组，不用说）
     else:
         try:
-            text = await complete_text(NARRATE_SYSTEM, f"用户：{user.name}\n\n发生的事：\n" + "\n".join(f"- {f}" for f in facts)
+            text = await judged("notice_text", user.id, f"user:{user.id}", complete_text, NARRATE_SYSTEM, f"用户：{user.name}\n\n发生的事：\n" + "\n".join(f"- {f}" for f in facts)
                                        + "\n\n" + i18n.instruction(lang))
         except LLMError:
             text = "\n".join(f"- {f}" for f in results)

@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import time
 import logging
 from datetime import UTC, datetime
 
@@ -177,6 +178,9 @@ async def chats_loop(feishu: FeishuClient) -> None:
         await asyncio.sleep(1 if handled else CHAT_SECONDS)
 
 
+_purged_at = 0.0
+
+
 async def tasks_loop(feishu: FeishuClient) -> None:
     """定时任务、生成文件、长期任务：各自独立，不被用户主流程拖住。"""
     while True:
@@ -199,6 +203,15 @@ async def tasks_loop(feishu: FeishuClient) -> None:
                 await mission_service.run_due(session, feishu)
         except Exception:
             logger.exception("推进长期任务失败")
+        global _purged_at
+        if time.monotonic() - _purged_at > 3600:  # 每小时清一次超过保留期的判断记录
+            _purged_at = time.monotonic()
+            try:
+                from app.judgements import record
+
+                await record.purge()
+            except Exception:
+                logger.exception("清理判断记录失败")
         await asyncio.sleep(POLL_SECONDS)
 
 

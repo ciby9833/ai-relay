@@ -1,0 +1,4 @@
+{"id": "sent-report", "fields": {"their_text": "Ana：《异常件汇总》\n请今天把异常件汇总发我。", "mine": "附件是今天的异常件汇总，共 12 件，已标注原因。", "lang": "zh"}, "expect": "done"}
+{"id": "will-check", "fields": {"their_text": "Sari：《报价确认》\n请确认 10 月报价。", "mine": "收到，我查一下明天回复你。", "lang": "zh"}, "expect": "mine"}
+{"id": "asked-back", "fields": {"their_text": "Sari：《报价确认》\n请确认 10 月报价。", "mine": "请问这次报价按每公斤还是按方计？确认后我马上回复。", "lang": "zh"}, "expect": "waiting"}
+{"id": "confirmed", "fields": {"their_text": "Ana：《会议时间》\n周四下午三点开会可以吗？", "mine": "可以，周四下午三点见。", "lang": "zh"}, "expect": "done"}

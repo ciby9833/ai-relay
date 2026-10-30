@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     Date,
     ForeignKey,
     Identity,
@@ -847,3 +848,23 @@ class TeamMember(Base):
 
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
+
+
+class JudgementRun(Base):
+    """一次后台模型调用（判断）的记录：输入、输出、提示词版本、模型、耗时、出错。用来算准确率和回放对比。
+    只属于这个人；管理员只看到汇总数字；保留 30 天（app/judgements/record.py）。"""
+
+    __tablename__ = "judgement_runs"
+    __table_args__ = (Index("ix_judgement_runs_name_created", "name", "created_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    name: Mapped[str] = mapped_column(String(48))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    subject: Mapped[str | None] = mapped_column(String(200), index=True)  # signal:123 / item:45 / mission:6 / chat:oc_x
+    prompt_version: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str | None] = mapped_column(String(100))
+    input: Mapped[str] = mapped_column(Text)
+    output: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    seconds: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -529,6 +529,10 @@ export interface QualityStats {
   turn_errors: { at: string; errors: string[] }[];
   turns_by_prompt?: PromptVersionStats[];
 }
+export interface JudgementStats {
+  name: string; version: string; kind: "decide" | "extract" | "write" | null; labels_from: string | null; runs: number; failed: number;
+  right: number; partly: number; wrong: number; labeled: number; accuracy: QualityRate; median_seconds: number | null; first_at: string;
+}
 export interface PromptVersionStats {
   version: string; turns: number; first_at: string; no_answer: QualityRate; forced_final: QualityRate;
   median_tools: number | null; tool_error: QualityRate; error_codes: Record<string, number>;
@@ -549,6 +553,7 @@ export interface PerformanceData {
 export const api = {
   performance: (window: string, signal?: AbortSignal) => request<PerformanceData>(`/admin/performance?window=${encodeURIComponent(window)}`, { signal }),
   notificationStats: (days: number, offset = 0) => request<NotificationStats[]>(`/insights/notifications?days=${days}&offset=${offset}`),
+  judgementStats: (days: number) => request<{ days: number; judgements: JudgementStats[] }>(`/insights/judgements?days=${days}`),
   qualityStats: (days: number, offset = 0) => request<QualityStats>(`/insights/quality?days=${days}&offset=${offset}`),
   reviewClosure: (id: number, verdict: ReviewVerdict, reason: string) => request(`/insights/missions/${id}/review`, json("POST", { verdict, reason })),
   authConfig: () => request<{ dev_login: boolean; signup?: boolean; feishu?: boolean }>("/auth/config"),
